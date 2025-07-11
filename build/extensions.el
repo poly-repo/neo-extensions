@@ -2,7 +2,7 @@
 
 (setq input-file "extensions/uno/questionable_defaults/manifest.el")
 (setq output-file "dist/neo-extensions.el")
-(setq n 3)
+(setq n 10000)
 
 (with-temp-buffer
   (dotimes (_ n)
