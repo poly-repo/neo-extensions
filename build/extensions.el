@@ -17,7 +17,7 @@
 ;;; build/extensions.el --- Batch build for neo extensions with raw binary emblem
 
 (setq input-file "extensions/uno/questionable_defaults/manifest.el")
-(setq emblem-file "extensions/uno/questionable_defaults/emblem.png")
+(setq emblem-file "extensions/uno/questionable_defaults/emblem64.png")
 (setq output-file "dist/neo-extensions.el")
 (setq n 10000)
 
