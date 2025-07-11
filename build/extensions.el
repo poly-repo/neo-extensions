@@ -19,7 +19,7 @@
 (setq input-file "extensions/uno/questionable_defaults/manifest.el")
 (setq emblem-file "extensions/uno/questionable_defaults/emblem.png")
 (setq output-file "dist/neo-extensions.el")
-(setq n 3)
+(setq n 10000)
 
 (defun read-binary-file (file)
   "Return the contents of FILE as a raw string (not base64)."
