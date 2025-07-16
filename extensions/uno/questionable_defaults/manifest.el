@@ -1,9 +1,12 @@
 (neo/extension
  :name "Questionable Defaults"
- :author "Maurizio Vitale"
- :forge "github"
- :user "poly-repo"
- :repo "neo-extensions"
- :path "extensions/uno/questionable_defaults"
- :description "A set of defaults that the author find cool and others might find less cool"
- )
+ :publisher "neo"
+ :description "A set of defaults that the author find cool and others might find less cool.
+But that's cool."
+ :categories (neo)
+ :keywords (defaults settings)
+ :requires ()
+ :repository (
+	      :type "git"
+	      :url "https://github.com/poly-repo/neo-extensions.git"
+	      :path "extensions/uno/questionable_defaults"))
