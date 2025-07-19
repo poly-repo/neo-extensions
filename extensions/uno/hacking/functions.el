@@ -111,5 +111,19 @@ Kills any previous one using the neo PID file."
       (message "neo/hacking: launched new neo-devel Emacs (PID %s)" pid))))
 
 
+;;;--------------------------------------------------------------------------------------
 
 
+(defmacro neo/benchmark (&rest body)
+  "Benchmark BODY, printing time, consing, and GC stats to *Messages*."
+  `(let ((gc-cons-threshold most-positive-fixnum)
+         (gc-cons-percentage 1.0)
+         (gc-count-before gcs-done)
+         (gc-time-before (car (benchmark-run 0 '(identity nil)))))
+     (message "⚙️ Starting benchmark...")
+     (let ((result (benchmark-run ,@body)))
+       (let ((elapsed (nth 0 result))
+             (gc-runs (- gcs-done gc-count-before)))
+         (message "⏱ Time: %.6fs | 🧮 Conses: %d | ♻️ GC: %d | ⚡ GC time est: %.6fs"
+                  elapsed (nth 1 result) gc-runs gc-time-before)
+         (nth 2 result)))))  ;; return value
