@@ -1,5 +1,6 @@
 (neo/extension
- :name "Questionable Defaults"
+ :name "questionable-defaults"
+ :title "Questionable Defaults"
  :publisher "neo"
  :description "A set of defaults that the author find cool and others might find less cool.
 But that's cool."

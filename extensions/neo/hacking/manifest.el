@@ -1,5 +1,6 @@
 (neo/extension
- :name "Hacking on Neo"
+ :name "hacking"
+ :title "Hacking on Neo"
  :publisher "neo"
  :description "Utilities for hacking on Neo itself."
  :categories (neo)
