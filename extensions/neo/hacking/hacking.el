@@ -1,3 +1,4 @@
+;;; Utilities for hacking on Neo itself
 (defgroup neo/hacking nil
   "Settings related to live hacking and development utilities."
   :group 'neo
@@ -7,6 +8,23 @@
   "Root directory containing source Emacs Lisp files."
   :type 'directory
   :group 'neo/hacking)
+
+;;; TODO remove, it is here only for debugging loading
+(neo/use-package ace-window
+  :bind ("C-x o" . ace-window)
+;  :config
+;  (key-chord-define-global "''" 'ace-window) ; TODO: I'm so used to C-x o that this chord might be better for treemacs
+  :custom-face
+  ;; foreground should be computed from current theme, preserved the same way across restarts and
+  ;; restored.
+  ;; font is https://www.1001fonts.com/download/font/faster-one.regular.ttf
+  (aw-leading-char-face
+   ((t
+     (:inherit
+      ace-jump-face-foreground
+      :font "FasterOne"
+      :height 3.0
+      :foreground "dark gray")))))
 
 (defcustom neo/hacking-target-root (expand-file-name "~/neo-devel/")
   "Target root directory where files will be copied."
