@@ -1,7 +1,7 @@
 ;;; Utilities for hacking on Neo itself
 (defgroup neo/hacking nil
   "Settings related to live hacking and development utilities."
-  :group 'neo
+  :group 'neo-extensions
   :prefix "neo/hacking-")
 
 (defcustom neo/hacking-devex-root (expand-file-name "~/Projects/uno/devex/editors/emacs/")

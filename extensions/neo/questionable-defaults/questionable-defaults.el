@@ -2,7 +2,7 @@
 
 (defgroup neo-questionable-defaults nil
   "Customization options for the questionable defaults extension."
-  :group 'neo)
+  :group 'neo-extensions)
 
 (defcustom neo/nuke-echo-area-message t
   "If non-nil, disables the self-promoting message Emacs put in the echo area.")
