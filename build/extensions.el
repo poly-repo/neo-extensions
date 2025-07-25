@@ -98,6 +98,7 @@
 
 (setq base-dir "extensions/")
 (setq output-file "dist/neo-extensions.el")
+(setq digest-file "dist/neo-extensions.sha256")
 
 (defun read-binary-string-safe (file)
   "Return FILE contents as a raw string suitable for embedding in Emacs Lisp."
@@ -141,8 +142,22 @@
     ;; no encoding munging or newline conversion
     (write-region (point-min) (point-max) file nil 0)))
 
+(defun compute-sha256-of-file (file)
+  "Return SHA256 hex digest of FILE."
+  (with-temp-buffer
+    (insert-file-contents-literally file)
+    (secure-hash 'sha256 (current-buffer))))
+
+(defun write-digest-file (target source)
+  "Write DIGEST to TARGET, following the standard format."
+  (let ((digest (compute-sha256-of-file source)))
+    (with-temp-buffer
+      (insert digest)
+      (write-region (point-min) (point-max) target nil 0))))
+
 ;; Run the generation
 (make-directory (file-name-directory output-file) t)
 (write-extension-file (collect-extension-forms base-dir) output-file)
+(write-digest-file digest-file output-file)
 
 ;;; extensions.el ends here
