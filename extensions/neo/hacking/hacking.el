@@ -121,12 +121,13 @@ Kills any previous one using the neo PID file."
   (neo/hacking--kill-neo-instance)
   (let* ((proc (start-process
                 "neo-emacs" nil
-                (car command-line-args) "--init-directory" (expand-file-name "~/neo-devel")))
+                (car command-line-args) "--title" "neo-devel" "--init-directory" (expand-file-name "~/neo-devel")))
          (pid (process-id proc)))
     (when pid
       (with-temp-file neo/hacking-neo-pidfile
         (insert (number-to-string pid)))
-      (message "neo/hacking: launched new neo-devel Emacs (PID %s)" pid))))
+      (message "neo/hacking: launched new neo-devel Emacs (PID %s)" pid)))
+  (neo/emacs-switch-to-dev))
 
 
 ;;;--------------------------------------------------------------------------------------
@@ -145,3 +146,32 @@ Kills any previous one using the neo PID file."
          (message "⏱ Time: %.6fs | 🧮 Conses: %d | ♻️ GC: %d | ⚡ GC time est: %.6fs"
                   elapsed (nth 1 result) gc-runs gc-time-before)
          (nth 2 result)))))  ;; return value
+
+;;;--------------------------------------------------------------------------------------
+
+(defun neo/emacs-switch-to-dev ()
+  "Focus the Emacs window titled 'emacs-neo-devel', switching to the correct workspace."
+  (interactive)
+  (start-process "wmctrl-switch-dev" nil "wmctrl" "-x" "-a" "emacs-neo-devel.Emacs"))
+
+(defun neo/emacs-switch-to-main ()
+  "Focus the main Emacs window titled 'emacs', switching to the correct workspace."
+  (interactive)
+  (start-process "wmctrl-switch-main" nil "wmctrl" "-x" "-a" "emacs.Emacs"))
+
+;;; TODO see if something better can be done here. I tried many ways
+;;; (xprop, xdotool, wmctrl) and haven't got anything that works in
+;;; all cases. So for now we rely on the convention that devel emacsen
+;;; are launched with --name emacs-neo-devel
+(defun neo/emacs-instance-name-from-cmdline ()
+  "Return the value passed to Emacs via `--name`, by reading /proc/self/cmdline."
+  (with-temp-buffer
+    (insert-file-contents-literally "/proc/self/cmdline")
+    (let ((args (split-string (buffer-string) "\0" t)))
+      (when-let ((name-pos (cl-position "--name" args :test #'string=)))
+        (nth (1+ name-pos) args)))))
+
+(when (string= (neo/emacs-instance-name-from-cmdline) "emacs-neo-devel")
+  (global-set-key (kbd "<f1>") #'neo/emacs-switch-to-main))
+
+	   
