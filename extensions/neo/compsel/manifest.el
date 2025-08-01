@@ -1,12 +1,12 @@
 (neo/extension
- :name "UI"
- :title "UI settings, fonts, themes"
+ :name "compsel"
+ :title "Completions and Selections"
  :publisher "neo"
- :description "Turning Emacs from ‘what is this?’ to ‘whoa, nice!"
+ :description "The right pick, every time."
  :categories (neo)
- :keywords (ui appearance)
+ :keywords (completions selections)
  :requires ()
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"
-	      :path "extensions/uno/ui"))
+	      :path "extensions/uno/compsel"))
