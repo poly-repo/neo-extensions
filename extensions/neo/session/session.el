@@ -26,5 +26,35 @@
   (desktop-path `(,neo/desktop-path))
   (desktop-restore-eager 5)
   (desktop-load-locked-desktop 'check-pid)
-  (desktop-save-buffer-predicate 'neo/desktop-exclude-gpg)
+  ;; we don't want to save encrypted files as they will force us to
+  ;; give a passphrase every time Emacs starts.
+  (desktop-files-not-to-save
+   (concat
+    ;; Exclude TRAMP/Ange-FTP buffers (e.g. /ssh:user@host:/path or (ftp))
+    "\\(\\`/[^/:]+:[^/]*\\|"          ; TRAMP and Ange-FTP style paths
+    "(ftp)\\'\\|"                     ; FTP-based buffers
+    ;; Exclude encrypted files
+    "\\.gpg\\'\\)"                    ; GPG encrypted files
+    ))
   )
+
+;; This is recommended in the vertico documentation
+;; TODO: surface this fact in the configuration wizards
+(neo/use-package savehist
+  :ensure nil				; built-in
+  :init
+  (savehist-mode))
+
+;; TODO don't really remember what this was about
+(defun neo/sync-neo ()
+  (message "We try to sync Emacs before restarting"))
+
+(defun neo/restart-emacs-or-exit (arg)
+  (interactive "p")
+  (if (>= arg 16)
+      (neo/sync-neo))
+  (if (>= arg 4)
+      (restart-emacs)
+    (save-buffers-kill-emacs)))
+
+(global-set-key (kbd "C-x C-c") 'neo/restart-emacs-or-exit)
