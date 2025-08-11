@@ -4,7 +4,7 @@
   :group 'neo-extensions
   :prefix "neo/hacking-")
 
-(defcustom neo/hacking-devex-root (expand-file-name "~/Projects/uno/devex/editors/emacs/")
+(defcustom neo/hacking-devex-root (expand-file-name "~/uno/devex/editors/emacs/")
   "Root directory containing source Emacs Lisp files."
   :type 'directory
   :group 'neo/hacking)
