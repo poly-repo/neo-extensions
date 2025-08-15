@@ -1,3 +1,6 @@
+;;; TODO: requires:
+;;; sudo apt install libenchant-2-dev
+
 (neo/use-package jinx
   :hook (((text-mode prog-mode) . jinx-mode))
   :bind (("C-;" . jinx-correct))
