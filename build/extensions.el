@@ -96,7 +96,7 @@ Embed as :emblem-base64 to keep output parseable in future runs."
           (let ((fn (buffer-substring-no-properties
                      (point) (progn (search-forward "\0") (1- (point))))))
             (push fn files)))
-        (nreverse files)))))
+        (nreverse files))))
 
 (defun subtree-sha256 (subdir)
   "Stable SHA256 over tracked files under SUBDIR at current checkout."
