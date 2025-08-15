@@ -98,7 +98,7 @@
           (let ((fn (buffer-substring-no-properties
                      (point) (progn (search-forward "\0") (1- (point))))))
             (push fn files)))
-        (nreverse files)))))
+        (nreverse files))))
 
 (defun neo--subtree-sha256 (subdir)
   "Stable SHA256 over tracked files under SUBDIR (sorted; raw bytes + framing)."
