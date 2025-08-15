@@ -22,7 +22,8 @@
    ((t
      (:inherit
       ace-jump-face-foreground
-      :font "FasterOne"
+;; TODO: when a font doesn't exist, everything else seems to fail
+;;      :font "FasterOne"
       :height 3.0
       :foreground "dark gray")))))
 
@@ -171,7 +172,47 @@ Kills any previous one using the neo PID file."
       (when-let ((name-pos (cl-position "--name" args :test #'string=)))
         (nth (1+ name-pos) args)))))
 
-(when (string= (neo/emacs-instance-name-from-cmdline) "emacs-neo-devel")
-  (global-set-key (kbd "<f1>") #'neo/emacs-switch-to-main))
+(defvar neo/hacking-neo-pidfile
+  (expand-file-name "neo-emacs.pid" (or (getenv "XDG_RUNTIME_DIR") "/tmp"))
+  "Path to the PID file used to track the neo-devel Emacs instance.")
+
+(defun neo/hacking--emacs-process-alive-p (pid)
+  "Return non-nil if PID belongs to a live Emacs process with neo-devel in its cmdline."
+  (when (and pid (integerp pid) (> pid 0))
+    (let ((cmdline-file (format "/proc/%s/cmdline" pid)))
+      (and (file-exists-p cmdline-file)
+           (string-match-p "neo-devel" (with-temp-buffer
+                                         (insert-file-contents cmdline-file)
+                                         (buffer-string)))))))
+
+(defun neo/hacking--kill-neo-instance ()
+  "Kill any running Emacs associated with neo-devel config."
+  (when (file-exists-p neo/hacking-neo-pidfile)
+    (let ((pid (ignore-errors
+                 (string-to-number
+                  (with-temp-buffer
+                    (insert-file-contents neo/hacking-neo-pidfile)
+                    (buffer-string))))))
+      (when (neo/hacking--emacs-process-alive-p pid)
+        (ignore-errors (signal-process pid 'SIGTERM))
+        (message "neo/hacking: killed existing neo-devel Emacs (PID %s)" pid)))))
+
+(defun neo/hacking-launch-neo-emacs ()
+  "Launch a new Emacs instance with the neo-devel config.
+Kills any previous one using the neo PID file."
+  (interactive)
+  (neo/hacking--kill-neo-instance)
+  (let* ((proc (start-process
+                "neo-emacs-devel" nil
+                (car command-line-args) "--name" "emacs-neo-devel" "--init-directory" (expand-file-name "~/neo-devel")))
+         (pid (process-id proc)))
+    (when pid
+      (with-temp-file neo/hacking-neo-pidfile
+        (insert (number-to-string pid)))
+      (message "neo/hacking: launched new neo-devel Emacs (PID %s)" pid))))
+
+(if (string= (neo/emacs-instance-name-from-cmdline) "emacs-neo-devel")
+    (global-set-key (kbd "<f1>") #'neo/emacs-switch-to-main)
+  (global-set-key (kbd "<f1>") #'neo/hacking-launch-neo-emacs))
 
 	   
