@@ -10,4 +10,4 @@ But that's cool."
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"
-	      :path "extensions/uno/questionable_defaults"))
+	      :path "extensions/neo/questionable_defaults"))
