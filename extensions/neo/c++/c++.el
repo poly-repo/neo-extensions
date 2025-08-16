@@ -1,3 +1,4 @@
+;;; just a trivial change to check caching
 (defun neo--jinx-include-p (start)
   (save-excursion
     (goto-char start)
