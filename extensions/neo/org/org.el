@@ -3,10 +3,10 @@
 ;;; in the :config section of the org package.
 ;;; TODO: there must be a better way.
 ;;; And this doesn't seem to work, we have this for now:
-(add-hook 'after-init-hook (lambda ()
-                             (set-face-attribute 'org-table nil :inherit 'fixed-pitch)
-                             (set-face-attribute 'org-block nil :inherit 'fixed-pitch))
-                             100)
+;; (add-hook 'after-init-hook (lambda ()
+;;                              (set-face-attribute 'org-table nil :inherit 'fixed-pitch)
+;;                              (set-face-attribute 'org-block nil :inherit 'fixed-pitch))
+;;                              100)
 
 
 ;; (defun org-protocol-store-link (o)
