@@ -9,4 +9,4 @@
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"
-	      :path "extensions/uno/ui"))
+	      :path "extensions/neo/ui"))
