@@ -108,12 +108,25 @@ and REVISION is a string (Git tag or SHA) or nil (to use the default branch)."
 
 (neo/use-package flymake)
 
+(declare-function eglot-managed-p "eglot")
+(declare-function eglot-format-buffer "eglot")
+
+
+(defun neo/eglot-format-on-save ()
+  "Enable LSP formatting on save for the current buffer when Eglot manages it."
+  (when (and (boundp 'eglot-managed-mode)
+             eglot-managed-mode
+             (fboundp 'eglot-format-buffer))
+    (add-hook 'before-save-hook #'eglot-format-buffer nil :local)))
+
 (neo/use-package eglot
   :hook
   ((c++-mode c++-ts-mode) . eglot-ensure)
-  (before-save . (lambda ()
-		   (when (eglot-managed-p)
-                     (eglot-format-buffer)))))
+  (eglot-managed-mode . neo/eglot-format-on-save))
+
+  ;; (before-save . (lambda ()
+  ;; 		   (when (eglot-managed-p)
+  ;;                    (eglot-format-buffer)))))
 
 
 (defun neo/eglot-organize-includes ()
