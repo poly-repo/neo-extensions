@@ -1,3 +1,5 @@
+(neo/use-package transient)
+
 (neo/use-package magit
   :config
   (setq magit-save-repository-buffers 'dontask)
