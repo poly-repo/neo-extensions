@@ -119,9 +119,12 @@
       (when (file-directory-p dir1)
         (dolist (dir2 (directory-files dir1 t "^[^.]"))
           (when (file-directory-p dir2)
+	    (message "Found dir %s" dir2)
+	    (message "Result length: %d" (length results))
             (let* ((manifest-file (expand-file-name "manifest.el" dir2))
                    (emblem-file (expand-file-name "emblem64.png" dir2)))
               (when (file-exists-p manifest-file)
+		(message "Manifest found")
                 (let* ((form (load-manifest manifest-file))
                        (form+emblem
                         (if (file-exists-p emblem-file)
