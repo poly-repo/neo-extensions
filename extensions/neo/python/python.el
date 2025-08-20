@@ -1,1 +1,1 @@
-(neo/eglot-set-server 'python-base-mode '("pyright-langserver" "--stdio"))
+(neo/eglot-set-server '(python-mode python-ts-mode) '("pyright-langserver" "--stdio"))
