@@ -31,6 +31,7 @@ else ~/.aider.conf.yml."
   :init
   ;; Always launch with your project’s config file
   (setq aider-args (neo/aider-config-args))
+;  (setq aider-args nil)
 
   ;; Optional: start in the project root (requires built-in 'project)
   (defun neo/aider ()
