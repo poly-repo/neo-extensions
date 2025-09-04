@@ -161,14 +161,15 @@ and REVISION is a string (Git tag or SHA) or nil (to use the default branch)."
   ;; (let* ((project-root (or (locate-dominating-file default-directory "WORKSPACE.bazel")
   ;;                          (locate-dominating-file default-directory "MODULE.bazel"))))
   ;; TODO compute project-root from project.el
-  (let ((project-root "~/Projects/uno"))
+  (let* ((project-root "~/Projects/uno")
+	 (bazel-bin (format "%s/tools/bazel" project-root)))
     (unless project-root
       (error "Could not find WORKSPACE.bazel or MODULE.bazel"))
     (let ((default-directory project-root))
-      (let* ((build-result (shell-command-to-string "bazel build //:clangd 2>&1"))
+      (let* ((build-result (shell-command-to-string (format "%s build //:clangd 2>&1" bazel-bin)))
              (_ (unless (string-match "Build completed successfully" build-result)
                   (error "Failed to build //:clangd: %s" build-result)))
-             (bin-dir (string-trim (shell-command-to-string "bazel info bazel-bin  2>/dev/null")))
+             (bin-dir (string-trim (shell-command-to-string (format "%s info bazel-bin  2>/dev/null" bazel-bin))))
              (clangd-path (expand-file-name "clangd" bin-dir)))
         (unless (file-executable-p clangd-path)
           (error "clangd not found at expected location: %s" clangd-path))
