@@ -114,10 +114,12 @@ and REVISION is a string (Git tag or SHA) or nil (to use the default branch)."
 
 (defun neo/eglot-format-on-save ()
   "Enable LSP formatting on save for the current buffer when Eglot manages it."
-  (when (and (boundp 'eglot-managed-mode)
-             eglot-managed-mode
+  (when (and (boundp 'eglot--managed-mode)
+             eglot--managed-mode
              (fboundp 'eglot-format-buffer))
     (add-hook 'before-save-hook #'eglot-format-buffer nil :local)))
+
+;(add-hook 'before-save-hook #'eglot-format-buffer)
 
 (neo/use-package eglot
   :hook
