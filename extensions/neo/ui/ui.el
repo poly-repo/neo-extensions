@@ -71,8 +71,8 @@ Optional FONT-NAME can be used to compute based on a specific font family."
     font-height))
 
 (set-face-attribute 'default nil
-                        :family "Fira Code"
-                        :height (neo/font-height-to-fit-lines 80 "Fira Code"))
+                        :family "Noto Mono"
+                        :height (neo/font-height-to-fit-lines 80 "Noto Mono"))
 
 (defun neo/save-initial-frame-properties ()
   "Save the current frame size, font, and default face background/foreground
