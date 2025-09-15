@@ -162,13 +162,13 @@ to a file that can be loaded from early-init.el."
      (presentation
       :default-height 2.0)
      (t
-      :default-family "Fira Code"
+      :default-family "Noto Mono"
       :default-height (lines 80)
       :default-weight regular
       :default-slant normal
       :default-width normal
 
-      :fixed-pitch-family "Fira Code"
+      :fixed-pitch-family "Noto Mono"
       :fixed-pitch-weight nil
       :fixed-pitch-slant nil
       :fixed-pitch-width nil
@@ -180,7 +180,7 @@ to a file that can be loaded from early-init.el."
       :fixed-pitch-serif-width nil
       :fixed-pitch-serif-height 1.0
 
-      :variable-pitch-family "Fira Sans"
+      :variable-pitch-family "Noto Sans"
       :variable-pitch-weight nil
       :variable-pitch-slant nil
       :variable-pitch-width nil
