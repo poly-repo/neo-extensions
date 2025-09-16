@@ -70,9 +70,9 @@ Optional FONT-NAME can be used to compute based on a specific font family."
       (message "Calculated font height: %d (for %d lines, %d px line height)" font-height lines line-height))
     font-height))
 
-(set-face-attribute 'default nil
-                        :family "Noto Mono"
-                        :height (neo/font-height-to-fit-lines 80 "Noto Mono"))
+;; (set-face-attribute 'default nil
+;;                         :family "Noto Mono"
+;;                         :height (neo/font-height-to-fit-lines 80 "Noto Mono"))
 
 (defun neo/save-initial-frame-properties ()
   "Save the current frame size, font, and default face background/foreground
@@ -371,6 +371,22 @@ This does not affect buffer contents, only removes text properties from undo his
 (add-hook 'neo/after-theme-load-hook #'neo/save-initial-frame-properties)
 
 (neo/use-package ef-themes)
+(neo/use-package doom-themes
+  :custom
+  ;; Global settings (defaults)
+  (doom-themes-enable-bold t)   ; if nil, bold is universally disabled
+  (doom-themes-enable-italic t) ; if nil, italics is universally disabled
+  ;; for treemacs users
+  (doom-themes-treemacs-theme "doom-atom") ; use "doom-colors" for less minimal icon theme
+  :config
+  ;; Enable flashing mode-line on errors
+  (doom-themes-visual-bell-config)
+  ;; Enable custom neotree theme (nerd-icons must be installed!)
+  (doom-themes-neotree-config)
+  ;; or for treemacs users
+  (doom-themes-treemacs-config)
+  ;; Corrects (and improves) org-mode's native fontification.
+  (doom-themes-org-config))
 
 (defvar neo/current-theme 'ef-winter
   "Theme applied")
@@ -400,3 +416,14 @@ This does not affect buffer contents, only removes text properties from undo his
  (lambda () (neo/load-theme-internal neo/current-theme)))
 
 
+(defun neo--apply-theme-to-frame (frame theme-name)
+  "Applies a theme's face settings to a specific frame."
+  (let ((theme-settings (get theme-name 'theme-settings)))
+    (pcase-dolist (`(,type ,face _ ,val) theme-settings)
+      (when (and (eq type 'theme-face) val)
+        (let ((face-attr (face-spec-choose val frame 0)))
+          (when face-attr
+            (face-spec-set-2 face frame face-attr)))))))
+
+;; To apply a theme (e.g., 'modus-vivendi') to the current frame:
+(neo--apply-theme-to-frame (selected-frame) 'modus-vivendi)
