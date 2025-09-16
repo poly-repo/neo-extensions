@@ -11,7 +11,7 @@
     (unless (file-directory-p neo/desktop-path)
       (make-directory neo/desktop-path t)))
   :config
-  ;; TODO: neo/use-package could support dept in :hook
+  ;; TODO: neo/use-package could support depth in :hook
   (add-hook 'after-init-hook 'neo/desktop-restore 99) ; :hook doesn't support depth
  
   :custom
