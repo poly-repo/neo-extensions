@@ -216,3 +216,28 @@ Kills any previous one using the neo PID file."
   (global-set-key (kbd "<f1>") #'neo/hacking-launch-neo-emacs))
 
 	   
+(defun neo/refresh-extensions (&optional prefix)
+  "Refresh extensions by running the local-digest script.
+
+If called with a numeric PREFIX argument (e.g. `C-u`), restart Emacs
+after the script successfully finishes.
+
+Interactive usage:
+ - `M-x neo/refresh-extensions`           => just run the script
+ - `C-u M-x neo/refresh-extensions`       => run the script, then restart Emacs on success"
+  (interactive "P")
+  (let ((local-digest "/home/mav/Projects/uno/devex/editors/emacs/scripts/local-digest"))
+    (let ((exit-code (call-process local-digest nil "*Shell Script Output*" t)))
+      (if (zerop exit-code)
+          (progn
+            (message "✅ Local extension digest created")
+            (when (and prefix
+                       (or (numberp prefix) (consp prefix))) ; numeric/raw prefix detection
+              ;; Save buffers before restarting
+              (when (y-or-n-p "Restart Emacs now? ")
+		;; Create lock file so that we don't overwrite local extensions
+		(with-temp-file neo/fetch-lock-file
+		  (insert "skip next fetch"))
+                (save-some-buffers t)
+		(restart-emacs))))
+        (message "❌ Local extension digest creation failed [exit code %d]" exit-code)))))
