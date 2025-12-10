@@ -4,8 +4,8 @@
   :config
   (setq magit-save-repository-buffers 'dontask)
   (key-chord-define-global "//" 'magit-status)
-  ;; (transient-append-suffix 'magit-branch "C"
-  ;;   '("K" "delete all merged" neo/delete-merged-branches))
+  (transient-append-suffix 'magit-branch "C"
+    '("K" "delete all merged" neo/delete-merged-branches))
   :custom
   (magit-list-refs-sortby "-creatordate") ; doesn't seem to have any effect
   (magit-refs-show-commit-count 'branch) ; may be too expsive
@@ -15,8 +15,14 @@
   (project-switch-commands 'magit-project-status) ; TODO replace with a function that does more (switch to perspective if one available, show a readme o.org file if available, otherwise magit status
   (magit-status-show-untracked-files 'all)
   (magit-section-initial-visibility-alist '(
-					    (stashes . show)
-					    (untracked . show)))
+					    (worktrees . show)
+					    (unstaged . show)
+					    (untracked . show)
+					    (unpushed . show)
+					    (stashes . hide)
+					    (commit . hide)
+					    (branches . hide)))
+  (magit-section-cache-visibility t)
   
   :init
   (with-eval-after-load 'project
@@ -26,8 +32,10 @@
   ;; instead of gambling with add-hook. There's magit-add-section-hook that might be better.
   ;; TODO: find the right place for magit-insert-branch-description (might also be
   ;; useful in magit-refs-sections-hook)
+  ;; NOTE: apparently magit-add-section-hook is there to solve the ordering problem. TODO: investigate.
   (setq magit-status-sections-hook
-        '(magit-insert-status-headers
+        '(magit-insert-worktrees
+	  magit-insert-status-headers
           magit-insert-merge-log
           magit-insert-rebase-sequence
           magit-insert-am-sequence
@@ -45,13 +53,69 @@
           magit-insert-unpulled-from-upstream
           magit-insert-modules
           magit-insert-local-branches))
-  :hook
-  (after-save 'magit-after-save-refresh-status)
 
   ;; TODO <f12> on laptop is problematic as one would probably have media keys
   :bind
   ("<f12> s" . 'magit-status)
   ("<f12> g" . 'counsel-git-grep))
+
+(with-eval-after-load 'magit
+  ;; Refresh the repo status buffer whenever you save a file in that repo.
+  (add-hook 'after-save-hook #'magit-after-save-refresh-status t))
+
+(require 'neo-better-git-brancher)
+
+;; (defun neo/magit-branches-safe-to-delete ()
+;;   "Return a list of local branches that can be safely deleted.
+;; A branch is safe to delete if all its commits are in main or the merge base."
+;;   (let ((branches (magit-list-local-branch-names))
+;;         (safe-branches '()))
+;;     (dolist (branch branches)
+;;       (unless (string= branch "main")
+;;         (when (or (neo/magit-cherry-check-safe branch)
+;;                   (neo/magit-no-diff-with-main branch))
+;;           (push branch safe-branches))))
+;;       safe-branches))
+
+;; (defun neo/magit-no-diff-with-main (branch)
+;;   "Check if BRANCH has no diffs with main. Return t if there are no diffs."
+;;   (let ((diff-output (magit-git-lines "diff" (concat branch "...main"))))
+;;     (not diff-output)))  ; Return t if diff-output is nil, meaning no diffs.
+
+;; (defun neo/magit-cherry-check-safe (branch)
+;;   "Check if BRANCH has any commits not in the merge base with main.
+;; Return t if the branch is safe to delete (i.e., no commits are missing from main)."
+;;   (let* ((merge-base (magit-git-string "merge-base" "main" branch))
+;;          (branch-tree (magit-git-string "rev-parse" (concat branch "^{tree}")))
+;;          (commit-id (magit-git-string "commit-tree" branch-tree "-p" merge-base "-m" "_"))
+;;          (cherry-output (magit-git-lines "cherry" "main" commit-id)))
+;;     (seq-every-p (lambda (line) (string-prefix-p "-" line)) cherry-output)))
+
+(defun neo/delete-merged-branches ()
+  "Delete branches that are safe to delete, after a silent fetch."
+  (interactive)
+  ;; fetch all remotes quietly to update origin/* refs
+  (with-temp-buffer
+    (magit-git-insert "fetch" "--all" "--prune" "--quiet"))
+  ;; compute deletable branches
+  (let ((branches-to-delete (neo/magit-branches-safe-to-delete-configurable)))
+    (if branches-to-delete
+        (if (yes-or-no-p (concat "Delete branches? ["
+                                 (mapconcat 'identity branches-to-delete ", ") "]"))
+            (magit-branch-delete branches-to-delete t))
+      (message "Nothing to delete"))))
+
+;; (defun neo/delete-merged-branches ()
+;;   (interactive)
+;;   (magit-fetch-all-prune)
+;;   (let ((branches-to-delete (neo/magit-branches-safe-to-delete-configurable)))
+;;     (if branches-to-delete
+;;         (if (yes-or-no-p (concat "Delete branches? ["
+;;                                  (mapconcat 'identity branches-to-delete ", ") "]"))
+;;             (magit-branch-delete branches-to-delete t))
+;;       (message "Nothing to delete"))))
+
+
 
 ;;; TODO find a good binding for forge-post-submit otherwise markdown mode takes over C-c C-c
 ;;; maybe C-x #
