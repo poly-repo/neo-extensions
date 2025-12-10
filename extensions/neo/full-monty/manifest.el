@@ -7,6 +7,7 @@
  :keywords (neo)
  :requires (
 	    "neo:questionable-defaults"
+	    "neo:better-git"
 	    )
  :repository (
 	      :type "git"
