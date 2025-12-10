@@ -127,22 +127,6 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   (key-chord-define-global ",," 'sort-lines)) ; not to useful these
 					; days of autoformat
 
-;; probably need to ensure it is run early
-(neo/use-package no-littering
-  :init
-  ;; We define these in early-init.el so everything can be kept out of the way
-  ;; in particular elpaca and eln-cache
-  ;(setq no-littering-etc-directory (expand-file-name ".litter/config" user-emacs-directory))
-  ;(setq no-littering-var-directory (expand-file-name ".litter/data" user-emacs-directory))
-  (setq custom-file
-        (expand-file-name "custom.el" no-littering-var-directory))
-  :config
-  (no-littering-theme-backups)
-  (setq auto-save-file-name-transforms
-        `((".*"
-           ,(no-littering-expand-var-file-name "auto-save/")
-           t))))
-
 (neo/use-package which-key
   :custom
   (which-key-add-column-padding 2)
