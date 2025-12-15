@@ -3,7 +3,7 @@
 set -euo pipefail
 
 TEMPLATE_DIR="${TEMPLATE_DIR:-devex/editors/emacs/extensions/templates/extension}"
-TARGET_DIR="${TARGET_DIR:-/tmp/neo}"               # e.g., target directory for generated files
+TARGET_DIR="${TARGET_DIR:-devex/editors/emacs/extensions/extensions/neo}"
 
 echo "TEMPLATE_DIR: ${TEMPLATE_DIR}"
 echo "TARGET_DIR: ${TARGET_DIR}"
