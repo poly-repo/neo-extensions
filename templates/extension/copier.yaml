@@ -1,0 +1,39 @@
+extension_name:
+  type: str
+  help: "Extension identifier (lowercase, hyphen-separated, e.g. my-extension)"
+
+extension_title:
+  type: str
+  help: "Human-readable title for the extension"
+
+extension_tagline:
+  type: str
+  help: "Short tagline or one-line summary"
+
+extension_description:
+  type: str
+  multiline: true
+  help: "Longer description (one or two sentences)"
+  default: ""
+  
+extension_keywords:
+  type: str
+  multiselect: true
+  help: "Keywords describing the extension’s domain or purpose"
+  choices:
+    - convenience
+    - tools
+    - editing
+    - programming
+    - test
+    - lisp
+    - python
+    - c++
+    - go
+    - project
+    - mail
+
+extension_requires:
+  type: yaml
+  help: "List of required extensions (YAML list, single line, starts with '-', <ENTER> for none)"
+  default: ~
