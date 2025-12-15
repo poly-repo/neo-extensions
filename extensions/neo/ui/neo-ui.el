@@ -4,5 +4,9 @@
 (require 'neo-ui-treemacs)
 (require 'neo-ui-modeline)
 
+(neo/use-package winum
+  :config
+  (winum-mode 1))
+
 
 
