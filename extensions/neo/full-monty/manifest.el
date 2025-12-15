@@ -9,6 +9,7 @@
 	    "neo:questionable-defaults"
 	    "neo:ui"
 	    "neo:better-git"
+	    "neo:projects"
 	    )
  :repository (
 	      :type "git"
