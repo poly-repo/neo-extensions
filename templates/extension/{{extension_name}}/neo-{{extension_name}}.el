@@ -1,0 +1,5 @@
+;;; This is {{extension-name}}, a NEO extension
+;;;
+;;; {{extension_title}}
+
+;;; Note, no (provide 'neo-{{extension-name}}) here, extensions are loaded not required.

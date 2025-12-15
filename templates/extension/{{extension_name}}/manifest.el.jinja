@@ -1,0 +1,13 @@
+(neo/extension
+ :name "{{extension_name}}"
+ :title "{{extension_title}}"
+ :publisher "neo"
+ :description "{{extension_tagline}}\n\n{{extension_description}}"
+ :categories (neo) ; not sure what the intention for this was
+ :keywords ({% for k in extension_keywords %}{{ k }}{% if not loop.last %} {% endif %}{% endfor %})
+{% set requires = extension_requires or [] %}
+ :requires ({% for r in requires %}{{ r }}{% if not loop.last %} {% endif %}{% endfor %})
+ :repository (
+	      :type "git"
+	      :url "https://github.com/poly-repo/neo-extensions.git"
+	      :path "extensions/neo/{{extension_name}}"))

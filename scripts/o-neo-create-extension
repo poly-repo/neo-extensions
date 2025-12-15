@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Ehi, Emacs, this is -*- shell-script -*-
+set -euo pipefail
+
+TEMPLATE_DIR="${TEMPLATE_DIR:-devex/editors/emacs/extensions/templates/extension}"
+TARGET_DIR="${TARGET_DIR:-/tmp/neo}"               # e.g., target directory for generated files
+
+echo "TEMPLATE_DIR: ${TEMPLATE_DIR}"
+echo "TARGET_DIR: ${TARGET_DIR}"
+
+check_git_clean() {
+    if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "Error: Not inside a Git repository or worktree." >&2
+        exit 1
+    fi
+
+    if ! git diff --quiet || ! git diff --cached --quiet || [ -n "$(git ls-files --others --exclude-standard)" ]; then
+        echo "Error: Git workspace is not clean." >&2
+        echo "Please commit or stash changes before running this script." >&2
+        exit 1
+    fi
+}
+
+echo "Checking Git workspace..."
+check_git_clean
+echo "Git workspace is clean."
+
+echo "Running Copier..."
+copier copy --trust  "${TEMPLATE_DIR}" "${TARGET_DIR}"
+
+echo "Done. Generated files in ${TARGET_DIR}."
