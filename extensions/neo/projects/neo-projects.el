@@ -1,116 +1,3 @@
-;; (defun neo/project-try-bazel (dir)
-;;   "Return a Bazel project instance if DIR contains a MODULE.bazel file.
-;; Otherwise return nil. DIR is expected to be an absolute directory name."
-;;   (let* ((root (locate-dominating-file dir "MODULE.bazel")))
-;;     (when root
-;;       (cons 'neo-bazel-project root))))
-
-;; (cl-defmethod project-root ((project (head neo-bazel-project)))
-;;   (cdr project))
-
-;; (neo/use-package project
-;;   :builtin
-;;   :custom
-;;   (project-switch-commands '((project-find-file "Find file" "f")
-;;                              (project-find-dir "Find dir" "d")
-;;                              (project-dired "Dired" "D")
-;;                              (consult-ripgrep "ripgrep" "g")
-;;                              (magit-project-status "Magit" "m")))
-;;   :init
-;;   (add-hook 'project-find-functions #'neo/project-try-bazel))
-
-
-(neo/use-package perspective
-  :bind
-  ("C-x C-b" . persp-list-buffers)         ; or use a nicer switcher, see below
-  ("C-x b" . persp-switch-to-buffer*)
-  ("C-x k" . persp-kill-buffer*)
-  :custom
-  (persp-mode-prefix-key (kbd "C-c C-p"))  ; pick your own prefix key here
-  (persp-modestring-dividers '("⟪" "⟫" "•"))
-  (persp-modestring-short t)
-  :init
-  (persp-mode))
-
-(defun neo/persp-projectile-init-at-startup ()
-  "Initialize persp-projectile from Projectile's current project."
-  (when-let ((root (projectile-project-root)))
-    (let ((persp-name (funcall projectile-project-name-function root)))
-      (persp-switch persp-name))))
-
-(neo/use-package persp-projectile
-  :after (projectile perspective)
-  :config
-  (projectile-discover-projects-in-search-path)
-;;  :hook
-;;  (emacs-startup . #'neo/persp-projectile-init-at-startup)
-)
-
-;; NOTE: this cannot easily go inside a use package, would trigger
-;; loading of persp-projectile-mode that is not defined.
-(add-hook 'emacs-startup-hook
-          #'neo/persp-projectile-init-at-startup)
-;; TODO probably too muxh, we only need the treemacs part
-(add-hook 'projectile-after-switch-project-hook #'neo/persp-projectile-init-at-startup)
-
-(defvar neo/project-last-switched-times (make-hash-table :test 'equal)
-  "Hash table mapping project root -> last switch time (float seconds since epoch).")
-
-(defcustom neo/projectile-notes-open-threshold
-  ;; default: 24 hours = 24 * 60 * 60
-  (* 24 60 60)
-  "Number of seconds that must have passed since the last switch to a project
-before opening that project's .personal-notes.org file again.
-Set to nil or 0 to always open the notes file when switching."
-  :type '(choice (const :tag "Always" 0)
-                 (number :tag "Seconds"))
-  :group 'neo)
-
-(defun neo--project-root-or-default ()
-  "Return the projectile project root if available, otherwise `default-directory'."
-  (if (fboundp 'projectile-project-root)
-      (or (projectile-project-root) default-directory)
-    default-directory))
-
-(defun neo--should-open-notes-p (project-root)
-  "Return non-nil if `.personal-notes.org' should be opened for PROJECT-ROOT.
-Decision is based on `neo/project-last-switched-times' and
-`neo/projectile-notes-open-threshold'."
-  (let* ((key project-root)
-         (last (gethash key neo/project-last-switched-times))
-         (threshold neo/projectile-notes-open-threshold))
-    (cond
-     ;; user set threshold to 0 or nil: always open
-     ((not threshold) t)
-     ((<= (or threshold 0) 0) t)
-     ;; if we've never switched to this project before, open it
-     ((not last) t)
-     ;; otherwise open only if enough time has passed
-     (t
-      (let ((elapsed (float-time (time-subtract (current-time) (seconds-to-time last)))))
-        (>= elapsed threshold))))))
-
-(defun neo/projectile-switch-project-action ()
-  "Switch to a projectile project and optionally open that project's .personal-notes.org.
-
-.opens .personal-notes.org from the project root only if the project hasn't
-been switched to in more than `neo/projectile-notes-open-threshold' seconds."
-  (interactive)
-  (message "AYE")
-  (ignore-errors
-    (let* ((project-root (neo--project-root-or-default))
-           (notes-file-name ".personal-notes.org")
-           (notes-path (expand-file-name notes-file-name project-root)))
-      (when (and (neo--should-open-notes-p project-root)
-                 (file-exists-p notes-path))
-        ;; Open notes in other window to avoid stealing current buffer
-        (find-file-other-window notes-path))
-      ;; record that we've switched to this project now
-      (puthash project-root (float-time (current-time)) neo/project-last-switched-times)))
-  ;; now run magit if the project is a git repo
-  (when (vc-git-responsible-p default-directory)
-    (magit-status)))
-
 (defun neo/project-name-function (project)
   (let ((name (file-name-nondirectory
 	       (directory-file-name project))))
@@ -130,46 +17,174 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
                      root))
                   projectile-known-projects))
          (choice (completing-read "Switch to project: " alist nil t)))
-    (projectile-persp-switch-project (cdr (assoc choice alist)))))
-    ;; (projectile-switch-project-by-name
-    ;;  (cdr (assoc choice alist)))))
+    (message "(projectile-switch-project %s)" (expand-file-name (cdr (assoc choice alist))))
+    (projectile-switch-project (expand-file-name (cdr (assoc choice alist))))))
 
-;; (define-key projectile-mode-map
-;;   (kbd "C-c p p")
-;;   #'neo/projectile-switch-project-by-name)
+(defun neo/projectile-switch-project-by-name ()
+  "Switch to a Projectile project using short names."
+  (interactive)
+  (let* ((alist
+          (mapcar (lambda (root)
+                    (cons
+                     (funcall projectile-project-name-function root)
+                     root))
+                  projectile-known-projects))
+         ;; list of names for completing-read
+         (names (mapcar #'car alist))
+         (choice (completing-read "Switch to project: " names nil t))
+         (root (cdr (assoc choice alist))))
+    (unless root
+      (error "Project not found!"))
+    (message "(projectile-switch-project %s)" root)
+    (projectile-switch-project-by-name root)))
 
-;; TODO: make persp-* change project obey projectile-auto-discover (advise them here?)
-(use-package projectile
+(defvar neo/project-last-switched-times (make-hash-table :test 'equal)
+  "Hash table mapping project root -> last switch time (float seconds since epoch).")
+
+(defcustom neo/projectile-notes-open-threshold
+  ;; default: 24 hours = 24 * 60 * 60
+  30 ;(* 24 60 60)
+  "Number of seconds that must have passed since the last switch to a project
+before opening that project's .personal-notes.org file again.
+Set to nil or 0 to always open the notes file when switching."
+  :type '(choice (const :tag "Always" 0)
+                 (number :tag "Seconds"))
+  :group 'neo)
+
+(defun neo--should-open-notes-p (project-root)
+  "Return non-nil if `.personal-notes.org' should be opened for PROJECT-ROOT.
+Decision is based on `neo/project-last-switched-times' and
+`neo/projectile-notes-open-threshold'."
+  (let* ((key project-root)
+         (last (gethash key neo/project-last-switched-times))
+         (threshold neo/projectile-notes-open-threshold))
+    (cond
+     ;; user set threshold to 0 or nil: always open
+     ((not threshold) t)
+     ((<= (or threshold 0) 0) t)
+     ;; if we've never switched to this project before, open it
+     ((not last) t)
+     ;; otherwise open only if enough time has passed
+     (t
+      (let ((elapsed (float-time (time-subtract (current-time) (seconds-to-time last)))))
+        (>= elapsed threshold))))))
+
+(require 'vc-git)
+
+(defun neo/bury-other-project-buffers ()
+  "Bury all buffers not belonging to the current Projectile project."
+  (interactive)
+  (let ((current-project (projectile-project-root)))
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (unless (or (not (buffer-file-name buf)) ; ignore non-file buffers
+                    (string-prefix-p current-project (file-truename (buffer-file-name buf))))
+          (bury-buffer buf))))))
+
+(defun neo/projectile-switch-project-action ()
+  "Switch to a projectile project and optionally open that project's .personal-notes.org.
+
+.opens .personal-notes.org from the project root only if the project hasn't
+been switched to in more than `neo/projectile-notes-open-threshold' seconds."
+  (interactive)
+    (let* ((project-root (projectile-project-root))
+           (notes-file-name ".personal-notes.org")
+           (notes-path (expand-file-name notes-file-name project-root)))
+      (neo/projectile-update-treemacs)
+      (neo/bury-other-project-buffers)
+      (message "neo/projectile-switch-project-action in %s <%s>"
+	   project-root
+	   (persp-name (persp-curr)))
+      (if (and (neo--should-open-notes-p project-root)
+               (file-exists-p notes-path))
+          (find-file-other-window notes-path)
+	(when (and (vc-git-responsible-p default-directory)
+		   (fboundp 'magit-status))
+	  (magit-status)))
+      ;; record that we've switched to this project now
+      (puthash project-root (float-time (current-time)) neo/project-last-switched-times))
+  )
+
+(neo/use-package projectile
+  :demand t
   :custom
-  (projectile-project-search-path '("~/Projects/" "~/.local/share/wtrees")) 
-  (projectile-switch-project-action #'neo/projectile-switch-project-action)
-  (projectile-indexing-method 'alien)
-  (projectile-auto-discover t)		; not very useful as we go through persp-*
+  (projectile-project-search-path '("~/Projects/" "~/.local/share/wtrees"))
+  (projectile-auto-discover t)
+  (projectile-current-project-on-switch 'move-to-end) ; TODO: once stable, remove this
   (projectile-project-name nil)
   (projectile-project-name-function #'neo/project-name-function)
-  ;; TODO: we probably want 'remove here, but for now intergation w/ perspective is not fully working and we have to force the current project
-  (projectile-current-project-on-switch 'move-to-end)
-  :init
-  (projectile-mode +1)
-  (projectile-register-project-type 'omega-bazel '("MODULE.bazel"))
-  (add-to-list 'projectile-project-root-files "MODULE.bazel")
- :bind
-  (:map projectile-mode-map
+  (projectile-switch-project-action #'neo/projectile-switch-project-action)
+  :config
+  (projectile-mode 1)
+  (projectile-discover-projects-in-search-path)
+  :bind
+  (:map global-map
         ("C-x p" . projectile-command-map))
-  ("C-x p p" . neo/projectile-switch-project-by-name))
-  ;; :bind (:map projectile-mode-map
-  ;;             ("C-x p" . projectile-command-map)))
+  ("C-x p p" . neo/projectile-switch-project-by-name)
+)
 
-;; (defcustom projectile-after-switch-project-hook nil
-;;   "Hooks run right after project is switched."
-;;   :group 'projectile
-;;   :type 'hook)
+(neo/use-package perspective
+  :demand t
+  :custom
+  (persp-mode-prefix-key (kbd "C-c C-p"))
+  (persp-modestring-dividers '("⟪" "⟫" "•"))
+  (persp-modestring-short t)
+  :config
+  (persp-mode 1)
+  :bind
+  ("C-x b" . persp-switch-to-buffer*)
+  ("C-x k" . persp-kill-buffer*))
 
-;; (defcustom projectile-before-switch-project-hook nil
-;;   "Hooks run when right before project is switched."
-;;   :group 'projectile
-;;   :type 'hook)
+(neo/use-package treemacs
+  :custom
+  (treemacs-persist-file nil) ; Projectile is authoritative
+  (treemacs-auto-add-fallback-projects nil)
+  (treemacs-follow-after-init nil)	;TODO once stable try to flip
+  (treemacs-project-follow-cleanup nil)
+  (treemacs-width 30)
+  (treemacs-width-is-initially-locked t) ; nil ; we'd like it locked, but treemacs-set-width doesn't seem to have any (sane) effect
+  (treemacs-lock-width t)
+  ; treemacs-display-in-side-window t we'll try to handle this
+  (treemacs-is-never-other-window t)
+  (treemacs-use-all-the-icons-theme t)
+  (treemacs-sorting 'alphabetic-case-insensitive-asc)
 
+  :demand t
+  :config
+  ;; not sure about this guy
+  (treemacs-follow-mode 1)
+  )
 
-(neo/use-package treemacs-projectile)
+(neo/use-package treemacs-all-the-icons
+  :demand t)
 
+;; not sure TODO wha does this do? seems to color different magit states differently
+(neo/use-package treemacs-magit
+  :after treemacs magit
+  :demand t)
+
+(defun neo/treemacs-visible-p ()
+  (window-live-p
+   (treemacs-get-local-window)))
+
+(defun neo/treemacs-show-only-project (root name)
+  (when (treemacs-current-workspace)
+    (let* ((ws (treemacs-current-workspace))
+           (projects (treemacs-workspace->projects ws)))
+
+      (dolist (proj projects)
+        (treemacs-do-remove-project-from-workspace proj t nil))
+
+      (treemacs-do-add-project-to-workspace root name))))
+
+(defun neo/projectile-update-treemacs ()
+  (when-let ((root (projectile-project-root))
+	     (name (projectile-project-name)))
+    (persp-switch name)
+    (neo/treemacs-show-only-project
+     root
+     (projectile-project-name root))))
+
+(add-hook 'emacs-startup-hook #'neo/projectile-update-treemacs)
+;(add-hook 'projectile-after-switch-project-hook
+;          #'neo/projectile-update-treemacs)

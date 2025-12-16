@@ -4,7 +4,7 @@
     (define-key winum-keymap (kbd "M-0") #'treemacs-select-window))
   :config
   (setq treemacs-follow-after-init t
-	treemacs-width .50
+	treemacs-width 30
 	treemacs-width-is-initially-locked t ; nil ; we'd like it locked, but treemacs-set-width doesn't seem to have any (sane) effect
 	treemacs-lock-width t
 	treemacs-project-follow-cleanup t
