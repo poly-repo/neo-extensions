@@ -7,6 +7,8 @@
   (transient-append-suffix 'magit-branch "C"
     '("K" "delete all merged" neo/delete-merged-branches))
   :custom
+  (magit-display-buffer-function 'magit-display-buffer-fullframe-status-v1)
+  (magit-bury-buffer-function 'magit-restore-window-configuration)
   (magit-list-refs-sortby "-creatordate") ; doesn't seem to have any effect
   (magit-refs-show-commit-count 'branch) ; may be too expsive
   (magit-completing-read-function 'magit-builtin-completing-read)
