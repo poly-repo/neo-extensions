@@ -3,7 +3,9 @@
 (neo/use-package magit
   :config
   (setq magit-save-repository-buffers 'dontask)
-  (key-chord-define-global "//" 'magit-status)
+  ;; TODO we should handle this in a less ad-hoc way. One possibility is use-package keychord here, but this can be done only
+  ;; when we're able to merge multiple use-package for the same package
+  (when (featurep 'key-chord) (key-chord-define-global "//" 'magit-status))
   (transient-append-suffix 'magit-branch "C"
     '("K" "delete all merged" neo/delete-merged-branches))
   :custom
