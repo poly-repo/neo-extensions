@@ -11,6 +11,7 @@
 	    "neo:ui"
 	    "neo:better-git"
 	    "neo:projects"
+	    "neo:python"
 	    )
  :repository (
 	      :type "git"
