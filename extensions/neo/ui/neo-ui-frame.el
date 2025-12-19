@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (defun neo/screen-geometry ()
   "Return the geometry of the primary monitor as a plist: (:x X :y Y :width W :height H).
 Should work on X11 and Wayland."

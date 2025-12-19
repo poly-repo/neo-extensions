@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (neo/use-package treesit
   :builtin
   :custom

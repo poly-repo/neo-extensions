@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (require 'neo-ui-frame)
 
 (defun neo/config--apply-font-size (symbol value)

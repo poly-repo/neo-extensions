@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (neo/use-package treemacs
   :init
   (with-eval-after-load 'winum

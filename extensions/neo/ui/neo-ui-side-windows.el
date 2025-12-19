@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (defvar neo/side-window-stack nil
   "Stack (LIFO) of side windows in order of creation.")
 

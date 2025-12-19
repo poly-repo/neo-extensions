@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 ;;; Defaults for Neo
 
 (defgroup neo-questionable-defaults nil

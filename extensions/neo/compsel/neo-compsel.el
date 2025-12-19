@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 ;;; This is compsel, a NEO extension
 ;;;
 ;;; Completions and Selections

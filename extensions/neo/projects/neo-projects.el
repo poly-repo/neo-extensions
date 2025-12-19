@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (defun neo/project-name-function (project)
   (let ((name (file-name-nondirectory
 	       (directory-file-name project))))

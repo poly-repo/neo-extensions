@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (use-package modus-themes)
 (use-package doom-themes)
 (use-package ef-themes)

@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (defvar neo/magit-branch-delete-checkout-policy 'dirty
   "Policy for considering a branch checked out in worktrees when deciding delete-safety.
 Possible values:
