@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 ;; TODO requires
 ;; python -m pip install pyflakes
 

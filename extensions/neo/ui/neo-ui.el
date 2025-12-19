@@ -1,3 +1,5 @@
+;;; -*- lexical-binding: t -*-
+
 (require 'neo-ui-frame)
 (require 'neo-ui-fonts)
 (require 'neo-ui-themes)
