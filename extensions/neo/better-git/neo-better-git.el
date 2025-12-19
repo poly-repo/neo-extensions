@@ -66,6 +66,93 @@
   ("<f12> g" . 'counsel-git-grep))
 
 (with-eval-after-load 'magit
+  (define-key magit-status-mode-map (kbd "w")
+              #'neo/magit-worktree-or-issue-action))
+
+(defconst neo/git-branch-stop-words
+  '("a" "an" "the" "and" "or" "to" "of" "in" "on" "for"
+    "with" "when" "it" "is" "be" "also" "should"))
+
+(defun neo/git--slugify (title &optional max-words)
+  "Turn TITLE into a short, human-readable git-safe slug."
+  (let* ((max-words (or max-words 6))
+         (s (downcase title)))
+    (setq s (replace-regexp-in-string "[^a-z0-9 ]" "" s))
+    (setq s (split-string s "[[:space:]]+" t))
+    (setq s (seq-remove
+             (lambda (w) (member w neo/git-branch-stop-words))
+             s))
+    (mapconcat #'identity (seq-take s max-words) "-")))
+
+(defun neo/git-branch-from-issue (num title)
+  "Generate a git branch name from NUM and TITLE."
+  (format "%s-%s/%s"
+	  (user-login-name)
+          num
+          (neo/git--slugify title)))
+
+(defun magit-worktree-create (branch directory &optional start-point)
+  "Create a new worktree for BRANCH at DIRECTORY.
+START-POINT defaults to HEAD. Does not visit the directory.
+Assumes BRANCH is already sanitized for filesystem use."
+  (let ((start (or start-point "HEAD"))
+        (expanded-dir (magit--expand-worktree directory)))
+    ;; Ensure parent directories exist
+    (unless (file-directory-p (file-name-directory expanded-dir))
+      (make-directory (file-name-directory expanded-dir) t))
+    ;; Create worktree
+    (if (zerop (magit-run-git "worktree" "add" "-b" branch expanded-dir start))
+        expanded-dir
+      (error "Failed to create worktree %s at %s" branch expanded-dir))))
+
+(defun neo/magit-worktree-create (directory branch &optional start-point)
+  "Create a worktree for BRANCH at DIRECTORY, only if it doesn't already exist."
+  (let* ((start (or start-point "HEAD"))
+         (expanded-dir (magit--expand-worktree directory))
+         (existing-branch (magit-git-string "rev-parse" "--verify" branch)))
+    ;; If the directory exists, assume the worktree exists
+    (if (file-directory-p expanded-dir)
+        expanded-dir
+      ;; Ensure parent directories exist
+      (unless (file-directory-p (file-name-directory expanded-dir))
+        (make-directory (file-name-directory expanded-dir) t))
+      ;; If branch already exists, create worktree without -b
+      (if existing-branch
+          (if (zerop (magit-run-git "worktree" "add" expanded-dir branch))
+              expanded-dir
+            (error "Failed to create worktree %s at %s" branch expanded-dir))
+        ;; Branch doesn't exist: create with -b
+        (if (zerop (magit-run-git "worktree" "add" "-b" branch expanded-dir start))
+            expanded-dir
+          (error "Failed to create worktree %s at %s" branch expanded-dir))))))
+
+
+(defun neo/switch-to-project (path)
+  (projectile-add-known-project path)
+  (projectile-invalidate-cache nil)
+  (projectile-switch-project-by-name path))
+
+(defun neo/ensure-workspace ()
+  (magit-section-case
+    (worktree
+     (neo/switch-to-project (oref it value)))
+    (issue
+     (let* ((issue (oref it value))
+            (id (oref issue number))
+            (title (oref issue title))
+            (branch (neo/git-branch-from-issue id title))
+            (directory (expand-file-name
+			(replace-regexp-in-string "/" "-" branch)
+			"~/.local/share/wtrees/")))
+       (neo/magit-worktree-create directory branch)
+       (neo/switch-to-project directory)))))
+
+(defun neo/magit-worktree-or-issue-action ()
+  "Run projectile-switch-project when on worktree or issue sections."
+  (interactive)
+  (neo/ensure-workspace))
+
+(with-eval-after-load 'magit
   ;; Refresh the repo status buffer whenever you save a file in that repo.
   (add-hook 'after-save-hook #'magit-after-save-refresh-status t))
 
