@@ -113,6 +113,9 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   (pixel-scroll-precision-interpolate-page t)
   (scroll-conservatively 101) ;; must be greater than or equal to 101
   (scroll-step 1)
+
+  ;; Backup
+  (setq backup-directory-alist '((".*" . "~/.local/share/Trash/files")))
   
   :hook
   ((prog-mode text-mode conf-mode help-mode)
