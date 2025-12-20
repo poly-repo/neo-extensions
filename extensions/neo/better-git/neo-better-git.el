@@ -93,25 +93,17 @@
           num
           (neo/git--slugify title)))
 
-(defun magit-worktree-create (branch directory &optional start-point)
-  "Create a new worktree for BRANCH at DIRECTORY.
-START-POINT defaults to HEAD. Does not visit the directory.
-Assumes BRANCH is already sanitized for filesystem use."
-  (let ((start (or start-point "HEAD"))
-        (expanded-dir (magit--expand-worktree directory)))
-    ;; Ensure parent directories exist
-    (unless (file-directory-p (file-name-directory expanded-dir))
-      (make-directory (file-name-directory expanded-dir) t))
-    ;; Create worktree
-    (if (zerop (magit-run-git "worktree" "add" "-b" branch expanded-dir start))
-        expanded-dir
-      (error "Failed to create worktree %s at %s" branch expanded-dir))))
 
 (defun neo/magit-worktree-create (directory branch &optional start-point)
   "Create a worktree for BRANCH at DIRECTORY, only if it doesn't already exist."
-  (let* ((start (or start-point "HEAD"))
+  (let* ((start (or start-point "origin/main"))
          (expanded-dir (magit--expand-worktree directory))
          (existing-branch (magit-git-string "rev-parse" "--verify" branch)))
+    (magit-run-git "fetch" "origin")
+    (unless (magit-ref-exists-p "origin/main")
+      (user-error "origin/main does not exist after fetch"))
+
+
     ;; If the directory exists, assume the worktree exists
     (if (file-directory-p expanded-dir)
         expanded-dir
