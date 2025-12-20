@@ -257,18 +257,6 @@
       (split-string (buffer-string) "\n" t "^[ \t]*"))))
 
 
-(defvar neo/commit-types
-  '(("feat" . ("✨"  . "A new feature"))
-    ("fix" . ("🐛" ."A bug fix"))
-    ("refactor" . ("♻" . "A code change that neither fixes a bug nor adds a feature"))
-    ("docs" . ("📝" . "Documentation only changes"))
-    ("test" . ("🧪" . "Adding missing tests or correcting existing tests"))
-    ("build" . ("🧰" . "Changes that affect the build system or external dependencies"))
-    ("chore" . ("🔧" . "Other changes that don't modify src or test files"))
-    ("wip" . ("🚧" . "WIP, not for merging into main"))
-    ("other" . ("🧩" . "Other changes that don't belong to any other category. Think hard before using this")))
-  "Mapping of commit types to emoji and descriptions, following conventional commits.")
-
 
 (defun neo/git-commit-insert-type-scope ()
   "Prompt for commit type and scope, then insert at beginning of commit buffer with emoji annotations."
@@ -307,23 +295,26 @@
 With Marginalia enabled, displays emoji and description as separate fields.
 Returns a list of (TYPE EMOJI)."
   (interactive)
-  (let ((candidates (mapcar #'car neo/commit-types)))
-    (let* ((completion-extra-properties
+  (let* ((max-len 8)
+	 (candidates (mapcar (lambda (item)
+			      (let ((type (car item)))
+				(propertize type
+					    'display (format (format "%%-%ds" max-len) type))))
+                neo/commit-types))
+	 (completion-extra-properties
             (when (featurep 'marginalia)
               `(:annotation-function
-                ,(lambda (cand)
-		   (message ">>>> %s" cand)
-                   (when-let* ((item (assoc cand neo/commit-types))
-                               (emoji (cadr item))
-                               (desc (caddr item)))
-                     (marginalia--fields
-                      (emoji)
-                      (desc :truncate 0.8)))))))
+		(lambda (cand)
+		  (when-let* ((item (assoc cand neo/commit-types))
+			      (emoji (nth 1 item))
+			      (desc  (nth 2 item)))
+		    (marginalia--fields
+		     ((format " %-2s" emoji))
+		     (desc :truncate 0.8)))))))
            (type (completing-read "Commit type: " candidates nil t)))
-      (when type
-        (when-let* ((item (assoc type neo/commit-types))
-                    (emoji (cadr item)))
-          (list type emoji))))))
-
+    (when type
+      (when-let* ((item (assoc type neo/commit-types))
+                  (emoji (cadr item)))
+	(list type emoji)))))
 
 (add-hook 'git-commit-setup-hook #'neo/git-commit-insert-type-scope)
