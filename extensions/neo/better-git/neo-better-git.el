@@ -100,9 +100,6 @@
          (expanded-dir (magit--expand-worktree directory))
          (existing-branch (magit-git-string "rev-parse" "--verify" branch)))
     (magit-run-git "fetch" "origin")
-    (unless (magit-ref-exists-p "origin/main")
-      (user-error "origin/main does not exist after fetch"))
-
 
     ;; If the directory exists, assume the worktree exists
     (if (file-directory-p expanded-dir)
