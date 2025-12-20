@@ -18,6 +18,7 @@
   (magit-completing-read-function 'magit-builtin-completing-read)
   (magit-read-worktree-directory-function #'magit-read-worktree-directory-offsite)
   (git-commit-summary-max-length 120)
+  (git-commit-major-mode 'markdown-mode)
 ;  (project-switch-commands 'magit-project-status) ; TODO replace with a function that does more (switch to perspective if one available, show a readme o.org file if available, otherwise magit status
   (magit-status-show-untracked-files 'all)
   (magit-section-initial-visibility-alist '(
