@@ -32,7 +32,7 @@
   :config
   (global-hl-line-mode 1))
 
-(load-theme "ef-dark" t)
+(load-theme 'ef-dark t)
 
 ;; TODO: not sure what these do
 ;; (setq spacious-padding-subtle-frame-lines
