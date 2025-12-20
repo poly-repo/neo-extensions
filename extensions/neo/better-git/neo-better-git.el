@@ -25,9 +25,11 @@
 					    (worktrees . show)
 					    (unstaged . show)
 					    (untracked . show)
-					    (unpushed . show)
+					    (unpushed . hide)
+					    (issues . show)
 					    (stashes . hide)
 					    (commit . hide)
+					    (local . hide) ; maybe this is the "Branches" section
 					    (branches . hide)))
   (magit-section-cache-visibility t)
   
