@@ -152,9 +152,19 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   (treemacs-sorting 'alphabetic-case-insensitive-asc)
 
   :demand t
+  :custom-face
+;  (treemacs-root-face ((t (:font "Orbitron"))))
+  (treemacs-root-face
+   ((t (
+	:inherit font-lock-keyword-face
+        :font "Orbitron"
+        :underline (:style line :thickness 2)
+        :weight bold
+        :extend t))))
   :config
   ;; not sure about this guy
   (treemacs-follow-mode 1)
+  (add-to-list 'treemacs-pre-file-insert-predicates #'treemacs-is-file-git-ignored?)
   )
 
 (neo/use-package treemacs-all-the-icons
