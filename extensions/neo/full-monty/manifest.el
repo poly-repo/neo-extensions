@@ -6,6 +6,7 @@
  :categories (neo)
  :keywords (neo)
  :requires (
+	    "neo:dashboard"
 	    "neo:questionable-defaults"
 	    "neo:compsel"
 	    "neo:ui"
