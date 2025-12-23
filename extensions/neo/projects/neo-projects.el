@@ -125,6 +125,13 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   ("C-x p p" . neo/projectile-switch-project-by-name)
 )
 
+(defun neo/persp-ensure-messages ()
+  "Ensure *Messages* is part of the current perspective."
+  (when (and (featurep 'perspective)
+             (get-buffer "*Messages*"))
+    (persp-add-buffer (get-buffer "*Messages*"))))
+
+
 (neo/use-package perspective
   :demand t
   :custom
@@ -133,6 +140,8 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   (persp-modestring-short t)
   :config
   (persp-mode 1)
+  :hook
+  ((persp-switch persp-created) . #'neo/persp-ensure-messages)
   :bind
   ("C-x b" . persp-switch-to-buffer*)
   ("C-x k" . persp-kill-buffer*))
