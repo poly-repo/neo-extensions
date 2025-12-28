@@ -9,6 +9,7 @@
 	    "neo:dashboard"
 	    "neo:elisp"
 	    "neo:questionable-defaults"
+	    "neo:extension-manager"
 	    "neo:compsel"
 	    "neo:ui"
 	    "neo:better-git"

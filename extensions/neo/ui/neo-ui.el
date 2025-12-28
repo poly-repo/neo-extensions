@@ -29,8 +29,12 @@
   (spacious-padding-mode 1))
 
 (neo/use-package emacs
+  ;; NOTE: (global-hl-line-mode 1) is too aggressive and make it very
+  ;; hard to disable line hoghlighting in specific buffers
   :config
-  (global-hl-line-mode 1))
+  (add-hook 'prog-mode-hook #'hl-line-mode)
+  (add-hook 'text-mode-hook #'hl-line-mode))
+
 
 ;; TODO: not sure what these do
 ;; (setq spacious-padding-subtle-frame-lines
