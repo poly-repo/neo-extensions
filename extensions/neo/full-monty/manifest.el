@@ -7,6 +7,7 @@
  :keywords (neo)
  :requires (
 	    "neo:dashboard"
+	    "neo:elisp"
 	    "neo:questionable-defaults"
 	    "neo:compsel"
 	    "neo:ui"
