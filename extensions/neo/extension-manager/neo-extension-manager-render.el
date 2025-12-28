@@ -80,7 +80,7 @@
         (bg (face-background 'default nil t)))
     (set-face-attribute 'neo/divider-face nil
                         :overline fg
-                        :foreground bg
+                        :foreground fg
                         :background bg)))
 
 (add-hook 'neo/after-theme-load-hook #'neo/update-divider-face)
