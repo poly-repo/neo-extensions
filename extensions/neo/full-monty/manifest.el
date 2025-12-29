@@ -13,6 +13,7 @@
 	    "neo:compsel"
 	    "neo:ui"
 	    "neo:better-git"
+	    "neo:terminal"
 	    "neo:projects"
 	    "neo:python"
 	    )
