@@ -16,6 +16,7 @@
 	    "neo:terminal"
 	    "neo:projects"
 	    "neo:python"
+	    "neo::leetcode"
 	    )
  :repository (
 	      :type "git"
