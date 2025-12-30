@@ -19,16 +19,16 @@
   (magit-read-worktree-directory-function #'magit-read-worktree-directory-offsite)
   (git-commit-summary-max-length 120)
   (git-commit-major-mode 'markdown-mode)
-;  (project-switch-commands 'magit-project-status) ; TODO replace with a function that does more (switch to perspective if one available, show a readme o.org file if available, otherwise magit status
+					;  (project-switch-commands 'magit-project-status) ; TODO replace with a function that does more (switch to perspective if one available, show a readme o.org file if available, otherwise magit status
   (magit-status-show-untracked-files 'all)
   (magit-section-initial-visibility-alist '(
 					    (worktrees . show)
 					    (unstaged . show)
 					    (untracked . show)
-					    (unpushed . hide)
+					    (unpushed . show)
 					    (issues . show)
 					    (stashes . hide)
-					    (commit . hide)
+					    (commit . show)
 					    (local . hide) ; maybe this is the "Branches" section
 					    (branches . hide)))
   (magit-section-cache-visibility t)
