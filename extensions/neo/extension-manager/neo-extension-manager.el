@@ -4,31 +4,9 @@
 ;;;
 ;;; Extension Manager
 
-;; TODO this will go into utility
+(require 'neo-utils)
+
 (defvar-local neo/manager-quit-function nil)
-(defun neo/with-ui-session (name &optional setup-fn teardown-fn)
-  "Start a temporary UI session called NAME.
-
-Switch to perspective NAME, run SETUP-FN in the selected window,
-and return a quit function that restores the original perspective."
-  (let ((orig-persp (persp-curr))
-	(orig-header header-line-format))
-    (persp-switch name)
-
-    ;; ensure we act on the selected window
-    (when setup-fn
-      (funcall setup-fn))
-
-    ;; now enforce single-window layout
-    (delete-other-windows)
-
-    (lambda ()
-      (interactive)
-      (when teardown-fn
-        (funcall teardown-fn))
-      (setq header-line-format orig-header)
-      (persp-switch (persp-name orig-persp)))))
-;; end of utility function
 
 ;; TODO DNL
 (add-to-list 'load-path "/home/mav/.local/share/wtrees/mav-83-mvp-extension-management/devex/editors/emacs/extensions/extensions/neo/neo-manager")
