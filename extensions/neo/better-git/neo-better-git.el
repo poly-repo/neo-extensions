@@ -117,7 +117,9 @@
             (error "Failed to create worktree %s at %s" branch expanded-dir))
         ;; Branch doesn't exist: create with -b
         (if (zerop (magit-run-git "worktree" "add" "-b" branch expanded-dir start))
-            expanded-dir
+	    (let ((default-directory expanded-dir))
+	      (shell-command "direnv allow") ; well, if we cannot trust ourselves we're in deeper troubles
+              expanded-dir)
           (error "Failed to create worktree %s at %s" branch expanded-dir))))))
 
 

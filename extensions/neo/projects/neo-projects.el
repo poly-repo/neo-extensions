@@ -9,20 +9,6 @@
 ;; marginalia annotation. Keep a mapping to use the path when switching project.
 ;; Not sure about conflicts, we really shouldn't have any in Omega.
 (defun neo/projectile-switch-project-by-name ()
-  (interactive)
-  (let* ((alist
-          (mapcar (lambda (root)
-                    (cons
-                     (format "%s  [%s]"
-                             (funcall projectile-project-name-function root)
-                             (abbreviate-file-name root))
-                     root))
-                  projectile-known-projects))
-         (choice (completing-read "Switch to project: " alist nil t)))
-    (message "(projectile-switch-project %s)" (expand-file-name (cdr (assoc choice alist))))
-    (projectile-switch-project (expand-file-name (cdr (assoc choice alist))))))
-
-(defun neo/projectile-switch-project-by-name ()
   "Switch to a Projectile project using short names."
   (interactive)
   (let* ((alist
@@ -39,6 +25,7 @@
       (error "Project not found!"))
     (message "(projectile-switch-project %s)" root)
     (projectile-switch-project-by-name root)))
+
 
 (defvar neo/project-last-switched-times (make-hash-table :test 'equal)
   "Hash table mapping project root -> last switch time (float seconds since epoch).")
