@@ -9,6 +9,7 @@
 	    "neo:dashboard"
 	    "neo:elisp"
 	    "neo:questionable-defaults"
+	    "neo:session"
 	    "neo:extension-manager"
 	    "neo:compsel"
 	    "neo:ui"
