@@ -125,10 +125,19 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   (persp-mode-prefix-key (kbd "C-c C-p"))
   (persp-modestring-dividers '("⟪" "⟫" "•"))
   (persp-modestring-short t)
+  (persp-state-default-file (expand-file-name "persp-state.el" no-littering-var-directory))
   :config
   (persp-mode 1)
+  ;; NOTE we give time for magit/projectile/etc... to settle. There're
+  ;; races I've not been able to solve.
+  (run-with-idle-timer 1 nil (lambda ()
+			       ;; No idea who put that in. It doesn't even exist.
+			       (remove-hook 'kill-emacs-hook #'perspective-mode)
+			       (when (file-exists-p  persp-state-default-file)
+				 (persp-state-load persp-state-default-file))))
   :hook
   ((persp-switch persp-created) . #'neo/persp-ensure-messages)
+  (kill-emacs . #'persp-state-save)
   :bind
   ("C-x b" . persp-switch-to-buffer*)
   ("C-x k" . persp-kill-buffer*))
