@@ -16,6 +16,7 @@
 	    "neo:better-git"
 	    "neo:terminal"
 	    "neo:projects"
+	    "neo:programming-foundation"
 	    "neo:build"
 	    "neo:python"
 	    "neo:leetcode"
