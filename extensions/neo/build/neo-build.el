@@ -19,6 +19,7 @@
   ;; Optional: configuration for build.el goes here
   )
 
-(neo/eglot-set-server '(bazel-build-mode bazel-starlark-mode) '("starpls"))
+;; TODO we do not have the LSP extension in main yet
+;; (neo/eglot-set-server '(bazel-build-mode bazel-starlark-mode) '("starpls"))
 
 ;;; Note, no (provide 'neo-build) here, extensions are loaded not required.
