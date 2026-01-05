@@ -120,6 +120,7 @@
   (auto-side-windows-bottom-buffer-names
    '("^\\*eshell\\*$"
      "^\\*shell\\*$"
+     "^\\*aider\\*$"
      "^\\*term\\*$"))
   (auto-side-windows-bottom-buffer-modes
    '(eshell-mode
