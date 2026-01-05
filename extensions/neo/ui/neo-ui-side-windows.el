@@ -128,6 +128,7 @@
      calendar-mode
      shell-mode
      term-mode
+     vterm-mode
      comint-mode
      debugger-mode))
 
