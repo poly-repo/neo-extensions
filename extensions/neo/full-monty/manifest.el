@@ -19,6 +19,7 @@
 	    "neo:programming-foundation"
 	    "neo:build"
 	    "neo:python"
+	    "neo:ai-buddy"
 	    "neo:leetcode"
 	    )
  :repository (
