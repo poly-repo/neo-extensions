@@ -207,4 +207,30 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
       (message "KEYMAP BOUND")
       (key-chord-define c++-ts-mode-map "''" #'eglot-code-action-quickfix))))
 
+;; (defun neo--locate-coveralls (file-dir file-name)
+;;   (message "**** file-dir: %s, file-name: %s" file-dir file-name)
+;;   (let ((dir (locate-dominating-file file-dir "coverage-final.json")))
+;;     (when dir
+;;       (cons (file-truename (f-join dir "coverage-final.json")) 'coveralls))))
+
+(defun neo/cov-mode-safe-turn-on ()
+  "Turn on cov-mode only for real source files."
+  (interactive)
+  (when (and buffer-file-name
+             (file-exists-p buffer-file-name)
+             (not (string-match-p "coverage-final\\.json$" buffer-file-name)))
+    (cov-mode 1)))
+
+(neo/use-package cov
+  :init
+  ;; Must be set before cov-mode is enabled
+  (setq cov-coverage-mode t)
+
+  ;;  (setq cov-coverage-file-paths
+  ;;        (list neo--locate-coveralls))
+  )
+;;:hook
+;;(prog-mode . cov-mode))
+
+
 ;;; Note, no (provide 'neo-programing-foundation) here, extensions are loaded not required.

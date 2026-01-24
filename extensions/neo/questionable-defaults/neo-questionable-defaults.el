@@ -54,6 +54,7 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
 (neo/use-package emacs
   :doc "Setup questionable defaults"
   :config
+  (auto-revert-mode 1)
   (fset 'yes-or-no-p 'y-or-n-p)
   (advice-add 'y-or-n-p :around
               (lambda (orig-func prompt &rest args)
@@ -140,3 +141,47 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   (which-key-min-display-lines 6)
   (which-key-mode t)
   (which-key-side-window-slot -10))
+
+(neo/use-package ediff
+  :builtin
+  :custom
+  (ediff-window-setup-function 'ediff-setup-windows-plain)
+  (ediff-split-window-function 'split-window-horizontally)
+  (ediff-merge-split-window-function 'split-window-horizontally))
+
+(defvar neo/ignored-process-names
+  '("vterm" "bash" "ssh" "kubectl")
+  "Process names that should not block Emacs from exiting.")
+
+(defun neo/ignore-selected-processes ()
+  "Allow Emacs to exit even if certain processes are running."
+  (let ((procs
+         (cl-remove-if
+          (lambda (p)
+            (member (process-name p) neo/ignored-process-names))
+          (process-list))))
+    (or (null procs)
+        (yes-or-no-p
+         (format "There are %d active processes. Kill them and exit? "
+                 (length procs))))))
+
+;; TODO move this into an emacs package
+;; TODO make so that extensions
+;; can register ignored process names instead of hardcoding
+;; neo/ignored-process-names
+(add-hook 'kill-emacs-query-functions #'neo/ignore-selected-processes)
+
+;; :config
+;; ;; show org ediffs unfolded
+;; (add-hook 'ediff-prepare-buffer-hook 'spacemacs//ediff-buffer-outline-show-all)
+;; ;; save window layout before starting...
+;; (add-hook 'ediff-before-setup-hook #'spacemacs//ediff-save-window-configuration)
+;; ;; ... and restore window layout when done
+;; ;;
+;; ;; Append to `ediff-quit-hook' so that this runs after `ediff-cleanup-mess'.
+;; ;; This avoids interfering with ediff's own cleanup, since it depends on the
+;; ;; ediff control buffer still being current.
+;; (add-hook 'ediff-quit-hook #'spacemacs//ediff-restore-window-configuration 50)
+;; (when (fboundp 'spacemacs//ediff-delete-temp-files)
+;;   (add-hook 'kill-emacs-hook #'spacemacs//ediff-delete-temp-files))))
+

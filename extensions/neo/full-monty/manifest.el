@@ -17,6 +17,7 @@
 	    "neo:terminal"
 	    "neo:projects"
 	    "neo:programming-foundation"
+	    "neo:workflow"
 	    "neo:build"
 	    "neo:python"
 	    "neo:ai-buddy"

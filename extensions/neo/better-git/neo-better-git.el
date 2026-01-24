@@ -17,6 +17,7 @@
   (magit-refs-show-commit-count 'branch) ; may be too expsive
   (magit-completing-read-function 'magit-builtin-completing-read)
   (magit-read-worktree-directory-function #'magit-read-worktree-directory-offsite)
+  (magit-repository-directories '(("~/Projects" . 1)))
   (git-commit-summary-max-length 120)
   (git-commit-major-mode 'markdown-mode)
 					;  (project-switch-commands 'magit-project-status) ; TODO replace with a function that does more (switch to perspective if one available, show a readme o.org file if available, otherwise magit status
@@ -214,7 +215,7 @@
   (set-face-attribute 'forge-issue-completed nil :strike-through t)
   (setq forge-topic-list-columns
         '(("#" 5 forge-topic-list-sort-by-number
-           ;           (lambda (a b) (> (car a) (car b)))
+					;           (lambda (a b) (> (car a) (car b)))
            (:right-align t) number nil)
           ("Title" 40 t nil title nil)
           ("Milestone" 10 t nil milestone nil)
@@ -234,18 +235,18 @@
      forge-github-repository))
   )
 
-(use-package gptel
-  :init
-  (setq-default gptel-default-mode 'markdown-mode
-		gptel-post-response-functions #'gptel-end-of-response
-		gptel-model "gemini-2.5-pro" ; Pick your default model
-		gptel-backend (gptel-make-gemini "Gemini"
-						 :key (auth-source-pick-first-password :host "gemini.google.com" :user "token")
-						 :stream t)))
+;; (use-package gptel
+;;   :init
+;;   (setq-default gptel-default-mode 'markdown-mode
+;; 		gptel-post-response-functions #'gptel-end-of-response
+;; 		gptel-model "gemini-2.5-pro" ; Pick your default model
+;; 		gptel-backend (gptel-make-gemini "Gemini"
+;; 						 :key (auth-source-pick-first-password :host "gemini.google.com" :user "token")
+;; 						 :stream t)))
 
-(use-package gptel-magit
-  :ensure t
-  :hook (magit-mode . gptel-magit-install))
+;; (use-package gptel-magit
+;;   :ensure t
+;;   :hook (magit-mode . gptel-magit-install))
 
 (neo/use-package git-timemachine)
 

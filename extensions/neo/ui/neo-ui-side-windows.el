@@ -121,6 +121,7 @@
    '("^\\*eshell\\*$"
      "^\\*shell\\*$"
      "^\\*aider\\*$"
+     "^\\*gemini\\*$"
      "^\\*term\\*$"))
   (auto-side-windows-bottom-buffer-modes
    '(eshell-mode
@@ -130,6 +131,8 @@
      term-mode
      vterm-mode
      comint-mode
+     ;; TODO aidemacs does a delete-other-windows that would make this side window the only window and that's a no no. More work needed
+     ;;     aidermacs-file-diff-selection-mode
      debugger-mode))
 
   ;; Left side window configurations

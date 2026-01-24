@@ -28,4 +28,6 @@
   :hook
   ('emacs-lisp-mode . #'aggressive-indent-mode))
 
+(neo/use-package buttercup)
+
 ;;; Note, no (provide 'neo-elisp) here, extensions are loaded not required.
