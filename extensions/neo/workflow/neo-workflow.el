@@ -23,8 +23,8 @@
 
 (elpaca-wait)
 
-(neo/add-current-file-dir-to-load-path)	; TODO development only. Once NEO loads this extension, this is not needed
-(add-to-list 'load-path "/home/mav/.local/share/wtrees/mav-209-mvp-workflow-manager/devex/editors/emacs/extensions/extensions/neo/workflow")
+;(neo/add-current-file-dir-to-load-path)	; TODO development only. Once NEO loads this extension, this is not needed
+;(add-to-list 'load-path "/home/mav/.local/share/wtrees/mav-209-mvp-workflow-manager/devex/editors/emacs/extensions/extensions/neo/workflow")
 
 (require 'neo-workflow-db)
 (require 'neo-workflow-models)

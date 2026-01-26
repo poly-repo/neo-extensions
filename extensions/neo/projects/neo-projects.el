@@ -151,6 +151,7 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   (treemacs-width 30)
   (treemacs-width-is-initially-locked t) ; nil ; we'd like it locked, but treemacs-set-width doesn't seem to have any (sane) effect
   (treemacs-lock-width t)
+  (treemacs-display-in-side-window nil)	; we manage side windows ourselves
   ; treemacs-display-in-side-window t we'll try to handle this
   (treemacs-is-never-other-window t)
   (treemacs-use-all-the-icons-theme t)
