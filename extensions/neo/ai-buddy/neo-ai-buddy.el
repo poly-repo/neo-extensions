@@ -91,6 +91,8 @@ LANGUAGES is a list of strings."
 
 ;;; experimenting with gemini-cli, seems better
 (neo/use-package ai-code
+  :custom
+  (ai-code-backends-infra-use-side-window nil) ; NOTE: we do want to manage the side window ourselves
   :config
   ;; use codex as backend, other options are 'gemini, 'github-copilot-cli, 'opencode, 'grok, 'claude-code-ide, 'claude-code, 'cursor
   (ai-code-set-backend 'gemini)

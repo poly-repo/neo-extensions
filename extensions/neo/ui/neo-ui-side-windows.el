@@ -1,5 +1,8 @@
 ;;; -*- lexical-binding: t -*-
 
+(require 'neo-window)
+(require 'cl-lib)
+
 (defvar neo/side-window-stack nil
   "Stack (LIFO) of side windows in order of creation.")
 
@@ -29,158 +32,69 @@
 (with-eval-after-load 'key-chord
   (key-chord-define-global "qq" 'neo/delete-last-side-window))
 
-;; the following uses a package vendored from
-;; https://github.com/MArpogaus/auto-side-windows. Temptative only.
-;; TODO: individual extensions should be self-register for side
-;; windows instead of having everything centralized here.
-(require 'auto-side-windows)
-(use-package auto-side-windows
-  :ensure nil
-  :preface
-  (defun my/get-header-line-icon-for-buffer (buffer)
-    (with-current-buffer buffer
-      (unless (boundp 'header-line-icon)
-        (setq-local header-line-icon
-                    (cond
-                     ((buffer-match-p "Warning" buffer) '("  !  " . warning))
-                     ((buffer-match-p '(or "^\\*Backtrace\\*$" ".*[Ee]rror.*") buffer) '("  !  " . error))
-                     ((buffer-match-p '(or "^COMMIT_EDITMSG$" "^\\*diff-hl\\*$") buffer) '("    " . success))
-                     ((buffer-match-p "^\\*Org Src.*\\*" buffer) '("     " . mode-line-emphasis))
-                     ((buffer-match-p "^\\*Org Agenda\\*$" buffer) '("    " . mode-line-emphasis))
-                     (t '("  ?  " . mode-line-emphasis)))))
-      header-line-icon))
-  (defun my/install-top-side-window-face-remaps (buffer foreground background)
-    (with-current-buffer buffer
-      (unless (bound-and-true-p top-side-window-face-remaps-cookies)
-        (setq-local top-side-window-face-remaps-cookies
-                    (list
-                     (face-remap-add-relative 'header-line
-                                              `(:box nil :underline nil :overline ,background))
-                     (face-remap-add-relative 'fringe
-                                              `(:background ,background))
-                     (face-remap-add-relative 'mode-line-active
-                                              `(:overline ,background :underline nil :height 0))
-                     (face-remap-add-relative 'mode-line-inactive
-                                              `(:overline ,background :underline nil :height 0))
-                     )))))
-  (defvar my/header-line-format-top
-    '(:eval
-      (let*
-          ((buffer (current-buffer))
-           (prefix-and-face (my/get-header-line-icon-for-buffer buffer))
-           (prefix (car prefix-and-face))
-           (background (face-foreground (cdr prefix-and-face)))
-           (foreground (face-background (cdr prefix-and-face) nil 'default))
-           (prefix-face (list :inherit 'bold :background background :foreground foreground))
-           (buffer-face (list :inherit 'bold :foreground background)))
-        (set-window-fringes nil 1 1 t)
-        (my/install-top-side-window-face-remaps buffer foreground background)
-        (list
-         (propertize prefix 'face prefix-face 'display '(space-width 0.7))
-         (propertize (format-mode-line " %b ") 'face buffer-face)
-         (propertize " " 'display `(space :align-to right))
-         (propertize " " 'face prefix-face 'display '(space-width 1))))))
-  :custom
-  (auto-side-windows-top-window-parameters `((mode-line-format . t)
-                                             (header-line-format . ,my/header-line-format-top)))
-  (auto-side-windows-before-display-hook '((lambda (buffer)
-                                             (with-current-buffer buffer
-                                               (when (bound-and-true-p top-side-window-face-remaps-cookies)
-                                                 (dolist (cookie top-side-window-face-remaps-cookies)
-                                                   (face-remap-remove-relative cookie))
-                                                 (kill-local-variable 'top-side-window-face-remaps-cookies))))))
-  (auto-side-windows-before-toggle-hook auto-side-windows-before-display-hook)
+
+(setq display-buffer-alist '())
+
+;; TODO add a keyword :create, a lambda, to be used when there's no
+;; buffer available for the side window on the requested side. This
+;; can be used for treemacs on the left, a terminal at the bottom,
+;; maybe a summary dashboard on the top maybe emacs info on the right
+(neo/side-window :regex "^\\*gemini.*\\*$" :side 'right :size 80) ; move to ai-buddy
+(neo/side-window :mode 'help-mode :include-derived t :side 'right :size 80)
+(neo/side-window :mode 'treemacs-mode :side 'left :size 30) ; move to project
 
 
-  ;; Respects display actions when switching buffers
-  (switch-to-buffer-obey-display-actions t)
 
-  ;; Top side window configurations
-  (auto-side-windows-top-buffer-names
-   '("^\\*Backtrace\\*$"
-     "^\\*Org Agenda\\*$"
-     "^\\*Org Src.*\\*"
-     "^\\*Org-Babel Error Output\\*"
-     "^\\*Async-native-compile-log\\*$"
-     "^\\*Compile-Log\\*$"
-     "^\\*Multiple Choice Help\\*$"
-     "^\\*Quick Help\\*$"
-     "^\\*TeX Help\\*$"
-     "^\\*TeX errors\\*$"
-     "^\\*Warnings\\*$"
-     "^\\*Process List\\*$"))
-  (auto-side-windows-top-buffer-modes
-   '(flymake-diagnostics-buffer-mode
-     locate-mode
-     occur-mode
-     grep-mode
-     xref--xref-buffer-mode))
+(defun neo/toggle-side-window (side)
+  "Toggle the visibility of the side window at SIDE."
+  (interactive)
+  (if-let ((window (neo/get-side-window side)))
+      (progn
+        (message "Hiding side window: %s" side)
+        (delete-window window))
+    (progn
+      (message "Showing side window: %s" side)
+      (if-let ((buffers (neo/get-side-window-buffers side)))
+          (display-buffer (car buffers))
+        (message "No buffers targeting %s side" side)))))
 
-  ;; Bottom side window configurations
-  (auto-side-windows-bottom-buffer-names
-   '("^\\*eshell\\*$"
-     "^\\*shell\\*$"
-     "^\\*aider\\*$"
-     "^\\*gemini\\*$"
-     "^\\*term\\*$"))
-  (auto-side-windows-bottom-buffer-modes
-   '(eshell-mode
-     calc-mode
-     calendar-mode
-     shell-mode
-     term-mode
-     vterm-mode
-     comint-mode
-     ;; TODO aidemacs does a delete-other-windows that would make this side window the only window and that's a no no. More work needed
-     ;;     aidermacs-file-diff-selection-mode
-     debugger-mode))
+(defun neo/get-side-window (side)
+  "Return the live window at SIDE in the current frame, or nil."
+  (cl-find-if (lambda (w) (eq (window-parameter w 'window-side) side))
+              (window-list)))
 
-  ;; Left side window configurations
-  (auto-side-windows-left-buffer-names
-   '())
-  (auto-side-windows-left-buffer-modes
-   '(treemacs-mode))
-  
-  ;; Right side window configurations
-  (auto-side-windows-right-buffer-names
-   '("^\\*eldoc.*\\*$"
-     "^\\*info\\*$"
-     "^.personal-notes.org$"
-     "^\\*Metahelp\\*$"))
-  (auto-side-windows-right-buffer-modes
-   '(Info-mode
-     TeX-output-mode
-     eldoc-mode
-     help-mode
-     helpful-mode
-     shortdoc-mode))
+(defun neo/bury-side-window-buffer (side)
+  "Bury the current buffer in the side window at SIDE."
+  (interactive)
+  (when-let ((window (neo/get-side-window side)))
+    (with-selected-window window
+      (bury-buffer))))
 
-  ;; Example: Custom parameters for top windows (e.g., fit height to buffer)
-  ;; (auto-side-windows-top-alist '((window-height . fit-window-to-buffer)))
-  ;; (auto-side-windows-top-window-parameters '((mode-line-format . ...))) ;; Adjust mode-line
+(defun neo/kill-side-window-buffer (side)
+  "Kill the current buffer in the side window at SIDE."
+  (interactive)
+  (when-let ((window (neo/get-side-window side)))
+    (with-selected-window window
+      (kill-buffer (current-buffer)))))
 
-  ;; Maximum number of side windows on the left, top, right and bottom
-  (window-sides-slots '(1 1 1 1)) ; Example: Allow one window per side
+(defun neo/bind-key-variants (map key command)
+  "Bind KEY and M-KEY to COMMAND in MAP."
+  (define-key map (kbd key) command)
+  (define-key map (kbd (format "M-%s" key)) command))
 
-  ;; Force left and right side windows to occupy full frame height
-  (window-sides-vertical t)
-
-  ;; Make changes to tab-/header- and mode-line-format persistent when toggling windows visibility
-  (window-persistent-parameters
-   (append window-persistent-parameters
-           '((tab-line-format . t)
-             (header-line-format . t)
-             (mode-line-format . t))))
-  :bind ;; Example keybindings (adjust prefix as needed)
-  (:map global-map ; Or your preferred keymap prefix
-        ("C-c w t" . auto-side-windows-display-buffer-top)
-        ("C-c w b" . auto-side-windows-display-buffer-bottom)
-        ("C-c w l" . auto-side-windows-display-buffer-left)
-        ("C-c w r" . auto-side-windows-display-buffer-right)
-        ("C-c w w" . auto-side-windows-switch-to-buffer)
-        ("C-c w t" . window-toggle-side-windows) ; Toggle all side windows
-        ("C-c w T" . auto-side-windows-toggle-side-window)) ; Toggle current buffer in/out of side window
-  :hook
-  (after-init . auto-side-windows-mode))
+(dolist (spec '((left "<left>") (right "<right>") (up "<up>") (down "<down>")))
+  (let* ((side (car spec))
+         (key (cadr spec))
+         (map-sym (intern (format "neo/side-window-%s-map" side)))
+         (map (make-sparse-keymap)))
+    (fset map-sym map)
+    (global-set-key (kbd (format "S-%s" key)) map-sym)
+    
+    (neo/bind-key-variants map key
+                           (lambda () (interactive) (neo/toggle-side-window side)))
+    (neo/bind-key-variants map "b"
+                           (lambda () (interactive) (neo/bury-side-window-buffer side)))
+    (neo/bind-key-variants map "k"
+                           (lambda () (interactive) (neo/kill-side-window-buffer side)))))
 
 (provide 'neo-ui-side-windows)
