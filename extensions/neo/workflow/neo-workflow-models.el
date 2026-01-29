@@ -58,11 +58,9 @@
 
 ;; facts
 (cl-defstruct neo-context
-  repo-root				; /home/mav/src/mlody"
-  repo-id				; mlody
-  branch				; feat/api
-  perspective				; mlody:feat/api
-  project				; projectile/project.el object
+  repository				; neo-repository
+  stack					; the top neo-stack object for this context
+  perspective				; a perspective.el perspective
   )
 
 ;; diff contect to context + plan
@@ -79,6 +77,63 @@
 ;; ============================================================
 ;; Helpers to load from DB into structs
 ;; ============================================================
+
+(defun neo/workflow-load-context (repository-id)
+  "Load the workflow context for REPOSITORY-ID."
+  (let ((data (neo/workflow-db-get-context repository-id)))
+    (when data
+      (let* ((repo (neo-load-repository repository-id))
+             (stack (when (plist-get data :stack-id)
+                      (let ((stack-row (car (sqlite-select (neo-open-db)
+                                                           "SELECT name FROM stacks WHERE id = ?"
+                                                           (list (plist-get data :stack-id))))))
+                        (when stack-row
+                          (neo-load-stack (car stack-row) repository-id))))))
+        (make-neo-context
+         :repository repo
+         :stack stack
+         :perspective (plist-get data :perspective))))))
+
+(defun neo/workflow-load-context-for-stack (repository-id stack-id)
+  "Load the workflow context for REPOSITORY-ID and STACK-ID."
+  (let ((data (neo/workflow-db-get-context-by-stack repository-id stack-id)))
+    (when data
+      (let* ((repo (neo-load-repository repository-id))
+             (stack (when stack-id
+                      (let ((stack-row (car (sqlite-select (neo-open-db)
+                                                           "SELECT name FROM stacks WHERE id = ?"
+                                                           (list stack-id)))))
+                        (when stack-row
+                          (neo-load-stack (car stack-row) repository-id))))))
+        (make-neo-context
+         :repository repo
+         :stack stack
+         :perspective (plist-get data :perspective))))))
+
+(defun neo/workflow-save-context (context)
+  "Save CONTEXT to the database."
+  (let ((repo-id (neo-repository-id (neo-context-repository context)))
+        (stack-id (when (neo-context-stack context)
+                    (neo-stack-id (neo-context-stack context))))
+        (perspective (neo-context-perspective context)))
+    (neo/workflow-db-upsert-context repo-id stack-id perspective)))
+
+(defun neo-load-repository (id)
+  "Load a repository by ID from the DB."
+  (let ((row (car (sqlite-select (neo-open-db)
+                                 "SELECT id, full_name, fork, created_at, pushed_at, updated_at, visibility, forks, default_branch FROM repositories WHERE id = ?"
+                                 (list id)))))
+    (when row
+      (make-neo-repository
+       :id (nth 0 row)
+       :full-name (nth 1 row)
+       :fork (nth 2 row)
+       :created-at (nth 3 row)
+       :pushed-at (nth 4 row)
+       :updated-at (nth 5 row)
+       :visibility (nth 6 row)
+       :forks (nth 7 row)
+       :default-branch (nth 8 row)))))
 
 (defun neo-load-issue (id)
   "Load an issue by ID from the DB."

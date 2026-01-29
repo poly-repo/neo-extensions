@@ -88,7 +88,6 @@ LANGUAGES is a list of strings."
 ;; 		    (setq truncate-lines t)
 ;; 		    (setq word-wrap nil))))
 
-
 ;;; experimenting with gemini-cli, seems better
 (neo/use-package ai-code
   :custom
@@ -106,5 +105,6 @@ LANGUAGES is a list of strings."
   ;; Optional: Set up Magit integration for AI commands in Magit popups
   (with-eval-after-load 'magit
     (ai-code-magit-setup-transients)))
+
 
 ;;; Note, no (provide 'neo-ai-buddy) here, extensions are loaded not required.

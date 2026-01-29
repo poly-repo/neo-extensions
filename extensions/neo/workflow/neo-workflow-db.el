@@ -58,6 +58,13 @@
             (:foreign-key (repository_id) (repositories id))
             (:foreign-key (parent_stack_id) (stacks id))
             (:unique branch_name repository_id))
+
+    (contexts [(repository_id integer)
+               (stack_id integer)
+               (perspective text)]
+              (:primary-key repository_id stack_id)
+              (:foreign-key (repository_id) (repositories id))
+              (:foreign-key (stack_id) (stacks id)))
     
     (projects
      [
@@ -102,6 +109,9 @@
 
     (unless (member "projects" tables)
       (neo/workflow-db-init db (list (assoc 'projects neo--workflow-db-schemas))))
+
+    (unless (member "contexts" tables)
+      (neo/workflow-db-init db (list (assoc 'contexts neo--workflow-db-schemas))))
 
     (when (member "repo_ui_state" tables)
       (let* ((cols (sqlite-select db "PRAGMA table_info(repo_ui_state)"))
@@ -223,7 +233,7 @@
         (when stack
           (let ((stack-name (neo-stack-name stack)))
             ;; Ensure stack exists/is updated using the new function
-            (neo-db-insert-stack stack-name stack-name nil repo-id (neo-stack-title stack))
+            (neo-db-insert-stack stack-name stack-name issue-id repo-id (neo-stack-title stack))
             
             ;; Ensure corresponding branch exists/is updated
             (neo-db-insert-branch stack-name repo-id nil issue-id nil nil nil nil)
@@ -327,7 +337,7 @@ ON CONFLICT(branch_name, repository_id) DO UPDATE SET name=excluded.name, issue_
   "Set/update the UI state for a given repository."
   (sqlite-execute (neo-open-db)
                   "INSERT INTO repo_ui_state (repo_id, state, filter, `order`) VALUES (?, ?, ?, ?)
-ON CONFLICT(repo_id) DO UPDATE SET state=excluded.state, filter=excluded.filter, `order`=excluded.order"
+ON CONFLICT(repo_id) DO UPDATE SET state=excluded.state, filter=excluded.filter, `order`=excluded.`order`"
                   (list repo-id state filter order)))
 
 ;;;###autoload
@@ -358,15 +368,48 @@ ON CONFLICT(issue_id) DO UPDATE SET state=excluded.state"
                        (list issue-id))))
 
 
+;;;###autoload
+(defun neo/workflow-db-upsert-context (repo-id stack-id perspective)
+  "Upsert a context mapping for REPO-ID and STACK-ID.
+Schema: (repository_id, stack_id, perspective) PK(repository_id, stack_id)"
+  (sqlite-execute (neo-open-db)
+                  "INSERT INTO contexts (repository_id, stack_id, perspective) VALUES (?, ?, ?)
+                   ON CONFLICT(repository_id, stack_id) DO UPDATE SET perspective=excluded.perspective"
+                  (list repo-id stack-id perspective)))
+
+;;;###autoload
+(defun neo/workflow-db-get-context (repo-id)
+  "Get the workflow context for REPO-ID.
+Returns a plist (:repository-id ... :stack-id ... :perspective ...)."
+  (let ((row (car (sqlite-select (neo-open-db)
+                                 "SELECT repository_id, stack_id, perspective FROM contexts WHERE repository_id = ?"
+                                 (list repo-id)))))
+    (when row
+      (list :repository-id (nth 0 row)
+            :stack-id (nth 1 row)
+            :perspective (nth 2 row)))))
+
+;;;###autoload
+(defun neo/workflow-db-get-context-by-stack (repo-id stack-id)
+  "Get the workflow context for REPO-ID and STACK-ID.
+Returns a plist (:repository-id ... :stack-id ... :perspective ...)."
+  (let ((row (car (sqlite-select (neo-open-db)
+                                 "SELECT repository_id, stack_id, perspective FROM contexts WHERE repository_id = ? AND stack_id = ?"
+                                 (list repo-id stack-id)))))
+    (when row
+      (list :repository-id (nth 0 row)
+            :stack-id (nth 1 row)
+            :perspective (nth 2 row)))))
+
 ;; -------------------------------------------------------------------
 ;; Stack API
 ;; -------------------------------------------------------------------
 
 (defun neo-db-get-all-stacks ()
-"Return a list of stack plists with their IDs and names."
-(mapcar (lambda (row)
-          (list :id (nth 0 row) :name (nth 1 row)))
-        (sqlite-select (neo-open-db) "SELECT id, name FROM stacks")))
+  "Return a list of stack plists with their IDs, names, repository_ids and titles."
+  (mapcar (lambda (row)
+            (list :id (nth 0 row) :name (nth 1 row) :repository-id (nth 2 row) :title (nth 3 row)))
+          (sqlite-select (neo-open-db) "SELECT id, name, repository_id, title FROM stacks")))
 
 (defun neo-db-get-stacks-for-repo (repo-id)
   "Return a list of `neo-stack' structs for a given REPO-ID."
@@ -521,6 +564,15 @@ LABELS is a list of `neo-label' structs."
   (sqlite-execute (neo-open-db)
                   "INSERT OR REPLACE INTO repositories (id, full_name, fork, created_at, pushed_at, updated_at, visibility, forks, default_branch) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
                   (list id full-name fork created-at pushed-at updated-at visibility forks default-branch)))
+
+(defun neo-db-get-all-project-paths ()
+  "Return a list of all project paths.
+Includes:
+1. 'worktree_path' from 'projects' table.
+2. 'worktree_path' from 'branches' table."
+  (let ((project-paths (mapcar #'car (sqlite-select (neo-open-db) "SELECT worktree_path FROM projects WHERE worktree_path IS NOT NULL")))
+        (branch-paths (mapcar #'car (sqlite-select (neo-open-db) "SELECT worktree_path FROM branches WHERE worktree_path IS NOT NULL"))))
+    (delete-dups (append project-paths branch-paths))))
 
 (provide 'neo-workflow-db)
 ;;; neo-workflow-db.el ends here

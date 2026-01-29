@@ -324,7 +324,18 @@ This function normalizes whitespace and removes the header line before compariso
 	     (target-object (seq-find (lambda (obj) (and (neo-issue-p obj) (= (neo-issue-number obj) 111)))
                                       (vtable-objects table))))
         (vtable-goto-object target-object)
-        (neo--hack target-object))
+        
+        ;; Mock git and system calls
+        (cl-letf (((symbol-function 'neo--workflow-git-run) (lambda (&rest args) t))
+                  ((symbol-function 'neo--workflow-git-current-branch-uncached) (lambda () "main"))
+                  ((symbol-function 'neo/workflow-git-branch-exists) (lambda (&rest args) nil))
+                  ((symbol-function 'neo/workflow-git-create-branch) (lambda (&rest args) t))
+                  ((symbol-function 'neo--workflow-choose-workspace-strategy) (lambda () 'repo))
+                  ((symbol-function 'make-directory) (lambda (&rest args) t))
+                  ((symbol-function 'persp-switch) (lambda (&rest args) t))
+                  ((symbol-function 'neo--ensure-stack-scratch) (lambda (&rest args) t))
+                  ((symbol-function 'neo--get-current-username) (lambda () "testuser")))
+          (neo--hack target-object)))
 
       ;; -- VERIFY POINT AFTER REFRESH --
       (let* ((refreshed-table (neo-workflow-get-table-for-repo "owner/mixed-repo"))
@@ -404,7 +415,18 @@ This function normalizes whitespace and removes the header line before compariso
 	     (target-object (seq-find (lambda (obj) (and (neo-issue-p obj) (= (neo-issue-number obj) 111)))
                                       (vtable-objects table))))
         (vtable-goto-object target-object)
-        (neo--hack target-object))
+
+        ;; Mock git and system calls
+        (cl-letf (((symbol-function 'neo--workflow-git-run) (lambda (&rest args) t))
+                  ((symbol-function 'neo--workflow-git-current-branch-uncached) (lambda () "main"))
+                  ((symbol-function 'neo/workflow-git-branch-exists) (lambda (&rest args) nil))
+                  ((symbol-function 'neo/workflow-git-create-branch) (lambda (&rest args) t))
+                  ((symbol-function 'neo--workflow-choose-workspace-strategy) (lambda () 'repo))
+                  ((symbol-function 'make-directory) (lambda (&rest args) t))
+                  ((symbol-function 'persp-switch) (lambda (&rest args) t))
+                  ((symbol-function 'neo--ensure-stack-scratch) (lambda (&rest args) t))
+                  ((symbol-function 'neo--get-current-username) (lambda () "testuser")))
+          (neo--hack target-object)))
 
       ;; -- VERIFY POINT AFTER REFRESH --
       (let* ((refreshed-table (neo-workflow-get-table-for-repo "owner/mixed-repo"))
