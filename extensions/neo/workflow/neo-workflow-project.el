@@ -37,6 +37,30 @@ Prioritizes `project-current' logic if possible, otherwise checks for .git."
           (push file projects))))
     projects))
 
+(cl-defmethod project-root ((project (head neo-workflow)))
+  (cdr project))
+
+(defun neo-workflow-project-backend (dir)
+  "Return a project instance if DIR is a known Neo Workflow project."
+  (let ((canonical-dir (expand-file-name dir))
+        (known-roots (neo-db-get-all-project-paths)))
+    (when-let ((root (seq-find (lambda (root)
+                                 (string-prefix-p (expand-file-name root) canonical-dir))
+                               known-roots)))
+      (cons 'neo-workflow root))))
+
+;;;###autoload
+(defun neo/workflow-project-enable ()
+  "Enable the Neo Workflow project backend."
+  (interactive)
+  (add-hook 'project-find-functions #'neo-workflow-project-backend))
+
+;;;###autoload
+(defun neo/workflow-project-disable ()
+  "Disable the Neo Workflow project backend."
+  (interactive)
+  (remove-hook 'project-find-functions #'neo-workflow-project-backend))
+
 ;;;###autoload
 (defun neo/workflow-project-discover ()
   "Discover projects in `neo/workflow-project-search-paths' and persist them to the DB."

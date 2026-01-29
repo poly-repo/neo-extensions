@@ -92,6 +92,7 @@ assuming others are nullable."
     (let* ((tables-result (sqlite-select neo--db-conn "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name ASC"))
            (tables (mapcar #'car tables-result))
            (expected-tables '("branches"
+                              "contexts"
                               "issue_labels"
                               "issue_ui_state"
                               "issues"
@@ -144,28 +145,41 @@ assuming others are nullable."
       (expect issue :to-be-truthy)
       (expect (neo-issue-stack issue) :to-equal nil)
 
-      ;; Action: call neo--hack to create a stack and branch for the issue
-      (neo--hack issue)
+      ;; Mock git run to avoid file system errors
+      (cl-letf (((symbol-function 'neo--workflow-git-run) (lambda (&rest args) t))
+                ((symbol-function 'neo--workflow-git-current-branch-uncached) (lambda () "main"))
+                ((symbol-function 'neo/workflow-git-branch-exists) (lambda (&rest args) nil))
+                ((symbol-function 'neo/workflow-git-create-branch) (lambda (&rest args) t))
+                ((symbol-function 'neo--workflow-choose-workspace-strategy) (lambda () 'repo)) ; use repo strategy to avoid worktree creation
+                ((symbol-function 'make-directory) (lambda (&rest args) t))
+                ((symbol-function 'persp-switch) (lambda (&rest args) t))
+                ((symbol-function 'neo--ensure-stack-scratch) (lambda (&rest args) t))
+                ((symbol-function 'neo--get-current-username) (lambda () "testuser"))
+                ((symbol-function 'neo/workflow-refresh) (lambda (&rest args) t)))
 
-      ;; Assertions: verify the database changes
-      (let* ((expected-stack-name (neo-issue-title-to-slug issue-number issue-title))
-             (stack-row (car (sqlite-select neo--db-conn "SELECT id, name, title FROM stacks WHERE name = ?" (list expected-stack-name))))
-             (stack-id (and stack-row (nth 0 stack-row))))
+        ;; Action: call neo--hack to create a stack and branch for the issue
+        (neo--hack issue)
 
-	;; 1. Check that the stack was created correctly
-	(expect stack-id :to-be-truthy)
-	(expect (nth 1 stack-row) :to-equal expected-stack-name)
-	(expect (nth 2 stack-row) :to-equal issue-title)
+        ;; Assertions: verify the database changes
+        (let* ((base-slug (neo-issue-title-to-slug issue-number issue-title))
+               (expected-stack-name (format "testuser/%s" base-slug))
+               (stack-row (car (sqlite-select neo--db-conn "SELECT id, name, title FROM stacks WHERE name = ?" (list expected-stack-name))))
+               (stack-id (and stack-row (nth 0 stack-row))))
 
-	;; 2. Check that the branch was created and linked to the issue
-	(let ((branch-row (car (sqlite-select neo--db-conn "SELECT name, issue_id FROM branches WHERE name = ?" (list expected-stack-name)))))
-          (expect branch-row :to-be-truthy)
-          (expect (nth 0 branch-row) :to-equal expected-stack-name)
-          (expect (nth 1 branch-row) :to-equal issue-id))
+          ;; 1. Check that the stack was created correctly
+          (expect stack-id :to-be-truthy)
+          (expect (nth 1 stack-row) :to-equal expected-stack-name)
+          (expect (nth 2 stack-row) :to-equal issue-title)
 
-	;; 3. Check that the issue is now linked to the new stack
-	(let ((updated-issue-stack-id (caar (sqlite-select neo--db-conn "SELECT stack_id FROM issues WHERE id = ?" (list issue-id)))))
-          (expect updated-issue-stack-id :to-equal stack-id)))))
+          ;; 2. Check that the branch was created and linked to the issue
+          (let ((branch-row (car (sqlite-select neo--db-conn "SELECT name, issue_id FROM branches WHERE name = ?" (list expected-stack-name)))))
+            (expect branch-row :to-be-truthy)
+            (expect (nth 0 branch-row) :to-equal expected-stack-name)
+            (expect (nth 1 branch-row) :to-equal issue-id))
+
+          ;; 3. Check that the issue is now linked to the new stack
+          (let ((updated-issue-stack-id (caar (sqlite-select neo--db-conn "SELECT stack_id FROM issues WHERE id = ?" (list issue-id)))))
+            (expect updated-issue-stack-id :to-equal stack-id))))))
 
   (it "reuses existing stack when neo--hack is called twice"
     ;; Setup: create a repo and an issue
@@ -180,29 +194,42 @@ assuming others are nullable."
 
       (expect (neo-issue-stack issue) :to-equal nil)
 
-      ;; Action 1: Call neo--hack for the first time.
-      (neo--hack issue)
+      ;; Mock git run to avoid file system errors
+      (cl-letf (((symbol-function 'neo--workflow-git-run) (lambda (&rest args) t))
+                ((symbol-function 'neo--workflow-git-current-branch-uncached) (lambda () "main"))
+                ((symbol-function 'neo/workflow-git-branch-exists) (lambda (&rest args) nil))
+                ((symbol-function 'neo/workflow-git-create-branch) (lambda (&rest args) t))
+                ((symbol-function 'neo--workflow-choose-workspace-strategy) (lambda () 'repo))
+                ((symbol-function 'make-directory) (lambda (&rest args) t))
+                ((symbol-function 'persp-switch) (lambda (&rest args) t))
+                ((symbol-function 'neo--ensure-stack-scratch) (lambda (&rest args) t))
+                ((symbol-function 'neo--get-current-username) (lambda () "testuser"))
+                ((symbol-function 'neo/workflow-refresh) (lambda (&rest args) t)))
 
-      ;; Get the reloaded issue, which is now associated with a stack.
-      (let* ((reloaded-issue (neo-load-issue issue-id))
-             (expected-stack-name (neo-issue-title-to-slug issue-number issue-title)))
-        (expect (neo-issue-stack reloaded-issue) :to-be-truthy)
+        ;; Action 1: Call neo--hack for the first time.
+        (neo--hack issue)
 
-        ;; Action 2: Call neo--hack for the second time on the reloaded issue.
-        (neo--hack reloaded-issue)
+        ;; Get the reloaded issue, which is now associated with a stack.
+        (let* ((reloaded-issue (neo-load-issue issue-id))
+               (base-slug (neo-issue-title-to-slug issue-number issue-title))
+               (expected-stack-name (format "testuser/%s" base-slug)))
+          (expect (neo-issue-stack reloaded-issue) :to-be-truthy)
 
-        ;; Assertions: Verify that no new stack was created.
-        (let ((stack-count (caar (sqlite-select neo--db-conn "SELECT COUNT(*) FROM stacks WHERE name = ?" (list expected-stack-name)))))
-          (expect stack-count :to-equal 1)))))
+          ;; Action 2: Call neo--hack for the second time on the reloaded issue.
+          (neo--hack reloaded-issue)
 
-(it "inserts and replaces a full PR"
-  (neo-db-insert-pr 1 "title" "author" "base" "head" 1 "open" "success" "t1" "t2" "url" "101")
-  (let ((row (car (sqlite-select neo--db-conn "SELECT * FROM prs WHERE number = 1"))))
-    (expect (nth 1 row) :to-equal "title"))
-  ;; Test replace
-  (neo-db-insert-pr 1 "new-title" "author" "base" "head" 1 "open" "success" "t1" "t2" "url" "101")
-  (let ((row (car (sqlite-select neo--db-conn "SELECT * FROM prs WHERE number = 1"))))
-    (expect (nth 1 row) :to-equal "new-title")))
+          ;; Assertions: Verify that no new stack was created.
+          (let ((stack-count (caar (sqlite-select neo--db-conn "SELECT COUNT(*) FROM stacks WHERE name = ?" (list expected-stack-name)))))
+            (expect stack-count :to-equal 1))))))
+
+  (it "inserts and replaces a full PR"
+    (neo-db-insert-pr 1 "title" "author" "base" "head" 1 "open" "success" "t1" "t2" "url" "101")
+    (let ((row (car (sqlite-select neo--db-conn "SELECT * FROM prs WHERE number = 1"))))
+      (expect (nth 1 row) :to-equal "title"))
+    ;; Test replace
+    (neo-db-insert-pr 1 "new-title" "author" "base" "head" 1 "open" "success" "t1" "t2" "url" "101")
+    (let ((row (car (sqlite-select neo--db-conn "SELECT * FROM prs WHERE number = 1"))))
+      (expect (nth 1 row) :to-equal "new-title")))
 
 (it "inserts and replaces a branch"
   (neo-db-insert-branch "b1" 1 101 nil "open" "success" "abc" "/tmp/w")
@@ -241,9 +268,11 @@ assuming others are nullable."
   (let ((repo-id (caar (sqlite-select neo--db-conn "SELECT id FROM repositories"))))
     (expect (neo-db-get-repo-ui-state repo-id) :to-equal nil)
     (neo-db-set-repo-ui-state repo-id "expanded")
-    (expect (neo-db-get-repo-ui-state repo-id) :to-equal "expanded")
+    (let ((state (neo-db-get-repo-ui-state repo-id)))
+      (expect (plist-get state :state) :to-equal "expanded"))
     (neo-db-set-repo-ui-state repo-id "collapsed")
-    (expect (neo-db-get-repo-ui-state repo-id) :to-equal "collapsed")))
+    (let ((state (neo-db-get-repo-ui-state repo-id)))
+      (expect (plist-get state :state) :to-equal "collapsed"))))
 
 (it "sets and gets issue UI state"
   (neo--db-fixture-simple-repo neo--db-conn)

@@ -31,6 +31,8 @@
 (require 'neo-workflow-status)
 (require 'neo-workflow-issues)
 (require 'neo-workflow-project)
+(require 'neo-workflow-git)
+(require 'neo-workflow-context)
 
 
 					;(require 'neo-workflow-db)

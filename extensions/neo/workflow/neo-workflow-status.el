@@ -6,6 +6,8 @@
 (require 'neo-workflow-slug)
 (require 'neo-workflow-models)
 (require 'neo-workflow-db)
+(require 'neo-workflow-git)
+(require 'neo-workflow-context)
 (require 'github-models)
 ;(require 'ghub)
 (require 'auth-source)
@@ -34,6 +36,14 @@ Can be \"public\", \"private\", or \"internal\"."
                  (const "private")
                  (const "internal"))
   :group 'neo-workflow-status)
+
+(defcustom neo/workflow-worktrees-directory "~/Projects/worktrees"
+  "Directory to store git worktrees."
+  :type 'directory
+  :group 'neo-workflow-status)
+
+(defvar neo/current-context nil
+  "The current workflow context object (neo-context struct).")
 
 (defun neo/workflow-clone-repo (repo-full-name)
   "Clone REPO-FULL-NAME into `neo/workflow-clone-base-dir` and add to projects DB.
@@ -295,24 +305,241 @@ into `neo/workflow-clone-base-dir`."
   ;;  (vtable-remove-object table old)
   )
 
+(defun neo--ensure-stack-scratch (stack-name)
+  "Switch to the standard perspective scratch buffer for STACK-NAME, initializing it if empty."
+  (let ((scratch-name (format "*scratch* (%s)" stack-name)))
+    (with-current-buffer (get-buffer-create scratch-name)
+      (lisp-interaction-mode)
+      (when (= (buffer-size) 0)
+        (insert (format ";; Scratch buffer for stack: %s\n\n" stack-name))))
+    (switch-to-buffer scratch-name)))
+
+(defun neo--resolve-branch-conflict (repo-path branch-name strategy can-rename &optional default-branch)
+  "Resolve conflict if BRANCH-NAME is checked out in main repo at REPO-PATH.
+If STRATEGY is 'worktree and conflict exists:
+- If CAN-RENAME is t: Return a new unique branch name (BRANCH-NAME-SUFFIX).
+- If CAN-RENAME is nil: Attempt to switch main repo to DEFAULT-BRANCH.
+  If main repo is dirty, signal user-error.
+Returns the resolved branch name."
+  (let ((default-directory repo-path))
+    (if (and (eq strategy 'worktree)
+             (string= (neo/workflow-git-current-branch-uncached) branch-name))
+        (if can-rename
+            (let ((new-name (format "%s-%04d" branch-name (random 10000))))
+              (message "Branch %s checked out in main repo. Renaming to %s." branch-name new-name)
+              new-name)
+          ;; Try to free main repo
+          (let ((status (neo/workflow-git-repo-status)))
+            (if (or (neo-workflow-git-repo-status-open-changes status)
+                    (neo-workflow-git-repo-status-conflicts status)
+                    (neo-workflow-git-repo-status-rebase-in-progress status))
+                (user-error "Main repo at %s is dirty or busy and has %s checked out. Please clean it or switch branch." repo-path branch-name)
+              (unless default-branch
+                (error "Default branch not provided for repo switch"))
+              (message "Switching main repo to %s to free up %s..." default-branch branch-name)
+              (neo--workflow-git-run "checkout" default-branch)
+              branch-name)))
+      branch-name)))
+
+(defun neo--hack-get-details (object)
+  "Extract (ISSUE REPO-ID INITIAL-STACK) from OBJECT.
+OBJECT can be a neo-issue or a neo-stack."
+  (cond
+   ((neo-issue-p object)
+    (list object
+          (neo-issue-repository-id object)
+          (neo-issue-stack object)))
+   ((neo-stack-p object)
+    ;; For stack, issue might be nil.
+    ;; We need repository-id which is in stack branch... wait, stack struct has no repository-id directly?
+    ;; Check neo-workflow-models.el: (cl-defstruct neo-stack ... issue-id branch ...)
+    ;; In DB schema it has repository_id.
+    ;; neo-load-stack doesn't populate repository-id slot (it's not in struct definition in models.el?),
+    ;; but it loads branch which has repository-id?
+    ;; Let's check neo-stack struct in models.el again.
+    ;; It seems I cannot easily get repo-id from stack struct if it's not there.
+    ;; But neo-load-stack takes repository-id as arg.
+    ;; If I have the stack object, maybe I can find the repo ID via its branch?
+    ;; (neo-stack-branch object) -> neo-branch.
+    ;; neo-branch has no repository-id field in struct?
+    ;; Let's assume we need to fix models first if this is missing.
+    ;; BUT, neo-db-insert-stack takes repository-id.
+    ;; Let's assume for now we can get it or we pass it.
+    ;; Actually, `neo-load-stack` returns a stack struct.
+    ;; Let's check neo-workflow-models.el again.
+    (let ((repo-id (neo--get-repo-id-for-stack object)))
+      (list nil repo-id object)))
+   (t (list nil nil nil))))
+
+(defun neo--get-repo-id-for-stack (stack)
+  "Get repository ID for a stack.
+This is a workaround because neo-stack struct doesn't have repository-id field yet.
+We try to infer it from the branch or query DB."
+  ;; If stack has a branch object, and branch object doesn't have repo-id...
+  ;; Query DB using stack ID?
+  (if (neo-stack-id stack)
+      (caar (sqlite-select (neo-open-db) "SELECT repository_id FROM stacks WHERE id = ?" (list (neo-stack-id stack))))
+    nil))
+
 (defun neo--hack (object)
+  "Create and switch to a full development context for OBJECT (issue or stack).
+This includes:
+1. Creating/switching to a Git branch or worktree.
+2. Creating/switching to a named perspective.
+3. Creating a stack and linking it all in the DB."
   (interactive)
-  (when (neo-issue-p object)
-    (let* ((original-issue object)
-           (issue-id (neo-issue-id original-issue))
-           (repo-id (neo-issue-repository-id original-issue))
-           (repo-name (neo--workflow-get-repo-full-name-by-id repo-id)))
-      (let ((stack (neo-issue-stack original-issue)))
-        (if stack
-            (message "Using existing stack: %s" (neo-stack-name stack))
-          (let* ((issue-to-modify (copy-neo-issue original-issue))
-                 (stack-name (neo-issue-title-to-slug (neo-issue-number issue-to-modify) (neo-issue-title issue-to-modify)))
-                 (new-stack (make-neo-stack :name stack-name :title (neo-issue-title issue-to-modify))))
-            (setf (neo-issue-stack issue-to-modify) new-stack)
-            (neo-db-upsert-issue issue-to-modify)
-            (neo/workflow-refresh repo-name issue-id)
-            (message "Created and using new stack: %s" stack-name)))))))
+  (pcase-let ((`(,issue ,repo-id ,initial-stack) (neo--hack-get-details object)))
+    (when repo-id
+      (let* ((repo-name (neo--workflow-get-repo-full-name-by-id repo-id))
+             (repo-short-name (cadr (split-string repo-name "/")))
+             (repo-path (expand-file-name repo-short-name neo/workflow-clone-base-dir))
+             (repo (neo-load-repository repo-id))
+             (default-branch (or (and repo (neo-repository-default-branch repo)) "main"))
+             (context (when initial-stack
+                        (neo/workflow-load-context-for-stack repo-id (neo-stack-id initial-stack))))
+             (strategy (let ((default-directory repo-path))
+                         (neo--workflow-choose-workspace-strategy))))
+        
+        (if context
+            ;; Context exists
+            (let* ((stack (neo-context-stack context))
+                   (stack-name (neo-stack-name stack))
+                   (branch-name (neo--get-branch-name stack))
+                   (perspective (neo-context-perspective context)))
+
+              ;; Resolve potential worktree conflict
+              (neo--resolve-branch-conflict repo-path branch-name strategy nil default-branch)
+              
+              (message "Switching to existing context: %s" perspective)
+              
+              ;; 1. Perspective Switch (Always)
+              (when (featurep 'perspective)
+                (persp-switch perspective)
+                (neo--ensure-stack-scratch perspective))
+
+              ;; 2. Git Context Switch
+              (cond
+               ((eq strategy 'worktree)
+                (let ((worktree-path (expand-file-name (concat repo-short-name "--" stack-name) neo/workflow-worktrees-directory)))
+                  (unless (file-exists-p worktree-path)
+                    (make-directory (file-name-directory worktree-path) t)
+                    (let ((default-directory repo-path))
+                      (neo--workflow-git-run "worktree" "add" worktree-path branch-name)))
+                  (message "Switched to worktree: %s" worktree-path)))
+               
+               (t
+                ;; Repo strategy
+                ))
+
+              ;; 3. Set Current Context
+              (setq neo/current-context context))
+          
+          ;; No context found (either no stack, or stack exists but no context record)
+          (if initial-stack
+              ;; Stack exists but no context record. Recover by creating context from stack.
+              (let ((stack-name (neo-stack-name initial-stack))
+                    (branch-name (neo--get-branch-name initial-stack)))
+                
+                ;; Resolve potential worktree conflict
+                (neo--resolve-branch-conflict repo-path branch-name strategy nil default-branch)
+
+                (message "Recovering context for existing stack: %s" stack-name)
+                
+                (when (featurep 'perspective)
+                  (persp-switch stack-name)
+                  (neo--ensure-stack-scratch stack-name))
+                
+                (cond
+                 ((eq strategy 'worktree)
+                  (let ((worktree-path (expand-file-name (concat repo-short-name "--" stack-name) neo/workflow-worktrees-directory)))
+                    (unless (file-exists-p worktree-path)
+                      (make-directory (file-name-directory worktree-path) t)
+                      (let ((default-directory repo-path))
+                        (neo--workflow-git-run "worktree" "add" worktree-path branch-name)))
+                    (message "Switched to worktree: %s" worktree-path)))
+                 (t))
+                
+                (let ((new-context (make-neo-context 
+                                    :repository (neo-load-repository repo-id)
+                                    :stack initial-stack
+                                    :perspective stack-name)))
+                  (setq neo/current-context new-context)
+                  (neo/workflow-db-upsert-context repo-id (neo-stack-id initial-stack) stack-name)))
+
+            ;; New stack path (Only possible if issue is provided)
+            (if issue
+                (let* ((issue-to-modify (copy-neo-issue issue))
+                       (username (or (neo--get-current-username) "user"))
+                       (base-slug (neo-issue-title-to-slug (neo-issue-number issue-to-modify) (neo-issue-title issue-to-modify)))
+                       (slug (format "%s/%s" username base-slug))
+                       ;; Resolve potential worktree conflict (with rename)
+                       (final-slug (neo--resolve-branch-conflict repo-path slug strategy t default-branch))
+                       (stack-name final-slug)
+                       (branch-name final-slug)
+                       (worktree-dirname (string-replace "/" "--" final-slug)))
+                  
+                  ;; 1. Git Branch Creation
+                  (let ((default-directory repo-path))
+                    (unless (neo/workflow-git-branch-exists branch-name)
+                      (neo/workflow-git-create-branch branch-name default-branch)))
+                  
+                  ;; 2. Update Issue
+                  (let ((new-stack (make-neo-stack :name stack-name :title (neo-issue-title issue-to-modify))))
+                    (setf (neo-issue-stack issue-to-modify) new-stack)
+                    (neo-db-upsert-issue issue-to-modify)
+                    (setq initial-stack new-stack)) ;; Update local var for context creation
+                  
+                  ;; 3. Refresh
+                  (neo/workflow-refresh repo-name (neo-issue-id issue))
+                  
+                  ;; 4. Perspective Switch
+                  (when (featurep 'perspective)
+                    (persp-switch stack-name)
+                    (neo--ensure-stack-scratch stack-name))
+
+                  ;; 5. Git Context Switch
+                  (cond
+                   ((eq strategy 'worktree)
+                    (let ((worktree-path (expand-file-name (concat repo-short-name "/" worktree-dirname) neo/workflow-worktrees-directory)))
+                      (unless (file-exists-p worktree-path)
+                        (make-directory (file-name-directory worktree-path) t)
+                        (let ((default-directory repo-path))
+                          (neo--workflow-git-run "worktree" "add" worktree-path branch-name)))
+                      (message "Created and switched to worktree: %s" worktree-path)))
+                   (t))
+                  
+                  ;; 6. Create Context
+                  (when-let ((saved-stack (neo-load-stack stack-name repo-id)))
+                    (let ((new-context (make-neo-context 
+                                        :repository (neo-load-repository repo-id)
+                                        :stack saved-stack
+                                        :perspective stack-name)))
+                      (setq neo/current-context new-context)
+                      (neo/workflow-db-upsert-context repo-id (neo-stack-id saved-stack) stack-name)))
+                  
+                  (message "Created and switched to stack: %s" stack-name))
+              (message "Cannot create new stack without an issue object."))))))))
 					;  (neo/workflow-refresh))))
+
+(defun neo/workflow-switch-context ()
+  "Switch to an existing workflow context (stack)."
+  (interactive)
+  (let* ((stacks (neo-db-get-all-stacks))
+         (candidates (mapcar (lambda (s) 
+                               (let ((display-name (format "%s (%s)" 
+                                                           (or (plist-get s :title) (plist-get s :name))
+                                                           (plist-get s :name))))
+                                 (cons display-name s))) 
+                             stacks))
+         (selection (completing-read "Switch to context: " candidates))
+         (stack-info (cdr (assoc selection candidates))))
+    (when stack-info
+      (let* ((stack-name (plist-get stack-info :name))
+             (repo-id (plist-get stack-info :repository-id))
+             (stack (neo-load-stack stack-name repo-id)))
+        (if stack
+            (neo--hack stack)
+          (message "Failed to load stack %s" stack-name))))))
 
 (defun neo--append (object)
   (interactive)
@@ -1188,29 +1415,51 @@ If TARGET-REPO-NAME and TARGET-ISSUE-ID are provided, position point on that iss
     (goto-char (point-min))))
 
 
-(defun neo--github-sync ()
-  "Refresh all repositories from GitHub."
-  (message "Refreshing repositories from GitHub...")
-  (dolist (repo (neo-load-all-repositories))
-    (neo--fetch-and-insert-repo (neo-repository-full-name repo)))
-  (message "Refreshing repositories from GitHub... Done."))
+(defvar neo--github-sync-in-progress nil
+  "Lock to prevent concurrent GitHub syncs.")
+
+(defun neo-workflow-github-sync ()
+  "Refresh all repositories from GitHub asynchronously.
+If a sync is already in progress, does nothing.
+Updates the DB and then schedules a UI refresh."
+  (interactive)
+  (if neo--github-sync-in-progress
+      (message "GitHub sync already in progress.")
+    (setq neo--github-sync-in-progress t)
+    (message "Starting background GitHub sync...")
+    (make-thread
+     (lambda ()
+       (condition-case err
+           (progn
+             (dolist (repo (neo-load-all-repositories))
+               (neo--fetch-and-insert-repo (neo-repository-full-name repo)))
+             (message "Background GitHub sync completed.")
+             ;; Schedule UI refresh on main thread
+             (run-at-time 0 nil 
+                          (lambda ()
+                            (setq neo--github-sync-in-progress nil)
+                            (neo/workflow-refresh))))
+         (error
+          (setq neo--github-sync-in-progress nil)
+          (message "Error during GitHub sync: %s" err)))))))
 
 (defun neo/workflow-sync-and-refresh ()
-  "Sync with GitHub and refresh the workflow status buffer."
+  "Sync with GitHub (async) and refresh the workflow status buffer (immediate)."
   (interactive)
-  (neo--github-sync)
+  (neo-workflow-github-sync)
   (neo/workflow-refresh))
 
 ;;;###autoload
 (defun neo/workflow-status ()
-  "Show the Neo workflow status buffer."
+  "Show the Neo workflow status buffer.
+Loads cached data immediately and triggers a background GitHub sync."
   (interactive)
   (let ((buffer (get-buffer-create "*NEO Workflow*")))
     (pop-to-buffer buffer)
     (with-current-buffer buffer
       (neo-workflow-status-mode)
-      (neo--github-sync)
-      (neo/workflow-refresh))))
+      (neo/workflow-refresh)
+      (neo-workflow-github-sync))))
 
 
 (provide 'neo-workflow-status)
