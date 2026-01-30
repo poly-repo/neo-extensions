@@ -10,32 +10,26 @@
 ;;   (setq doom-modeline-buffer-encoding nil))
 
 
+(neo/use-package all-the-icons)
+
 (neo/use-package major-mode-icons
   :after all-the-icons
   )
 
-(neo/use-package minions)
-;  :ensure (:wait t))
+(neo/use-package minions
+  :config (minions-mode))
 
 (neo/use-package simple-modeline
   :custom
   (simple-modeline-segments '((
-				    simple-modeline-segment-modified
-				    (lambda () (concat "  " (major-mode-icons--major-mode-icon)))
-					;				    simple-modeline-segment-major-mode
-				    simple-modeline-segment-buffer-name
-				    simple-modeline-segment-position)
-				   (
-					; simple-modeline-segment-minor-modes
-					;				    simple-modeline-segment-input-method
-					;				    simple-modeline-segment-eol
-					;				    simple-modeline-segment-encoding
-					;				    simple-modeline-segment-vc
-				    simple-modeline-segment-misc-info
-				    minions--mode-line-minor-modes
-					;				    simple-modeline-segment-process
-					;				    simple-modeline-segment-major-mode
-				    )))
-  :hook (after-init . simple-modeline-mode))
+			       simple-modeline-segment-modified
+			       (lambda () (concat "  " (all-the-icons-icon-for-mode major-mode)))
+			       simple-modeline-segment-buffer-name
+			       simple-modeline-segment-position)
+			      (
+			       simple-modeline-segment-misc-info
+			       minions--mode-line-minor-modes))))
+
+(add-hook 'emacs-startup-hook (lambda () (simple-modeline-mode 1)))
 
 (provide 'neo-ui-modeline)
