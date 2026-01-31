@@ -20,6 +20,7 @@
 	    "neo:workflow"
 	    "neo:build"
 	    "neo:python"
+	    "neo:latex"
 	    "neo:ai-buddy"
 	    "neo:leetcode"
 	    )
