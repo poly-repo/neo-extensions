@@ -303,7 +303,6 @@ WIDTH and HEIGHT are pixels (integers). DPI_H and DPI_V are pixels-per-inch
 	 (screen-resolution (neo/display-dpi))
 	 (x-dpi (car screen-resolution))
 	 (y-dpi (cdr screen-resolution)))
-    (message "%sx%s (%s %s)" width height x-dpi y-dpi)
     (neo/classify-monitor-aux width height x-dpi y-dpi)))
 
 

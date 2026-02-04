@@ -196,12 +196,13 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
       (treemacs-do-add-project-to-workspace root name))))
 
 (defun neo/projectile-update-treemacs ()
-  (when-let ((root (projectile-project-root))
-	     (name (projectile-project-name)))
-    (persp-switch name)
-    (neo/treemacs-show-only-project
-     root
-     (projectile-project-name root))))
+  (when (fboundp 'projectile-project-root)
+    (when-let ((root (projectile-project-root))
+	       (name (projectile-project-name)))
+      (persp-switch name)
+      (neo/treemacs-show-only-project
+       root
+       (projectile-project-name root)))))
 
 (add-hook 'emacs-startup-hook #'neo/projectile-update-treemacs)
 ;(add-hook 'projectile-after-switch-project-hook
