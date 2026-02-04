@@ -12,9 +12,9 @@
 
 (neo/use-package all-the-icons)
 
-(neo/use-package major-mode-icons
-  :after all-the-icons
-  )
+;(neo/use-package major-mode-icons
+;  :after all-the-icons
+;  )
 
 (neo/use-package minions
   :config (minions-mode))
@@ -28,8 +28,7 @@
 			       simple-modeline-segment-position)
 			      (
 			       simple-modeline-segment-misc-info
-			       minions--mode-line-minor-modes))))
-
-(add-hook 'emacs-startup-hook (lambda () (simple-modeline-mode 1)))
+			       minions--mode-line-minor-modes)))
+  :hook (emacs-startup . simple-modeline-mode))
 
 (provide 'neo-ui-modeline)

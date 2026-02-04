@@ -40,8 +40,8 @@
 (defface neo/header-button-active
   `((t :weight bold
        :underline t
-       :foreground ,(face-foreground 'neo/manager-header-face)
-       :background ,(face-background 'neo/manager-header-face)))
+       :foreground ,(or (face-foreground 'neo/manager-header-face) 'unspecified)
+       :background ,(or (face-background 'neo/manager-header-face) 'unspecified)))
   "Face for active header buttons in the NEO extension manager."
   :group 'neo)
 
@@ -127,69 +127,69 @@ If COLOR is nil, use the theme's default foreground color."
     ;; Insert image using overlay
     (let* ((emblem (neo/extension-emblem ext))
 	   (img (if (stringp emblem)
-		    (create-image emblem 'png t :data-p t)
-		  (create-image (neo--local-file "default-emblem64.png") 'png))))
-          ;; Insert a space and record its bounds *after* insertion
-          (insert " ")
-          (let ((ov (make-overlay (1- (point)) (point))))
-            (overlay-put ov 'display img)
-            (overlay-put ov 'neo-image t)
-            ;; Store it in the extension struct
-            (setf (neo/extension-summary-overlay ext) ov)))
-    
+		    (create-image emblem 'png t) ; :data-p t)
+		(create-image (neo--local-file "default-emblem64.png") 'png))))
+    ;; Insert a space and record its bounds *after* insertion
     (insert " ")
+    (let ((ov (make-overlay (1- (point)) (point))))
+      (overlay-put ov 'display img)
+      (overlay-put ov 'neo-image t)
+      ;; Store it in the extension struct
+      (setf (neo/extension-summary-overlay ext) ov)))
+  
+  (insert " ")
 
-    (insert (propertize (or (neo/extension-title ext) "Unnamed")
-                        'face '(:weight bold :height 1.2)))
-    (insert "\n\n")
+  (insert (propertize (or (neo/extension-title ext) "Unnamed")
+                      'face '(:weight bold :height 1.2)))
+  (insert "\n\n")
 
-    ;; Description
-    (when-let ((desc (neo/extension-description ext)))
-      (insert (propertize desc 'face '(:slant italic :height 0.95)))
-      (insert "\n\n"))
+  ;; Description
+  (when-let ((desc (neo/extension-description ext)))
+    (insert (propertize desc 'face '(:slant italic :height 0.95)))
+    (insert "\n\n"))
 
-    (insert (svg-lib-button "[check-bold] OK"
-                        (lambda () (interactive) (message "OK"))))
-    (insert "\n")
-    
-    (let ((repo (neo/extension-repository ext))
-	  (used-packages (neo--get-extension-info ext)))
-;  "Alist mapping keys to list render specs."))
-      (dolist (pair `(("Publisher" ,(neo/extension-publisher ext))
-                      ("Type"      ,(neo/repository-type repo))
-                      ("URL"       ,(neo/repository-url repo))
-                      ("Path"      ,(neo/repository-path repo))
-		      ("Required"  ,(neo/extension-requires ext))
-		      ("Recommended" ,(neo/extension-depends-on ext))
-		      ("Packages"  ,used-packages)
-		      ))
-	(when-let ((key (car pair))
-		   (value (cadr pair)))
-	  (insert (neo/manager--info-label (format "%-12s" key)) (neo/manager--info-value ": "))
+  (insert (svg-lib-button "[check-bold] OK"
+                          (lambda () (interactive) (message "OK"))))
+  (insert "\n")
+  
+  (let ((repo (neo/extension-repository ext))
+	(used-packages (neo--get-extension-info ext)))
+					;  "Alist mapping keys to list render specs."))
+    (dolist (pair `(("Publisher" ,(neo/extension-publisher ext))
+                    ("Type"      ,(neo/repository-type repo))
+                    ("URL"       ,(neo/repository-url repo))
+                    ("Path"      ,(neo/repository-path repo))
+		    ("Required"  ,(neo/extension-requires ext))
+		    ("Recommended" ,(neo/extension-depends-on ext))
+		    ("Packages"  ,used-packages)
+		    ))
+      (when-let ((key (car pair))
+		 (value (cadr pair)))
+	(insert (neo/manager--info-label (format "%-12s" key)) (neo/manager--info-value ": "))
 
-	  (cond
-	   ((listp value)
-	    (neo--manager-dispatch-list key value))
-	   (t
-	    (insert (neo/manager--info-value value) "\n"))))))
+	(cond
+	 ((listp value)
+	  (neo--manager-dispatch-list key value))
+	 (t
+	  (insert (neo/manager--info-value value) "\n"))))))
 
-	  ;; (if (listp value)
-	  ;;     (if (string= key "Packages")
-	  ;; 	  (neo--insert-packages-desc value))
-;;	    (insert (neo/manager--info-value value))))))
+  ;; (if (listp value)
+  ;;     (if (string= key "Packages")
+  ;; 	  (neo--insert-packages-desc value))
+  ;;	    (insert (neo/manager--info-value value))))))
 
-    (neo/insert-thin-divider)
-    
-    ;; Final range
-    (let ((end (point)))
-      (put-text-property start end 'neo-extension ext)
-      (let ((ov (make-overlay start (point))))
-	(overlay-put ov 'neo/card t)
-	(overlay-put ov 'neo/extension ext)
-	(overlay-put ov 'evaporate t)
-	ov)
+  (neo/insert-thin-divider)
+  
+  ;; Final range
+  (let ((end (point)))
+    (put-text-property start end 'neo-extension ext)
+    (let ((ov (make-overlay start (point))))
+      (overlay-put ov 'neo/card t)
+      (overlay-put ov 'neo/extension ext)
+      (overlay-put ov 'evaporate t)
+      ov)
       ;;; we probably don't use the return value or the text-property any more
-      (cons start end))))
+    (cons start end))))
 
 (defun neo--manager-dispatch-list (key value)
   (let* ((list-handlers

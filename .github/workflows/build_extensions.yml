@@ -43,7 +43,7 @@ jobs:
             echo "OLD_MANIFEST=$PWD/old.el" >> "$GITHUB_ENV"
           fi
 
-      - name: Run Emacs batch to generate dist/neo-extensions.el
+      - name: Run Emacs batch to generate dist/neo-extensions.el and dist/neo-extensions.sha256
         run: |
           mkdir -p dist
           emacs --batch -l build/extensions.el
