@@ -43,7 +43,19 @@
 (neo/side-window :mode 'help-mode :include-derived t :side 'right :size 80)
 (neo/side-window :mode 'treemacs-mode :side 'left :size 30) ; move to project
 
+(defvar neo/side-actions nil
+  "Alist mapping symbols to functions.")
 
+(defun neo/register-side-window-default (side func)
+  "Register FUNC for a specific SIDE ('left, 'right, 'up, or 'down)."
+  (setf (alist-get side neo/side-actions) func))
+
+(defun neo/dispatch-side (side)
+  "Execute the function associated with SIDE."
+  (let ((action (alist-get side neo/side-actions)))
+    (if (functionp action)
+        (funcall action)
+      (message "NEO: No action registered for and no buffers targeting %s side" side))))
 
 (defun neo/toggle-side-window (side)
   "Toggle the visibility of the side window at SIDE."
@@ -56,7 +68,10 @@
       (message "Showing side window: %s" side)
       (if-let ((buffers (neo/get-side-window-buffers side)))
           (display-buffer (car buffers))
-        (message "No buffers targeting %s side" side)))))
+	(neo/dispatch-side side)))))
+					;  (message "No buffers targeting %s side" side)))))
+
+(neo/register-side-window-default 'left #'treemacs)
 
 (defun neo/get-side-window (side)
   "Return the live window at SIDE in the current frame, or nil."
