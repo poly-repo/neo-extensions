@@ -23,6 +23,7 @@
 	    "neo:latex"
 	    "neo:ai-buddy"
 	    "neo:leetcode"
+	    "mav:cocktails"
 	    )
  :repository (
 	      :type "git"
