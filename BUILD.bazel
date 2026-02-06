@@ -1,0 +1,14 @@
+load("//build/copybara:copybara.bzl", "copybara_workflow")
+
+copybara_workflow(
+    name = "neo-extensions",
+    includes = [
+        "devex/editors/emacs/extensions/**",
+    ],
+    excludes = [
+        "devex/editors/emacs/extensions/BUILD.bazel",
+    ],
+    moves = {
+        "devex/editors/emacs/extensions": "",
+    },
+)
