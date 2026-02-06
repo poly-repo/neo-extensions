@@ -7,6 +7,21 @@ copybara_workflow(
     ],
     excludes = [
         "devex/editors/emacs/extensions/BUILD.bazel",
+        "devex/editors/emacs/extensions/mav/**",
+    ],
+    moves = {
+        "devex/editors/emacs/extensions": "",
+    },
+)
+
+copybara_workflow(
+    name = "mav-extensions",
+    includes = [
+        "devex/editors/emacs/extensions/**",
+    ],
+    excludes = [
+        "devex/editors/emacs/extensions/BUILD.bazel",
+        "devex/editors/emacs/extensions/neo/**",
     ],
     moves = {
         "devex/editors/emacs/extensions": "",
