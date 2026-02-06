@@ -1,8 +1,10 @@
 ;; ;;; build/extensions.el --- Build extension manifest
 
 (setq base-dir "extensions/")
-(defvar output-file "dist/neo-extensions.el")
-(defvar digest-file "dist/neo-extensions.sha256")
+
+(defvar sha (or (pop command-line-args-left) "unknown"))
+(defvar output-file (format "dist/extensions-%s.el" sha))
+(defvar digest-file (format "dist/extensions-%s.el.sha256" sha))
 
 (message "Building extensions manifest in %s" output-file)
 
