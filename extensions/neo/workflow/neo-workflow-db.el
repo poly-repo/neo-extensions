@@ -94,6 +94,12 @@
       (state text :not-null)
      ]
      (:foreign-key (issue_id) (issues id)))
+
+    (workflow_ui_state
+     [
+      (key text :primary-key)
+      (value text)
+     ])
     )
   "Workflow-related tables.")
 
@@ -103,6 +109,9 @@
   (let ((tables (mapcar #'car (sqlite-select db "SELECT name FROM sqlite_master WHERE type='table'"))))
     (unless (member "repo_ui_state" tables)
       (neo/workflow-db-init db neo--workflow-db-schemas)) ; other tables are from ghsync
+
+    (unless (member "workflow_ui_state" tables)
+      (neo/workflow-db-init db (list (assoc 'workflow_ui_state neo--workflow-db-schemas))))
 
     (unless (member "prs" tables)
       (neo/workflow-db-init db (list (assoc 'prs neo--workflow-db-schemas))))
@@ -366,6 +375,20 @@ ON CONFLICT(issue_id) DO UPDATE SET state=excluded.state"
   (caar (sqlite-select (neo-open-db)
                        "SELECT state FROM issue_ui_state WHERE issue_id = ?"
                        (list issue-id))))
+
+;;;###autoload
+(defun neo-db-set-workflow-filter (filter)
+  "Set/update the global workflow filter."
+  (sqlite-execute (neo-open-db)
+                  "INSERT INTO workflow_ui_state (key, value) VALUES ('filter', ?)
+ON CONFLICT(key) DO UPDATE SET value=excluded.value"
+                  (list filter)))
+
+;;;###autoload
+(defun neo-db-get-workflow-filter ()
+  "Get the global workflow filter. Returns filter string or nil."
+  (caar (sqlite-select (neo-open-db)
+                       "SELECT value FROM workflow_ui_state WHERE key = 'filter'")))
 
 
 ;;;###autoload

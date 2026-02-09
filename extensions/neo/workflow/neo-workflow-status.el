@@ -661,11 +661,6 @@ Interactively, prompt for REPO-NAME and display the table info."
   (interactive)
   (vtable-goto-table (neo-workflow-get-table-for-repo repo-name)))
 
-(defvar neo-workflow-repo-issue-filter-alist nil
-  "Alist mapping repository full names to issue filter types.
-Possible filter types are 'open, 'closed, 'active, 'all.
-Defaults to 'open if a repo is not in the alist.")
-
 (defcustom neo/workflow-sort-by-priority t
   "When non-nil, sort issues by priority."
   :type 'boolean
@@ -673,16 +668,36 @@ Defaults to 'open if a repo is not in the alist.")
 
 (defun neo-workflow-set-repo-issue-filter (repo-full-name filter-type)
   "Set the issue filter for REPO-FULL-NAME to FILTER-TYPE.
-FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
+FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all.
+Persists the setting to the database."
   (unless (memq filter-type '(open closed active all))
     (error "Invalid filter type: %s" filter-type))
-  (let ((entry (assoc repo-full-name neo-workflow-repo-issue-filter-alist)))
-    (if entry
-        (setcdr entry filter-type)
-      (push (cons repo-full-name filter-type) neo-workflow-repo-issue-filter-alist))))
+  (let* ((repo-id (neo--get-repo-id-by-full-name repo-full-name))
+         (current-state (neo-db-get-repo-ui-state repo-id))
+         (state (or (plist-get current-state :state) "expanded"))
+         (order (or (plist-get current-state :order) "priority")))
+    (neo-db-set-repo-ui-state repo-id state (symbol-name filter-type) order)))
+
+(defun neo-workflow-set-global-filter (filter-type)
+  "Set the global repository filter to FILTER-TYPE.
+FILTER-TYPE can be 'active, 'open, or nil (for all)."
+  (neo-db-set-workflow-filter (if filter-type (symbol-name filter-type) nil)))
+
+(defun neo-workflow-get-global-filter ()
+  "Get the global repository filter from DB."
+  (let ((val (neo-db-get-workflow-filter)))
+    (when val (intern val))))
 
 (defun neo-workflow-get-repo-issue-filter (repo-full-name)
-  (or (cdr (assoc-string repo-full-name neo-workflow-repo-issue-filter-alist)) 'open))
+  "Get the issue filter for REPO-FULL-NAME.
+Respects global filter if set to 'active or 'open."
+  (let ((global (neo-workflow-get-global-filter)))
+    (if (memq global '(active open))
+        global
+      (let* ((repo-id (neo--get-repo-id-by-full-name repo-full-name))
+             (state (neo-db-get-repo-ui-state repo-id))
+             (filter (plist-get state :filter)))
+        (if filter (intern filter) 'open)))))
 
 (defun neo--issue-filter (issues repo-name)
   "Filter ISSUES for REPO-NAME based on `neo-workflow-repo-issue-filter-alist'."
@@ -709,6 +724,21 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
     (let ((repo (get-text-property (point) 'repo-name)))
       (neo--repo-filter-change repo setting)))
   ;; TODO when changing a single repo we could do with less than a full refresh
+  (neo/workflow-refresh))
+
+(defun neo--filter-global-active ()
+  (interactive)
+  (neo-workflow-set-global-filter 'active)
+  (neo/workflow-refresh))
+
+(defun neo--filter-global-open ()
+  (interactive)
+  (neo-workflow-set-global-filter 'open)
+  (neo/workflow-refresh))
+
+(defun neo--filter-global-all ()
+  (interactive)
+  (neo-workflow-set-global-filter nil)
   (neo/workflow-refresh))
 
 (defun neo--filter-open (&optional global)
@@ -775,6 +805,9 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
 				    "f a" #'neo--filter-active
 				    "f o" #'neo--filter-open
 				    "f c" #'neo--filter-closed
+                                    "F A" #'neo--filter-global-all
+                                    "F a" #'neo--filter-global-active
+                                    "F o" #'neo--filter-global-open
                                     "+"   #'neo--new-issue-for-repo
                                     "e"   #'neo--edit-issue-at-point)
   "A keymap for action over the entire vtable, including the title")
@@ -1339,30 +1372,40 @@ Also preserves narrowing if active, unless `neo--inhibit-narrowing-restore` is n
 If TARGET-REPO-NAME and TARGET-ISSUE-ID are provided, position point on that issue."
   (interactive)
   (setq neo--repo-info-alist nil)
-  (let ((inhibit-read-only t))
+  (let ((inhibit-read-only t)
+        (global-filter (neo-workflow-get-global-filter)))
     (widen)
     (erase-buffer)
     (dolist (repo (neo-load-all-repositories))
       (let* ((repo-name (neo-repository-full-name repo))
-	     (start (point)))
+             (show-repo
+              (cond
+               ((eq global-filter 'active)
+                (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
+                  (seq-some #'neo--issue-active-p issues)))
+               ((eq global-filter 'open)
+                (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
+                  (seq-some (lambda (i) (eq (neo-issue-state i) 'open)) issues)))
+               (t t))))
 
+        (when show-repo
+          (let ((start (point)))
+            (neo--insert-repo-header repo)
 
-	(neo--insert-repo-header repo)
-
-	;; HACK there's no way to be able to define column
-	;; properties and at the same time don't show the table
-	;; header, so we cheat [this works only because we don't use
-	;; vtable functions for sorting and re-arranging the table,
-	;; otherwise the header would pop up again]
-	;; TODO: maybe we could make this buffer local
-	(cl-letf (((symbol-function #'vtable--insert-header-line)
-		   (lambda (table width spacer))))
-	  (let* ((table (neo/workflow-make-vtable (lambda () (neo--get-sorted-issues-for-repo repo)))))
-            (let ((end (point)))
-              (setf (alist-get repo-name neo--repo-info-alist) (list table start end)))
-	    (goto-char (point-max))
-	    (add-text-properties start (point) `(repo-name ,repo-name))
-	    (insert "\n"))))))
+            ;; HACK there's no way to be able to define column
+            ;; properties and at the same time don't show the table
+            ;; header, so we cheat [this works only because we don't use
+            ;; vtable functions for sorting and re-arranging the table,
+            ;; otherwise the header would pop up again]
+            ;; TODO: maybe we could make this buffer local
+            (cl-letf (((symbol-function #'vtable--insert-header-line)
+                       (lambda (table width spacer))))
+              (let* ((table (neo/workflow-make-vtable (lambda () (neo--get-sorted-issues-for-repo repo)))))
+                (let ((end (point)))
+                  (setf (alist-get repo-name neo--repo-info-alist) (list table start end)))
+                (goto-char (point-max))
+                (add-text-properties start (point) `(repo-name ,repo-name))
+                (insert "\n"))))))))
   (if (and target-repo-name target-issue-id)
       (let ((info (assoc-string target-repo-name neo--repo-info-alist)))
         (if info
