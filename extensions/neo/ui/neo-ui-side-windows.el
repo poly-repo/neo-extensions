@@ -75,8 +75,11 @@
 
 (defun neo/get-side-window (side)
   "Return the live window at SIDE in the current frame, or nil."
-  (cl-find-if (lambda (w) (eq (window-parameter w 'window-side) side))
-              (window-list)))
+  (or (cl-find-if (lambda (w) (eq (window-parameter w 'window-side) side))
+                  (window-list))
+      (let ((buffers (neo/get-side-window-buffers side)))
+        (cl-find-if (lambda (w) (memq (window-buffer w) buffers))
+                    (window-list)))))
 
 (defun neo/bury-side-window-buffer (side)
   "Bury the current buffer in the side window at SIDE."
