@@ -774,13 +774,34 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
     (neo--save-workflow-context
       (widen))))
 
+(defun neo--new-issue-for-repo ()
+  "Create a new issue for the repository at point."
+  (interactive)
+  (if-let ((repo-name (get-text-property (point) 'repo-name)))
+      (neo-workflow-issue-open-template repo-name)
+    (user-error "No repository found at point")))
+
+(defun neo--edit-issue-at-point ()
+  "Edit the issue at point."
+  (interactive)
+  (if-let* ((table (vtable-current-table))
+            (object (vtable-current-object))
+            (_ (neo-issue-p object))
+            (repo-id (neo-issue-repository-id object))
+            (repo-name (neo--workflow-get-repo-full-name-by-id repo-id))
+            (issue-number (neo-issue-number object)))
+      (neo-workflow-issue-open-template repo-name issue-number)
+    (user-error "No issue found at point")))
+
 (defvar neo/workflow-table-keymap (define-keymap
 				    "n n" #'neo--narrow-to-repo
 				    "n w" #'neo--widen
 				    "f A" #'neo--filter-all
 				    "f a" #'neo--filter-active
 				    "f o" #'neo--filter-open
-				    "f c" #'neo--filter-closed)
+				    "f c" #'neo--filter-closed
+                                    "+"   #'neo--new-issue-for-repo
+                                    "i"   #'neo--edit-issue-at-point)
   "A keymap for action over the entire vtable, including the title")
 
 (defun neo--labels (issue)
