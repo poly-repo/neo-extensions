@@ -23,7 +23,13 @@
   :custom
   (simple-modeline-segments '((
 			       simple-modeline-segment-modified
-			       (lambda () (concat "  " (all-the-icons-icon-for-mode major-mode)))
+			       (lambda ()
+                                 (let ((icon (condition-case nil
+                                                 (all-the-icons-icon-for-mode major-mode)
+                                               (error nil))))
+                                   (if (stringp icon)
+                                       (concat "  " icon)
+                                     "")))
 			       simple-modeline-segment-buffer-name
 			       simple-modeline-segment-position)
 			      (
