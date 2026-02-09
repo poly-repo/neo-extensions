@@ -9,7 +9,6 @@
 (require 'neo-workflow-git)
 (require 'neo-workflow-context)
 (require 'github-models)
-;(require 'ghub)
 (require 'auth-source)
 (require 'vtable)
 
@@ -118,9 +117,6 @@ into `neo/workflow-clone-base-dir`."
                    target-full-name neo/workflow-fork-visibility)
           (call-process "gh" nil nil nil "repo" "edit" target-full-name
                         "--enable-issues")
-	  ;; private forks are not forks any more and we don't want that
-					;                        "--visibility" neo/workflow-fork-visibility
-					;                        "--accept-visibility-change-consequences")
           (neo--fetch-and-insert-repo target-full-name)
           (when clone-p
             (neo/workflow-clone-repo target-full-name))
@@ -149,16 +145,6 @@ into `neo/workflow-clone-base-dir`."
                                           (neo/workflow-refresh))
                                       (message "Fork failed: %s" (string-trim e))
                                       (pop-to-buffer (process-buffer p))))))))))
-
-;; (defface neo-workflow-repo-face
-;;   '((((class color) (background light))
-;;      :background "gray90" :weight bold :underline t :extend t)
-;;     (((class color) (background dark))
-;;      :background "gray20" :weight bold :underline t :extend t)
-;;     (t
-;;      :weight bold :underline t :extend t))
-;;   "Face for workflow repo names."
-;;   :group 'neo-workflow-status)
 
 (defface neo-workflow-repo-face
   '((t
@@ -284,15 +270,6 @@ into `neo/workflow-clone-base-dir`."
       children
       ""))))
 
-;; (setq my-tree
-;;       '("Root"
-;;         ("Child A"
-;;          ("Grandchild A1")
-;;          ("Grandchild A2"))
-;;         ("Child B")))
-
-;; (insert (neo/tree-render my-tree))
-
 (defun neo--select-thing (object)
   (interactive))
 
@@ -301,8 +278,6 @@ into `neo/workflow-clone-base-dir`."
   ;; except that it isn't. This has the beneficial property
   ;; of working. Meh, seems working now
   (vtable-update-object table new old)
-  ;;  (vtable-insert-object table new old)
-  ;;  (vtable-remove-object table old)
   )
 
 (defun neo--ensure-stack-scratch (stack-name)
@@ -801,7 +776,7 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
 				    "f o" #'neo--filter-open
 				    "f c" #'neo--filter-closed
                                     "+"   #'neo--new-issue-for-repo
-                                    "i"   #'neo--edit-issue-at-point)
+                                    "e"   #'neo--edit-issue-at-point)
   "A keymap for action over the entire vtable, including the title")
 
 (defun neo--labels (issue)
@@ -837,26 +812,6 @@ Return nil if no priority label is present."
               (< (neo--get-issue-priority-score a)
                  (neo--get-issue-priority-score b))))
     issues))
-
-;;; colors:
-;; Low: #3B82F6 (blue-500)
-;; Mid: #22C55E (green-500)
-;; High: #8B5CF6 (violet-500)
-
-;; Use this if you want minimal emotional bias.
-;; Low: #9CA3AF gray
-;; Mid: #3B82F6 blue
-;; High: #4338CA indigo
-
-;; Low: #93C5FD light blue 
-;; Mid: #3B82F6 blue
-;; High: #1E3A8A dark blue 
-
-(defconst neo--priority-icons
-  '(("critical" . "🔥")
-    ("high"     . "▲")
-    ("mid"      . "●")
-    ("low"      . "▽")))
 
 (setq neo--priority-icons
       '(("critical" . "🔥")
@@ -1095,15 +1050,6 @@ Saturates at the top and bottom. Returns a string (\"\" if no priority)."
 				(if (neo-issue-p object)
 				    (neo--propertize-issue-title object)
 				  (neo--propertize-stack-title object))))
-	      ;; (:name "Title" :width 60
-	      ;; 	     :getter ,(lambda (object _)
-	      ;; 			(if (neo-issue-p object)
-	      ;; 			    (let* ((state (neo-issue-state object))
-	      ;; 				   (status-face (neo--get-issue-status-face state)))
-	      ;; 			      (propertize (neo-issue-title object)
-	      ;; 					  ;;						  'face (list status-face 'neo-workflow-issue-title-face)))
-	      ;; 					  'face (neo--final-issue-title-face object)))
-	      ;; 			  (propertize (concat (neo-stack-prefix object) (or (neo-stack-title object) (neo-stack-name object))) 'face '(bold)))))
 	      (:name "Labels" :width 30
 		     :getter ,(lambda (object _)
 				(if (neo-issue-p object) (neo--labels object) "")))
