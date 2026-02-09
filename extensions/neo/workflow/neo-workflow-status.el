@@ -1483,4 +1483,8 @@ Loads cached data immediately and triggers a background GitHub sync."
       (neo-workflow-github-sync))))
 
 
+(neo/application "Workflow"
+  :setup (neo/workflow-status)
+  :bind "w")
+
 (provide 'neo-workflow-status)
