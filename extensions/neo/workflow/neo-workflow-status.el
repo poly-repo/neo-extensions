@@ -8,6 +8,7 @@
 (require 'neo-workflow-db)
 (require 'neo-workflow-git)
 (require 'neo-workflow-context)
+(require 'neo-processes)
 (require 'github-models)
 (require 'auth-source)
 (require 'vtable)
@@ -44,6 +45,30 @@ Can be \"public\", \"private\", or \"internal\"."
 (defvar neo/current-context nil
   "The current workflow context object (neo-context struct).")
 
+(defvar neo/github-sync
+  (seq-find #'file-exists-p
+	    `(
+	      ,(expand-file-name "scripts/ghsync/o-ghsync" user-emacs-directory)
+	      ,(expand-file-name "../../../infra/tools/ghsync/o-ghsync" user-emacs-directory))))
+
+(defun neo/github-sync (&optional repo-name issue-id)
+  (neo/execute neo/github-sync
+	       :args `("--db" ,neo--workflow-db-file)
+	       :buffer-name "*NEO Workflow github sync*"
+	       :show-buffer nil
+	       :on-success (lambda () (neo/workflow-refresh repo-name issue-id))
+	       :on-error (lambda () (message "Error"))))
+
+(defun neo--github-sync (object)
+  (interactive)
+  (message "GITHUB SYNC %s" object)
+  (pcase-let ((`(,issue ,repo-id ,initial-stack) (neo--hack-get-details object)))
+    (when repo-id
+      (let* ((repo-name (neo--workflow-get-repo-full-name-by-id repo-id)))
+	(message "REPO %s" issue)
+	(neo/workflow-sync-and-refresh repo-name (neo-issue-id issue))
+	))))
+
 (defun neo/workflow-clone-repo (repo-full-name)
   "Clone REPO-FULL-NAME into `neo/workflow-clone-base-dir` and add to projects DB.
 Uses authentication token from `auth-source` if available."
@@ -66,7 +91,7 @@ Uses authentication token from `auth-source` if available."
                                 :command (list "git" "clone" url target-dir)
                                 :sentinel (lambda (p e)
                                             (when (eq (process-status p) 'exit)
-                                              (if (zerop (process-exit-status p))
+					      (if (zerop (process-exit-status p))
                                                   (progn
                                                     (message "Clone successful: %s" repo-full-name)
                                                     ;; Add to DB
@@ -236,7 +261,7 @@ into `neo/workflow-clone-base-dir`."
 (define-key neo-workflow-status-mode-map (kbd "<backtab>") #'neo-workflow-prev-table)
 
 ;; global actions
-(define-key neo-workflow-status-mode-map (kbd "g") #'neo/workflow-sync-and-refresh)
+(define-key neo-workflow-status-mode-map (kbd "g") 'neo/workflow-sync-and-refresh)
 (define-key neo-workflow-status-mode-map (kbd "q") #'quit-window)
 (define-key neo-workflow-status-mode-map (kbd "N") #'neo--repo-next)
 (define-key neo-workflow-status-mode-map (kbd "P") #'neo--repo-prev)
@@ -1039,11 +1064,11 @@ Saturates at the top and bottom. Returns a string (\"\" if no priority)."
       (neo-db-set-issue-ui-state issue-id new-state)
       (neo/workflow-refresh repo-name issue-id))))
 
-(defun neo--vtable-revert (&optional _)
-  (interactive)
-  (cl-letf (((symbol-function #'vtable--insert-header-line)
-	     (lambda (table width spacer))))
-    (vtable-revert-command)))
+;; (defun neo--vtable-revert (&optional _)
+;;   (interactive)
+;;   (cl-letf (((symbol-function #'vtable--insert-header-line)
+;; 	     (lambda (table width spacer))))
+;;     (vtable-revert-command)))
 
 (defun neo--get-branch-name (object)
   (if (neo-issue-p object)
@@ -1078,12 +1103,12 @@ Saturates at the top and bottom. Returns a string (\"\" if no priority)."
 	      (:name "Pri" :width 3 :align 'right
 		     :getter ,(lambda (object _)
                                 (if (neo-issue-p object) (neo--priority-icon object) "")))
-	      (:name "Title" :width 60
+	      (:name "Title" :width "80%"
 		     :getter ,(lambda (object _)
 				(if (neo-issue-p object)
 				    (neo--propertize-issue-title object)
 				  (neo--propertize-stack-title object))))
-	      (:name "Labels" :width 30
+	      (:name "Labels" :width 20 :align 'right
 		     :getter ,(lambda (object _)
 				(if (neo-issue-p object) (neo--labels object) "")))
 	      )
@@ -1092,7 +1117,8 @@ Saturates at the top and bottom. Returns a string (\"\" if no priority)."
    :actions `("k" kill-buffer
 	      "h" neo--hack
 	      "a" neo--append
-	      "g" neo--vtable-revert
+	      "g" neo--github-sync
+					;	      "g" neo--vtable-revert
 	      "TAB" neo--toggle-object-visibility
 	      "S-<up>" neo--priority-up
 	      "S-<down>" neo--priority-down
@@ -1371,105 +1397,110 @@ Also preserves narrowing if active, unless `neo--inhibit-narrowing-restore` is n
   "Refresh the workflow status buffer.
 If TARGET-REPO-NAME and TARGET-ISSUE-ID are provided, position point on that issue."
   (interactive)
-  (setq neo--repo-info-alist nil)
-  (let ((inhibit-read-only t)
-        (global-filter (neo-workflow-get-global-filter)))
-    (widen)
-    (erase-buffer)
-    (dolist (repo (neo-load-all-repositories))
-      (let* ((repo-name (neo-repository-full-name repo))
-             (show-repo
-              (cond
-               ((eq global-filter 'active)
-                (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
-                  (seq-some #'neo--issue-active-p issues)))
-               ((eq global-filter 'open)
-                (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
-                  (seq-some (lambda (i) (eq (neo-issue-state i) 'open)) issues)))
-               (t t))))
+  (when-let ((buffer (get-buffer "*NEO Workflow*")))
+    (with-current-buffer buffer
+      (setq neo--repo-info-alist nil)
+      (let ((inhibit-read-only t)
+            (global-filter (neo-workflow-get-global-filter)))
+	(widen)
+	(erase-buffer)
+	(dolist (repo (neo-load-all-repositories))
+	  (let* ((repo-name (neo-repository-full-name repo))
+		 (show-repo
+		  (cond
+		   ((eq global-filter 'active)
+                    (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
+                      (seq-some #'neo--issue-active-p issues)))
+		   ((eq global-filter 'open)
+                    (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
+                      (seq-some (lambda (i) (eq (neo-issue-state i) 'open)) issues)))
+		   (t t))))
 
-        (when show-repo
-          (let ((start (point)))
-            (neo--insert-repo-header repo)
+            (when show-repo
+              (let ((start (point)))
+		(neo--insert-repo-header repo)
 
-            ;; HACK there's no way to be able to define column
-            ;; properties and at the same time don't show the table
-            ;; header, so we cheat [this works only because we don't use
-            ;; vtable functions for sorting and re-arranging the table,
-            ;; otherwise the header would pop up again]
-            ;; TODO: maybe we could make this buffer local
-            (cl-letf (((symbol-function #'vtable--insert-header-line)
-                       (lambda (table width spacer))))
-              (let* ((table (neo/workflow-make-vtable (lambda () (neo--get-sorted-issues-for-repo repo)))))
-                (let ((end (point)))
-                  (setf (alist-get repo-name neo--repo-info-alist) (list table start end)))
-                (goto-char (point-max))
-                (add-text-properties start (point) `(repo-name ,repo-name))
-                (insert "\n"))))))))
-  (if (and target-repo-name target-issue-id)
-      (let ((info (assoc-string target-repo-name neo--repo-info-alist)))
-        (if info
-            (let* ((table (car (cdr info)))
-                   (target-object (seq-find (lambda (obj)
-                                              (and (neo-issue-p obj)
-                                                   (= (neo-issue-id obj) target-issue-id)))
-                                            (vtable-objects table))))
-              (if target-object
-                  (progn
-                    (vtable-goto-table table)
-                    (vtable-goto-object target-object)
-		    (redisplay)
-		    (hl-line-highlight))
-		(goto-char (point-min))))
-          (goto-char (point-min))))
-    (goto-char (point-min))))
+		;; HACK there's no way to be able to define column
+		;; properties and at the same time don't show the table
+		;; header, so we cheat [this works only because we don't use
+		;; vtable functions for sorting and re-arranging the table,
+		;; otherwise the header would pop up again]
+		;; TODO: maybe we could make this buffer local
+		(cl-letf (((symbol-function #'vtable--insert-header-line)
+			   (lambda (table width spacer))))
+		  (let* ((table (neo/workflow-make-vtable (lambda () (neo--get-sorted-issues-for-repo repo)))))
+                    (let ((end (point)))
+                      (setf (alist-get repo-name neo--repo-info-alist) (list table start end)))
+                    (goto-char (point-max))
+                    (add-text-properties start (point) `(repo-name ,repo-name))
+                    (insert "\n"))))))))
+      (if (and target-repo-name target-issue-id)
+	  (let ((info (assoc-string target-repo-name neo--repo-info-alist)))
+            (if info
+		(let* ((table (car (cdr info)))
+                       (target-object (seq-find (lambda (obj)
+						  (and (neo-issue-p obj)
+                                                       (= (neo-issue-id obj) target-issue-id)))
+						(vtable-objects table))))
+		  (if target-object
+                      (progn
+			(vtable-goto-table table)
+			(vtable-goto-object target-object)
+			(redisplay)
+			(hl-line-highlight))
+		    (goto-char (point-min))))
+              (goto-char (point-min))))
+	(goto-char (point-min))))))
 
 
 (defvar neo--github-sync-in-progress nil
   "Lock to prevent concurrent GitHub syncs.")
 
-(defun neo-workflow-github-sync ()
-  "Refresh all repositories from GitHub asynchronously.
-If a sync is already in progress, does nothing.
-Updates the DB and then schedules a UI refresh."
-  (interactive)
-  (if neo--github-sync-in-progress
-      (message "GitHub sync already in progress.")
-    (setq neo--github-sync-in-progress t)
-    (message "Starting background GitHub sync...")
-    (make-thread
-     (lambda ()
-       (condition-case err
-           (progn
-             (dolist (repo (neo-load-all-repositories))
-               (neo--fetch-and-insert-repo (neo-repository-full-name repo)))
-             (message "Background GitHub sync completed.")
-             ;; Schedule UI refresh on main thread
-             (run-at-time 0 nil 
-                          (lambda ()
-                            (setq neo--github-sync-in-progress nil)
-                            (neo/workflow-refresh))))
-         (error
-          (setq neo--github-sync-in-progress nil)
-          (message "Error during GitHub sync: %s" err)))))))
+;; (defun neo-workflow-github-sync ()
+;;   "Refresh all repositories from GitHub asynchronously.
+;; If a sync is already in progress, does nothing.
+;; Updates the DB and then schedules a UI refresh."
+;;   (interactive)
+;;   (if neo--github-sync-in-progress
+;;       (message "GitHub sync already in progress.")
+;;     (setq neo--github-sync-in-progress t)
+;;     (message "Starting background GitHub sync...")
+;;     (make-thread
+;;      (lambda ()
+;;        (condition-case err
+;;            (progn
+;;              (dolist (repo (neo-load-all-repositories))
+;;                (neo--fetch-and-insert-repo (neo-repository-full-name repo)))
+;;              (message "Background GitHub sync completed.")
+;;              ;; Schedule UI refresh on main thread
+;;              (run-at-time 0 nil 
+;;                           (lambda ()
+;;                             (setq neo--github-sync-in-progress nil)
+;;                             (neo/workflow-refresh))))
+;;          (error
+;;           (setq neo--github-sync-in-progress nil)
+;;           (message "Error during GitHub sync: %s" err)))))))
 
-(defun neo/workflow-sync-and-refresh ()
+(defun neo/workflow-sync-and-refresh (&optional repo-name issue-id)
   "Sync with GitHub (async) and refresh the workflow status buffer (immediate)."
   (interactive)
-  (neo-workflow-github-sync)
-  (neo/workflow-refresh))
+					;  (neo-workflow-github-sync)
+  (neo/github-sync repo-name issue-id))
+;  (neo/workflow-refresh))
 
 ;;;###autoload
 (defun neo/workflow-status ()
-  "Show the Neo workflow status buffer.
+"Show the Neo workflow status buffer.
 Loads cached data immediately and triggers a background GitHub sync."
-  (interactive)
-  (let ((buffer (get-buffer-create "*NEO Workflow*")))
-    (pop-to-buffer buffer)
-    (with-current-buffer buffer
-      (neo-workflow-status-mode)
-      (neo/workflow-refresh)
-      (neo-workflow-github-sync))))
+(interactive)
+(let ((buffer (get-buffer-create "*NEO Workflow*")))
+  (pop-to-buffer buffer)
+  (with-current-buffer buffer
+    (neo-workflow-status-mode)
+					;      (neo/workflow-refresh)
+					;      (neo-workflow-github-sync)
+    (neo/github-sync)
+    )))
 
 
 (neo/application "Workflow"
