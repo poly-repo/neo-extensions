@@ -4,6 +4,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      skip_unchanged:
+        description: 'Skip release if content is unchanged'
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -63,12 +69,14 @@ jobs:
 
       - name: Compare outputs
         id: compare
+        env:
+          SKIP_UNCHANGED: ${{ inputs.skip_unchanged || 'false' }}
         run: |
-          if [ -f old.el ] && cmp -s dist/extensions-${{ env.COMMIT_SHA }}.el old.el; then
-            echo "Unchanged - skipping release"
+          if [ "$SKIP_UNCHANGED" = "true" ] && [ -f old.el ] && cmp -s dist/extensions-${{ env.COMMIT_SHA }}.el old.el; then
+            echo "Unchanged and skip_unchanged is true - skipping release"
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
-            echo "Changed - will release"
+            echo "Changed or skip_unchanged is false - will release"
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
