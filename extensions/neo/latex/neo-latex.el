@@ -4,17 +4,15 @@
 ;;;
 ;;; Support for LaTeX
 
-(use-package auctex)
+(neo/use-package auctex)
 
-(use-package cdlatex
-  :ensure t
+(neo/use-package cdlatex
   :hook
   (LaTeX-mode . turn-on-cdlatex))
 
 ;;--------------------------------------------------------------------
 ;; pdf-tools
-(use-package pdf-tools
-  :ensure t
+(neo/use-package pdf-tools
   :custom
   (pdf-view-display-size 'fit-width)
   (pdf-annot-activate-created-annotations t "automatically annotate highlights")
@@ -43,7 +41,7 @@
 
                              (setq TeX-show-compilation nil) ; NOT display compilation windows
                              (setq TeX-global-PDF-mode t)    ; PDF mode enable, not plain
-                             ;;(setq TeX-engine 'default)      ; use xelatex default
+			     (setq TeX-engine 'luatex)      ; use xelatex default
                              (setq TeX-clean-confirm nil)
                              (setq TeX-save-query nil)
 
@@ -57,6 +55,11 @@
                                    TeX-source-correlate-start-server t)
                              ;;(add-to-list 'TeX-command-list '("XeLaTeX" "%`xelatex%(mode)%' %t" TeX-run-TeX nil t))
                              ;;(setq TeX-command-default "XeLaTeX")
+			     (with-eval-after-load "tex"
+			       (add-to-list 'TeX-command-list '("Arara" "arara --verbose %s" TeX-run-TeX nil t :help "Run Arara") t))
+			     (with-eval-after-load "latex"
+			       (define-key LaTeX-mode-map (kbd "C-c C-a") 
+					   (lambda () (interactive) (TeX-command-sequence '("Arara") t))))
                              (add-to-list 'TeX-command-list '("LaTeX" "%`pdflatex -shell-escape --synctex=1%(mode)%' %t" TeX-run-TeX nil t))
                              (setq TeX-command-default "LaTeX")
                              ;;(setq TeX-command-default "pdflatex --synctex=1")

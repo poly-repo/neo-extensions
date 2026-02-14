@@ -3,8 +3,6 @@
 (require 'neo-ui-frame)
 (require 'neo-ui-fonts)
 (require 'neo-ui-themes)
-; we do this in project now, too much coupling with projectile
-;(require 'neo-ui-treemacs)
 (require 'neo-ui-modeline)
 (require 'neo-ui-side-windows)
 
@@ -35,11 +33,4 @@
   (add-hook 'prog-mode-hook #'hl-line-mode)
   (add-hook 'text-mode-hook #'hl-line-mode))
 
-
-;; TODO: not sure what these do
-;; (setq spacious-padding-subtle-frame-lines
-;;       '( :mode-line-active spacious-padding-line-active
-;;          :mode-line-inactive spacious-padding-line-inactive
-;;          :header-line-active spacious-padding-line-active
-;;          :header-line-inactive spacious-padding-line-inactive))
 
