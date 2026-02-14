@@ -1,20 +1,9 @@
 ;;; -*- lexical-binding: t -*-
 
-;; (use-package doom-modeline
-;;  :init (doom-modeline-mode 1))
-
-;; (after! doom-modeline
-;;   (remove-hook 'doom-modeline-mode-hook #'size-indication-mode) ; filesize in modeline
-;;   (remove-hook 'doom-modeline-mode-hook #'column-number-mode)   ; cursor column in modeline
-;;   (line-number-mode -1)
-;;   (setq doom-modeline-buffer-encoding nil))
-
-
-(neo/use-package all-the-icons)
-
-;(neo/use-package major-mode-icons
-;  :after all-the-icons
-;  )
+(neo/use-package all-the-icons
+  :config
+  (unless (find-font (font-spec :name "all-the-icons"))
+    (all-the-icons-install-fonts t)))
 
 (neo/use-package minions
   :config (minions-mode))

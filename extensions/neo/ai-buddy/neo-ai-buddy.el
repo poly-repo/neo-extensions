@@ -66,29 +66,6 @@ LANGUAGES is a list of strings."
 	    (setq aidermacs-project-read-only-files (neo/ai-buddy-build-prompt-files '("elisp")))
 	    (setenv "GEMINI_API_KEY" (auth-source-pick-first-password :host "gemini.google.com" :user "token"))))
 
-;; (neo/use-package aidermacs
-;;   :commands (aidermacs-chat)
-;;   :bind (("C-c a" . aidermacs-transient-menu))
-;;   :custom
-;;   (aidermacs-auto-commits nil)
-;;   (aidermacs-default-model "gemini/gemini-2.5-pro")
-;;   (aidermacs-editor-model "gemini/gemini-flash-latest")
-;;   (aidermacs-weak-model "gemini/gemini-flash-latest")
-;;   (aidermacs-program "aider-ce")
-;;   (aidermacs-default-chat-mode 'architect)
-;;   (aidermacs-auto-accept-architect nil)
-;;   (aidermacs-show-diff-after-change t)
-;;   (aidermacs-backend 'comint)
-;;   (aidermacs-vterm-multiline-newline-key "S-<return>")
-;;   (aidermacs-exit-kills-buffer t)
-;;   :hook
-;;   (aidermacs-mode . 
-;; 		  (lambda ()
-;; 		    (visual-line-mode -1)
-;; 		    (setq truncate-lines t)
-;; 		    (setq word-wrap nil))))
-
-;;; experimenting with gemini-cli, seems better
 (neo/use-package ai-code
   :custom
   (ai-code-backends-infra-use-side-window nil) ; NOTE: we do want to manage the side window ourselves
@@ -102,6 +79,8 @@ LANGUAGES is a list of strings."
   ;; Optional: Turn on auto-revert buffer, so that the AI code change automatically appears in the buffer
   (global-auto-revert-mode 1)
   (setq auto-revert-interval 1) ;; set to 1 second for faster update
+  (neo/register-disposable-process 
+   '(rx "*" "gemini" (zero-or-more anything) "*"))
   ;; Optional: Set up Magit integration for AI commands in Magit popups
   (with-eval-after-load 'magit
     (ai-code-magit-setup-transients)))

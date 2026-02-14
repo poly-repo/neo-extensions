@@ -179,18 +179,24 @@ into `neo/workflow-clone-base-dir`."
   "Face for workflow repo names."
   :group 'neo-workflow-status)
 
+(defface neo-workflow-priority-base-face
+  '((t :family "Poiret One"
+       :slant italic))
+  "The base face for all workflow issue priorities."
+  :group 'neo-workflow-status)
+
 (defface neo-workflow-issue-open-face
-  '((t :inherit default))
+  '((t :inherit (neo-workflow-priority-base-face default)))
   "Face for open issues in workflow status."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-issue-active-face
-  '((t :inherit magit-branch-local))
+  '((t :inherit (neo-workflow-priority-base-face magit-branch-local)))
   "Face for active issues in workflow status."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-issue-completed-face
-  '((t :inherit magit-dimmed :strike-through t))
+  '((t :inherit (neo-workflow-priority-base-face magit-dimmed) :strike-through t))
   "Face for completed issues in workflow status."
   :group 'neo-workflow-status)
 
@@ -200,7 +206,7 @@ into `neo/workflow-clone-base-dir`."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-issue-title-face
-  '((t :inherit default))
+  '((t :inherit (neo-workflow-priority-base-face default)))
   "Face for issue titles in workflow status."
   :group 'neo-workflow-status)
 
@@ -209,38 +215,45 @@ into `neo/workflow-clone-base-dir`."
   "Face for critical priority issues."
   :group 'neo-workflow-status)
 
+(defface neo-workflow-priority-base-face
+  '((t :family "Space Mono"
+       :slant italic
+       :weight bold))
+  "The base face for all workflow issue priorities."
+  :group 'neo-workflow-status)
+
 (defface neo-workflow-priority-high-face
-  '((t :foreground "white" :background "#f66a0a"))
+  '((t :inherit neo-workflow-priority-base-face :foreground "white" :background "#f66a0a"))
   "Face for high priority issues."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-priority-medium-face
-  '((t :foreground "black" :background "#ffd33d"))
+  '((t :inherit neo-workflow-priority-base-face :foreground "black" :background "#ffd33d"))
   "Face for medium priority issues."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-priority-low-face
-  '((t :foreground "white" :background "#8b949e"))
+  '((t :inherit neo-workflow-priority-base-face :foreground "white" :background "#8b949e"))
   "Face for low priority issues."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-priority-icon-critical-face
-  '((t :foreground "#d73a49"))
+  '((t :inherit neo-workflow-priority-base-face :foreground "#d73a49"))
   "Face for critical priority icon."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-priority-icon-high-face
-  '((t :foreground "#4338CA"))
+  '((t :inherit neo-workflow-priority-base-face :height 0.8 :foreground "#4338CA"))
   "Face for high priority icon."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-priority-icon-mid-face
-  '((t :foreground "#3B82F6"))
+  '((t :inherit neo-workflow-priority-base-face :height 0.8 :foreground "#3B82F6"))
   "Face for medium priority icon."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-priority-icon-low-face
-  '((t :foreground "#9CA3AF"))
+  '((t :inherit neo-workflow-priority-base-face :height 0.8 :foreground "#9CA3AF"))
   "Face for low priority icon."
   :group 'neo-workflow-status)
 
@@ -455,7 +468,7 @@ This includes:
                     (unless (file-exists-p worktree-path)
                       (make-directory (file-name-directory worktree-path) t)
                       (let ((default-directory repo-path))
-                        (neo--workflow-git-run "worktree" "add" worktree-path branch-name)))
+                        (neo--workflow-git-run "worktree" "add" "--checkout" worktree-path branch-name)))
                     (message "Switched to worktree: %s" worktree-path)))
                  (t))
                 
@@ -939,7 +952,7 @@ excluding priority labels."
          (status-face (neo--get-issue-status-face state)))
     (append
      (list (propertize (format "%d" (neo-issue-number issue))
-		       'face (list status-face 'neo-workflow-issue-id-face))
+		       'face (list 'neo-workflow-issue-id-face status-face))
            (neo--priority-icon issue)
            (propertize (neo-issue-title issue)
 		       'face (list status-face 'neo-workflow-issue-title-face)))

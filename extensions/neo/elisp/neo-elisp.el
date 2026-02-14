@@ -30,4 +30,22 @@
 
 (neo/use-package buttercup)
 
+(neo/use-package paredit
+  :commands paredit-mode
+  :hook
+  (lisp-data-mode . paredit-mode)
+  :config
+  (define-key paredit-mode-map (kbd "RET") nil)
+  )
+
+;; TODO: not sure this is actually useful to me. el-search is probably more general, only one is likely to stay.
+(neo/use-package elisp-refs
+  :commands (elisp-refs-function
+	     elisp-refs-macro
+	     elisp-refs-variable
+	     elisp-refs-special
+	     elisp-refs-symbol))
+
+(neo/use-package el-search)
+
 ;;; Note, no (provide 'neo-elisp) here, extensions are loaded not required.

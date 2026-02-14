@@ -32,12 +32,21 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
       ;; Add a single grouped entry so either mode hits this server
       (push (cons mode-list server-command) eglot-server-programs))))
 
-(defun my/eglot-format-if-supported ()
-  "Format buffer only if the server supports it."
-  (when (eglot-server-capable :documentFormattingProvider)
-    (eglot-format)))
+(defun neo--eglot-format-if-supported ()
+  "Format buffer only if the server exists and supports it."
+  (let ((server (eglot-current-server)))
+    (when (and server 
+               (eglot-server-capable :documentFormattingProvider))
+      (eglot-format))))
 
-(add-hook 'before-save-hook #'my/eglot-format-if-supported)
+(defun neo--eglot-format-if-supported ()
+  "Format the buffer if Eglot is managing it and supports formatting."
+  (when (and (fboundp 'eglot-managed-p) 
+             (eglot-managed-p))
+    (when (eglot-server-capable :documentFormattingProvider)
+      (eglot-format-buffer))))
+
+(add-hook 'before-save-hook #'neo--eglot-format-if-supported)
 
 ;; TODO some LSP don't support formatting
 (defun neo/eglot-format-on-save ()

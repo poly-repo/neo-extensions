@@ -42,6 +42,7 @@
 (neo/side-window :regex "^\\*gemini.*\\*$" :side 'right :size 80) ; move to ai-buddy
 (neo/side-window :mode 'help-mode :include-derived t :side 'right :size 80)
 (neo/side-window :mode 'treemacs-mode :side 'left :size 30) ; move to project
+(neo/side-window :regex "^\\*compilation\\*$" :side 'right :size 80) ; move to programming-foundation
 
 (defvar neo/side-actions nil
   "Alist mapping symbols to functions.")

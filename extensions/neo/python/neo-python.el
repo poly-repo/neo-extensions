@@ -98,19 +98,21 @@
   :custom
   (python-shell-interpreter "python3")
   :config
-  (neo/eglot-set-server '(python-mode python-ts-mode) '("basedpyright-langserver"
-							"--stdio"
+  (neo/eglot-set-server '(python-mode python-ts-mode) '("rass" "python"
 							))
-;; (setq-default eglot-workspace-configuration
-;;     '((:pylsp . (:plugins (:pyflakes (:enabled t)
-;;                            :flake8 (:enabled t
-;;                                     :builtins ["_", "ngettext"]
-;;                                     )
-;;                            )
-;;                 )
-;;      ))
-;;   )
-)
+  ;; (neo/eglot-set-server '(python-mode python-ts-mode) '("basedpyright-langserver"
+  ;; 							"--stdio"
+  ;; 							))
+  ;; (setq-default eglot-workspace-configuration
+  ;;     '((:pylsp . (:plugins (:pyflakes (:enabled t)
+  ;;                            :flake8 (:enabled t
+  ;;                                     :builtins ["_", "ngettext"]
+  ;;                                     )
+  ;;                            )
+  ;;                 )
+  ;;      ))
+  ;;   )
+  )
 
 
 (neo/use-package dape

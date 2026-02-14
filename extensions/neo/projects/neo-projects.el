@@ -97,7 +97,7 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
 (neo/use-package projectile
   :demand t
   :custom
-  (projectile-project-search-path '("~/Projects/" "~/.local/share/wtrees"))
+  (projectile-project-search-path '("~/Projects/" "~/.local/share/wtrees" "~/Projects/worktrees/omega--m-vitale")) ; TODO the last is too hardcoded
   (projectile-auto-discover t)
   (projectile-current-project-on-switch 'move-to-end) ; TODO: once stable, remove this
   (projectile-project-name nil)
@@ -110,7 +110,7 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   (:map global-map
         ("C-x p" . projectile-command-map))
   ("C-x p p" . neo/projectile-switch-project-by-name)
-)
+  )
 
 (defun neo/persp-ensure-messages ()
   "Ensure *Messages* is part of the current perspective."
