@@ -43,6 +43,7 @@
 (neo/side-window :mode 'help-mode :include-derived t :side 'right :size 80)
 (neo/side-window :mode 'treemacs-mode :side 'left :size 30) ; move to project
 (neo/side-window :regex "^\\*compilation\\*$" :side 'right :size 80) ; move to programming-foundation
+(neo/side-window :mode 'eshell-mode :include-derived t :side 'bottom :size 20)
 
 (defvar neo/side-actions nil
   "Alist mapping symbols to functions.")
@@ -101,7 +102,7 @@
   (define-key map (kbd key) command)
   (define-key map (kbd (format "M-%s" key)) command))
 
-(dolist (spec '((left "<left>") (right "<right>") (up "<up>") (down "<down>")))
+(dolist (spec '((left "<left>") (right "<right>") (top "<up>") (bottom "<down>")))
   (let* ((side (car spec))
          (key (cadr spec))
          (map-sym (intern (format "neo/side-window-%s-map" side)))
