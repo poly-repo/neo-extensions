@@ -42,6 +42,9 @@
 (neo/side-window :regex "^\\*gemini.*\\*$" :side 'right :size 80) ; move to ai-buddy
 (neo/side-window :regex "^\\*claude-code.*\\*$" :side 'right :size 100) ; move to ai-buddy
 (neo/side-window :mode 'help-mode :include-derived t :side 'right :size 80)
+(neo/side-window :mode 'info-mode :include-derived t :side 'right :size 80) ; it is probably Info-mode
+(neo/side-window :regex "^\\*info\\*$" :side 'right :size 80)
+(neo/side-window :mode 'elpaca-info-mode :include-derived t :side 'right :size 80)
 (neo/side-window :mode 'treemacs-mode :side 'left :size 30) ; move to project
 (neo/side-window :regex "^\\*compilation\\*$" :side 'right :size 80) ; move to programming-foundation
 (neo/side-window :mode 'eshell-mode :include-derived t :side 'bottom :size 20)
