@@ -21,6 +21,7 @@
 	    "neo:build"
 	    "neo:python"
 	    "neo:latex"
+	    "neo:mlody"
 	    "neo:ai-buddy"
 	    "neo:leetcode"
 	    "mav:cocktails"
