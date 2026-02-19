@@ -66,8 +66,12 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
 ;; 						:pythonPath "~/.python/bin/python"))))))
 
 (neo/use-package eglot
-					;  :config
-					;  (neo/python-eglot-shadow-venv-setup)
+  :config
+  ;; eglot--stay-out-of-p uses cl-find on this variable, which requires a
+  ;; sequence. External config sometimes sets it to `t' (meaning "all"),
+  ;; which crashes eglot-client-capabilities before any connection is made.
+  (unless (listp eglot-stay-out-of)
+    (setq eglot-stay-out-of nil))
   :hook
   ((c++-mode c++-ts-mode) . eglot-ensure)
   (eglot-managed-mode . neo/eglot-format-on-save))
