@@ -4,92 +4,104 @@
 ;;;
 ;;; Support for LaTeX
 
-(neo/use-package auctex)
+;;; Score / build helpers
 
-(neo/use-package cdlatex
-  :hook
-  (LaTeX-mode . turn-on-cdlatex))
+(defconst neo/latex-score-command "o-score")
+(defconst neo/latex-score-pdf "the-score-online.pdf")
+(defconst neo/latex-arara-jobname "main")
 
-;;--------------------------------------------------------------------
-;; pdf-tools
-(neo/use-package pdf-tools
-  :custom
-  (pdf-view-display-size 'fit-width)
-  (pdf-annot-activate-created-annotations t "automatically annotate highlights")
-  :config
-  (define-key pdf-view-mode-map (kbd "C-s") 'isearch-forward)
-  :hook
-  (pdf-view-mode . (lambda() (setq display-line-numbers-mode nil))))
+(defun neo/latex-score-root ()
+  "Return the score project root."
+  (or (locate-dominating-file default-directory ".rules")
+      (locate-dominating-file default-directory "arara.yaml")
+      (locate-dominating-file default-directory "main.tex")
+      default-directory))
 
-;;--------------------------------------------------------------------
-(add-hook 'LaTeX-mode-hook (lambda ()
-                             (pdf-tools-install)
-                             (require 'tex-site)
-                             (setq pdf-view-use-scaling t)
-                             (TeX-fold-mode 1)
-                             (auto-fill-mode 1)
+(defun neo/latex-score-preamble ()
+  "Return o-score preamble based on prefix arg."
+  (if current-prefix-arg
+      "online"       ; normal, not fast, not draft
+    nil))            ; script default: draft-fast-online
 
-                             (flyspell-mode 1)
-                             (setq flyspell-sort-corrections nil)
-                             (setq flyspell-doublon-as-error-flag nil)
+(defun neo/latex-score-build ()
+  "Build score. With C-u, use normal online build."
+  (interactive)
+  (let* ((root (neo/latex-score-root))
+         (default-directory root)
+         (preamble (neo/latex-score-preamble))
+         (cmd (if preamble
+                  (format "%s %s" neo/latex-score-command preamble)
+                neo/latex-score-command)))
+    (compile cmd)))
 
-                             (setq split-width-threshold 80) ;  pdf-tool to open a pdf in the right side
-                             (turn-on-auto-fill)             ; LaTeX mode，turn off auto fold
-                             (latex-math-mode 1)
-                             (outline-minor-mode 1)
-                             (imenu-add-menubar-index)
+(defun neo/latex-score-build-current-chapter ()
+  "Build current chapter. With C-u, use normal online build."
+  (interactive)
+  (let* ((target (or (neo/latex-current-chapter-target)
+                     (completing-read "Chapter target: " neo/latex-targets nil t)))
+         (root (neo/latex-score-root))
+         (default-directory root)
+         (preamble (neo/latex-score-preamble))
+         (cmd (if preamble
+                  (format "%s %s --target %s"
+                          neo/latex-score-command
+                          preamble
+                          (shell-quote-argument target))
+                (format "%s --target %s"
+                        neo/latex-score-command
+                        (shell-quote-argument target)))))
+    (compile cmd)))
 
-                             (setq TeX-show-compilation nil) ; NOT display compilation windows
-                             (setq TeX-global-PDF-mode t)    ; PDF mode enable, not plain
-			     (setq TeX-engine 'luatex)      ; use xelatex default
-                             (setq TeX-clean-confirm nil)
-                             (setq TeX-save-query nil)
+(defun neo/latex-score-pdf-path ()
+  "Return the online PDF path."
+  (expand-file-name neo/latex-score-pdf (neo/latex-score-root)))
 
-                             (setq font-latex-fontify-script t)
-                             (define-key LaTeX-mode-map (kbd "TAB") 'TeX-complete-symbol)
-                             ;;(setq TeX-electric-escape t)      ; press \ then, jump to mini-buffer to input commands
-                             ;;(setq TeX-view-program-list '(("Evince" "evince %o"))) ;;
-                             ;;(setq TeX-view-program-selection '((output-pdf "Evince")))
-                             (setq TeX-view-program-selection '((output-pdf "PDF Tools"))
-                                   TeX-view-program-list '(("PDF Tools" TeX-pdf-tools-sync-view))
-                                   TeX-source-correlate-start-server t)
-                             ;;(add-to-list 'TeX-command-list '("XeLaTeX" "%`xelatex%(mode)%' %t" TeX-run-TeX nil t))
-                             ;;(setq TeX-command-default "XeLaTeX")
-			     (with-eval-after-load "tex"
-			       (add-to-list 'TeX-command-list '("Arara" "arara --verbose %s" TeX-run-TeX nil t :help "Run Arara") t))
-			     (with-eval-after-load "latex"
-			       (define-key LaTeX-mode-map (kbd "C-c C-a") 
-					   (lambda () (interactive) (TeX-command-sequence '("Arara") t))))
-                             (add-to-list 'TeX-command-list '("LaTeX" "%`pdflatex -shell-escape --synctex=1%(mode)%' %t" TeX-run-TeX nil t))
-                             (setq TeX-command-default "LaTeX")
-                             ;;(setq TeX-command-default "pdflatex --synctex=1")
+(defun neo/latex-score-view ()
+  "Open the online score PDF in Zathura."
+  (interactive)
+  (let ((pdf (neo/latex-score-pdf-path)))
+    (unless (file-exists-p pdf)
+      (user-error "PDF does not exist yet: %s" pdf))
+    (start-process "zathura" nil "zathura" pdf)))
 
-                             (setq TeX-fold-env-spec-list (quote (("[comment]" ("comment")) ("[figure]" ("figure")) ("[table]" ("table"))("[itemize]"("itemize"))("[enumerate]"("enumerate"))("[description]"("description"))("[overpic]"("overpic"))("[tabularx]"("tabularx"))("[code]"("code"))("[shell]"("shell")))))
+(defun neo/latex-current-chapter-target ()
+  "Infer chap:... target from current buffer filename."
+  (when-let* ((file (buffer-file-name))
+              (base (file-name-base file)))
+    (when (string-match "^[0-9]+-\\(.+\\)$" base)
+      (concat "chap:" (match-string 1 base)))))
 
+(defun neo/latex-score-build-current ()
+  "Build only the current chapter using o-score."
+  (interactive)
+  (let* ((target (neo/latex-current-chapter-target))
+         (root (neo/latex-score-root))
+         (default-directory root)
+         (cmd (if target
+                  (format "%s --target %s"
+                          neo/latex-score-command
+                          (shell-quote-argument target))
+                neo/latex-score-command)))
+    (message "Running: %s" cmd)
+    (compile cmd)))
 
-                             (define-key LaTeX-mode-map (kbd "C-c C-p") 'reftex-parse-all)
-                             (define-key LaTeX-mode-map (kbd "C-c C-g") #'pdf-sync-forward-search)
-			     (define-key LaTeX-mode-map (kbd "C-c '") #'neo/edit-code-block)
+(defun neo/latex-output-pdf ()
+  "Return the online PDF produced by arara."
+  (let* ((master (TeX-master-file))
+         (dir (file-name-directory master)))
+    (expand-file-name
+     (concat neo/latex-arara-jobname ".pdf")
+     dir)))
 
-                             (setq LaTeX-section-hook
-                                   '(LaTeX-section-heading
-                                     LaTeX-section-title
-                                     LaTeX-section-toc
-                                     LaTeX-section-section
-                                     LaTeX-section-label))
+(defun neo/latex-view-online-pdf ()
+  "Open the online arara PDF in Evince."
+  (interactive)
+  (let ((pdf (neo/latex-output-pdf)))
+    (unless (file-exists-p pdf)
+      (user-error "PDF does not exist yet: %s" pdf))
+    (start-process "evince" nil "evince" pdf)))
 
-                             (setq pdf-sync-backward-display-action t
-                                   pdf-sync-forward-display-action t
-                                   TeX-source-correlate-mode t
-                                   TeX-source-correlate-method '(
-                                                                 (dvi . source-specials)
-                                                                 (pdf . synctex))
-                                   TeX-source-correlate-start-server t  ; [C-c C-g] to switch between source code and PDF
-                                   reftex-plug-into-AUCTeX t)
-                             (add-hook 'TeX-after-compilation-finished-functions
-                                       #'TeX-revert-document-buffer) ;
-                             (add-hook 'pdf-view-mode-hook (lambda() (display-line-numbers-mode -1)))
-                             ))
+;;; Code-block edit infrastructure
 
 (defun neo/starlark--bounds-auctex-precise ()
   "Return the bounds of the current starlark environment body."
@@ -226,5 +238,81 @@
   "Edit CODE-RANGE from the current starlark environment."
   (interactive (list (neo/starlark--bounds-auctex-precise)))
   (neo--latex-open-code-edit-buffer code-range))
+
+;;; Mode setup
+
+(defun neo/latex-mode-setup ()
+  "Configure LaTeX-mode buffer for NEO workflow."
+  (add-to-list
+   'TeX-command-list
+   '("Arara" "arara --verbose %s"
+     TeX-run-TeX nil t
+     :help "Run arara on the master file"))
+  (TeX-fold-mode 1)
+  (LaTeX-math-mode 1)
+  (outline-minor-mode 1)
+  (flyspell-mode 1)
+  (auto-fill-mode 1)
+  (setq-local TeX-command-default "Arara")
+  (local-set-key (kbd "C-c C-a") #'neo/latex-score-build)
+  (local-set-key (kbd "C-c C-c") #'neo/latex-score-build-current)
+  (local-set-key (kbd "C-c C-t") #'neo/latex-score-build-current-chapter)
+  (local-set-key (kbd "C-c C-v") #'neo/latex-score-view)
+  (local-set-key (kbd "C-c C-p") #'reftex-parse-all)
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "r") #'reftex-reference)
+    (define-key map (kbd "c") #'reftex-citation)
+    (define-key map (kbd "l") #'reftex-label)
+    (define-key map (kbd "t") #'reftex-toc)
+    (define-key map (kbd "p") #'reftex-parse-all)
+    (local-set-key (kbd "C-c C-r") map))
+  (local-set-key (kbd "C-c '") #'neo/edit-code-block))
+
+;;; Packages
+
+(neo/use-package reftex
+  :ensure nil
+  :after auctex
+  :hook (LaTeX-mode . turn-on-reftex)
+  :custom
+  (reftex-plug-into-AUCTeX t)
+  :config
+  (setq reftex-label-alist
+        '(("section"  ?s "sec:"  "~\\ref{%s}"    nil nil)
+          ("figure"   ?f "fig:"  "~\\ref{%s}"    nil nil)
+          ("table"    ?t "tab:"  "~\\ref{%s}"    nil nil)
+          ("equation" ?e "eq:"   "~\\eqref{%s}"  nil nil)
+          ("chapter"  ?c "chap:" "~\\ref{%s}"    nil nil))))
+
+(neo/use-package auctex
+  :defer t
+  :custom
+  (TeX-auto-save t)
+  (TeX-parse-self t)
+  (TeX-master nil)                 ; ask once, then store as file-local
+  (TeX-save-query nil)
+  (TeX-clean-confirm nil)
+  (TeX-show-compilation t)
+  (TeX-source-correlate-mode t)
+  (TeX-source-correlate-method 'synctex)
+  (TeX-source-correlate-start-server t)
+  (TeX-PDF-mode t)
+  :config
+  (setq TeX-command-default "Arara")
+  (add-hook 'TeX-after-compilation-finished-functions
+            #'TeX-revert-document-buffer)
+  (add-hook 'LaTeX-mode-hook #'neo/latex-mode-setup)
+  (add-hook 'compilation-finish-functions
+            (lambda (_buf _msg)
+              (when (derived-mode-p 'latex-mode)
+                (ignore-errors (reftex-parse-all))))))
+
+(with-eval-after-load 'tex
+  (add-to-list 'TeX-view-program-list
+               '("Evince" "evince --page-index=%(outpage) %o"))
+  (setq TeX-view-program-selection '((output-pdf "Evince")))
+  (setq TeX-source-correlate-mode t
+        TeX-source-correlate-method 'synctex
+        TeX-source-correlate-start-server t))
 
 ;;; Note, no (provide 'neo-latex) here, extensions are loaded not required.
