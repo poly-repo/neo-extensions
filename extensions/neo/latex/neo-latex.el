@@ -241,6 +241,14 @@
 
 ;;; Mode setup
 
+(defun neo/latex-citar-setup ()
+  "Set citar-bibliography buffer-locally to the project bib file."
+  (let ((bib (expand-file-name
+              (concat neo/latex-arara-jobname ".bib")
+              (neo/latex-score-root))))
+    (when (file-exists-p bib)
+      (setq-local citar-bibliography (list bib)))))
+
 (defun neo/latex-mode-setup ()
   "Configure LaTeX-mode buffer for NEO workflow."
   (add-to-list
@@ -283,6 +291,45 @@
           ("table"    ?t "tab:"  "~\\ref{%s}"    nil nil)
           ("equation" ?e "eq:"   "~\\eqref{%s}"  nil nil)
           ("chapter"  ?c "chap:" "~\\ref{%s}"    nil nil))))
+
+(neo/use-package cdlatex
+  :hook (LaTeX-mode . turn-on-cdlatex)
+  :custom
+  (cdlatex-math-symbol-alist
+   '((?R ("\\mathbb{R}"))
+     (?N ("\\mathbb{N}"))
+     (?Z ("\\mathbb{Z}"))
+     (?C ("\\mathbb{C}"))
+     (?Q ("\\mathbb{Q}"))
+     (?8 ("\\infty"))
+     (?e ("\\varepsilon" "\\epsilon"))))
+  (cdlatex-math-modify-alist
+   '((?b "\\mathbb"  "Blackboard bold" t nil nil)
+     (?c "\\mathcal"  "Calligraphic"    t nil nil)
+     (?f "\\mathfrak" "Fraktur"         t nil nil)))
+  (cdlatex-command-alist
+   '(("eqn"  "Insert equation* env"  "" cdlatex-environment ("equation*") t nil)
+     ("ali"  "Insert align* env"     "" cdlatex-environment ("align*")    t nil)
+     ("gat"  "Insert gather* env"    "" cdlatex-environment ("gather*")   t nil)
+     ("pmat" "Insert pmatrix env"    "" cdlatex-environment ("pmatrix")   t nil)
+     ("bmat" "Insert bmatrix env"    "" cdlatex-environment ("bmatrix")   t nil))))
+
+(neo/use-package citar
+  :hook
+  (LaTeX-mode . neo/latex-citar-setup)
+  (LaTeX-mode . citar-capf-setup)
+  (org-mode   . citar-capf-setup)
+  :config
+  (setq citar-symbols
+        `((t . (,(all-the-icons-octicon  "tag"        :face 'all-the-icons-green  :height 0.9) . " "))
+          (a . (,(all-the-icons-material "attachment" :face 'all-the-icons-orange :height 0.9) . " "))
+          (P . (,(all-the-icons-faicon   "book"       :face 'all-the-icons-blue   :height 0.9) . " "))))
+  (setq citar-symbol-separator "  ")
+  (setq citar-templates
+        '((main    . "${author editor:30}  ${date year issued:4}  ${title:48}")
+          (suffix  . "  ${=key= id:15}  ${=type=:12}  ${tags keywords:*}")
+          (preview . "${author editor} (${year issued date}) ${title}.\n")
+          (note    . "Notes on ${author editor}, ${title}"))))
 
 (neo/use-package auctex
   :defer t
