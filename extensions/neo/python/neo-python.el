@@ -122,8 +122,6 @@
   (setq dape-key-prefix "\C-x\C-a")
 
   :hook
-  ;; Save breakpoints on quit
-  (kill-emacs . dape-breakpoint-save)
   ;; Load breakpoints on startup
   (after-init . dape-breakpoint-load)
 
@@ -142,6 +140,8 @@
 ;;  (dape-cwd-function #'project-root)
 
   :config
+  ;; Save breakpoints on quit (moved from :hook to avoid dape-mode autoload in kill-emacs-hook)
+  (add-hook 'kill-emacs-hook #'dape-breakpoint-save)
   ;; Save buffers on startup, useful for interpreted languages
   ;; (add-hook 'dape-start-hook (lambda () (save-some-buffers t t)))
 

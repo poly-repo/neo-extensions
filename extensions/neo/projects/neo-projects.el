@@ -107,9 +107,8 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   (projectile-mode 1)
   (projectile-discover-projects-in-search-path)
   :bind
-  (:map global-map
-        ("C-x p" . projectile-command-map))
-  ("C-x p p" . neo/projectile-switch-project-by-name)
+  (:map projectile-command-map
+        ("p" . neo/projectile-switch-project-by-name))
   )
 
 (defun neo/persp-ensure-messages ()
@@ -128,16 +127,17 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   (persp-state-default-file (expand-file-name "persp-state.el" no-littering-var-directory))
   :config
   (persp-mode 1)
+  ;; use-package adds NAME-mode as an autoload trigger for every :hook entry;
+  ;; moving kill-emacs here avoids perspective-mode landing in kill-emacs-hook.
+  (remove-hook 'kill-emacs-hook #'perspective-mode)
+  (add-hook 'kill-emacs-hook #'persp-state-save)
   ;; NOTE we give time for magit/projectile/etc... to settle. There're
   ;; races I've not been able to solve.
   (run-with-idle-timer 1 nil (lambda ()
-			       ;; No idea who put that in. It doesn't even exist.
-			       (remove-hook 'kill-emacs-hook #'perspective-mode)
-			       (when (file-exists-p  persp-state-default-file)
+			       (when (file-exists-p persp-state-default-file)
 				 (persp-state-load persp-state-default-file))))
   :hook
-  ((persp-switch persp-created) . #'neo/persp-ensure-messages)
-  (kill-emacs . #'persp-state-save)
+  ((persp-switch persp-created) . neo/persp-ensure-messages)
   :bind
   ("C-x b" . persp-switch-to-buffer*)
   ("C-x k" . persp-kill-buffer*))

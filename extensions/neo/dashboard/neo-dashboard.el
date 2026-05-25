@@ -46,10 +46,10 @@
 
 (defun neo/dashboard-initial-buffer ()
   "Return the dashboard buffer for `initial-buffer-choice`."
-  (require 'dashboard)
-  (neo/dashboard--enter)
-  (dashboard-open)
-  (get-buffer "*dashboard*"))
+  (when (require 'dashboard nil t)
+    (neo/dashboard--enter)
+    (dashboard-open)
+    (get-buffer "*dashboard*")))
 
 
 (defun neo/dashboard--enter ()
