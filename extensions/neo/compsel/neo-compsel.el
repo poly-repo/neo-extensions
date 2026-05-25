@@ -10,13 +10,10 @@
   (vertico-count 20) ;; Show more candidates
   (vertico-resize t) ;; Grow and shrink the Vertico minibuffer
   ;; (vertico-cycle t) ;; Enable cycling for `vertico-next/previous'
-  :init
-  ;; vertico is autoloaded, so invoking vertico-mode in :init makes
-  ;; sure it is loaded before other packages potentially require
-  ;; minibuf interaction
-  ;; TODO: this is from the vertico documentation. Pretty sure it
-  ;; doesn't work with our deferring use-package evaluation.
-  (vertico-mode))
+  :hook
+  ;; after-init fires after elpaca-wait in neo--startup, so vertico is
+  ;; guaranteed to be built and its autoloads loaded by then
+  (after-init . vertico-mode))
 
 (neo/use-package posframe)
 
@@ -102,11 +99,8 @@
   (marginalia-max-relative-age 0)
   (marginalia-align 'left)
   (marginalia-align-offset 16)
-  :init
-  ;; Marginalia must be activated in the :init section of use-package such that
-  ;; the mode gets enabled right away. Note that this forces loading the
-  ;; package.
-  (marginalia-mode))
+  :hook
+  (after-init . marginalia-mode))
 
 (neo/use-package emacs
   :custom
