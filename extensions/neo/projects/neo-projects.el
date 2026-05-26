@@ -106,6 +106,8 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
   :config
   (projectile-mode 1)
   (projectile-discover-projects-in-search-path)
+  (with-eval-after-load 'project
+    (define-key project-prefix-map (kbd "p") #'neo/projectile-switch-project-by-name))
   :bind
   (:map projectile-command-map
         ("p" . neo/projectile-switch-project-by-name))
