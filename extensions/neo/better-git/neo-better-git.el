@@ -205,12 +205,41 @@
 ;;             (magit-branch-delete branches-to-delete t))
 ;;       (message "Nothing to delete"))))
 
+(defconst neo/forge-legacy-database-file
+  (expand-file-name "~/.emacs.d/.cache/forge-database.sqlite")
+  "Legacy Forge database path used before Neo's profile-specific cache.")
+
+(defun neo--forge-database-has-repositories-p (database-file)
+  "Return non-nil when DATABASE-FILE exists and contains tracked repositories."
+  (when (file-exists-p database-file)
+    (require 'sqlite)
+    (let (db)
+      (unwind-protect
+          (condition-case nil
+              (progn
+                (setq db (sqlite-open database-file))
+                (> (caar (sqlite-select db "SELECT COUNT(*) FROM repository")) 0))
+            (error nil))
+        (when (and db (sqlitep db))
+          (sqlite-close db))))))
+
+(defun neo/forge-migrate-legacy-database-if-needed ()
+  "Seed Neo's Forge database from the legacy profile when it is still empty."
+  (let ((target (expand-file-name "forge/database.sqlite" no-littering-var-directory))
+        (legacy neo/forge-legacy-database-file))
+    (when (and (neo--forge-database-has-repositories-p legacy)
+               (not (neo--forge-database-has-repositories-p target)))
+      (make-directory (file-name-directory target) t)
+      (copy-file legacy target t t t t)
+      (message "Neo: migrated Forge repository metadata from %s" legacy))))
 
 
 ;;; TODO find a good binding for forge-post-submit otherwise markdown mode takes over C-c C-c
 ;;; maybe C-x #
 (neo/use-package forge
   :after magit
+  :init
+  (neo/forge-migrate-legacy-database-if-needed)
   :config
   (set-face-attribute 'forge-issue-completed nil :strike-through t)
   (setq forge-topic-list-columns
