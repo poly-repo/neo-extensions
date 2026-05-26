@@ -86,7 +86,6 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   ;; I'd be ok w/ a warning, but cannot stand this in the echo area
   (ad-redefinition-action 'accept)
   (inhibit-splash-screen t)
-  (custom-file (expand-file-name (format "%s-custom.el" (neo/get-emacs-instance-name)) user-emacs-directory))
   ;; The following is mainly for avoiding the
   ;; 'Symbolic link to Git-controlled source file; follow link? (y or n)'
   ;; question every time I get to a package source via find-library or
@@ -148,5 +147,4 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   (ediff-window-setup-function 'ediff-setup-windows-plain)
   (ediff-split-window-function 'split-window-horizontally)
   (ediff-merge-split-window-function 'split-window-horizontally))
-
 
