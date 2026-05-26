@@ -309,7 +309,7 @@ Does not prompt in the minibuffer."
 ;		 (slot . 0)))
 ;  )
 
-(use-package direnv
+(neo/use-package direnv
   :config
   (direnv-mode))
 

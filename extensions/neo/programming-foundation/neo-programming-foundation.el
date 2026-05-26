@@ -206,7 +206,7 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
 (global-set-key [(f7)] #'neo/flymake-toggle-diagnostics-buffer)
 
 ;; TODO not entirely sure it belongs here
-(use-package imenu-list
+(neo/use-package imenu-list
   :custom
   (imenu-list-focus-after-activation t)
   :bind

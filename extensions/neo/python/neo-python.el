@@ -41,6 +41,15 @@
     (eglot-shutdown (eglot-current-server)))
   (neo/eglot-ensure-at-root))
 
+(defun neo--python-dape-breakpoint-load ()
+  "Load saved Dape breakpoints without breaking startup."
+  (when (fboundp 'dape-breakpoint-load)
+    (condition-case err
+        (dape-breakpoint-load)
+      (file-missing
+       (message "neo: skipping Dape breakpoint restore: %s"
+                (error-message-string err))))))
+
 
 ;(neo/eglot-set-server '(python-mode python-ts-mode) '("pyright-langserver" "--stdio"))
 ;(neo/eglot-set-server '(python-mode python-ts-mode) '("pylsp"))
@@ -122,8 +131,8 @@
   (setq dape-key-prefix "\C-x\C-a")
 
   :hook
-  ;; Load breakpoints on startup
-  (after-init . dape-breakpoint-load)
+  ;; Load breakpoints once Elpaca has activated queued packages.
+  (elpaca-after-init . neo--python-dape-breakpoint-load)
 
   :custom
   ;; Turn on global bindings for setting breakpoints with mouse

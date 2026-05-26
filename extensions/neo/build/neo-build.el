@@ -9,7 +9,7 @@
   (setq bazel-fix-visibility 'ask)
   (setq bazel-buildifier-before-save t))
 
-(use-package build
+(neo/use-package build
   :ensure (build :host github :repo "27justin/build.el") ; optional :ref
   :config
   ;; Optional: configuration for build.el goes here
