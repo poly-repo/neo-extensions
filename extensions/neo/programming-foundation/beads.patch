@@ -425,10 +425,10 @@ index 53f41ba..db6d8bc 100644
            (push flag-name flags))
 diff --git beads-client-test.el beads-client-test.el
 new file mode 100644
-index 0000000..8fc3182
+index 0000000..0bd070c
 --- /dev/null
 +++ beads-client-test.el
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,105 @@
 +;;; beads-client-test.el --- Tests for beads-client -*- lexical-binding: t -*-
 +
 +(require 'ert)
@@ -512,10 +512,30 @@ index 0000000..8fc3182
 +               '((status . "ok")))))
 +    (should (beads-client-health))))
 +
++(ert-deftest beads-client/stats-unwraps-summary-payload ()
++  (cl-letf (((symbol-function 'beads-client-request)
++             (lambda (_operation _args)
++               '((schema_version . 1)
++                 (summary
++                  (total_issues . 74)
++                  (open_issues . 2))))))
++    (should (equal (beads-client-stats)
++                   '((total_issues . 74)
++                     (open_issues . 2))))))
++
++(ert-deftest beads-client/stats-keeps-legacy-top-level-payload ()
++  (cl-letf (((symbol-function 'beads-client-request)
++             (lambda (_operation _args)
++               '((total_issues . 10)
++                 (open_issues . 3)))))
++    (should (equal (beads-client-stats)
++                   '((total_issues . 10)
++                     (open_issues . 3))))))
++
 +(provide 'beads-client-test)
 +;;; beads-client-test.el ends here
 diff --git beads-client.el beads-client.el
-index 3936b35..2772690 100644
+index 3936b35..53a1ac6 100644
 --- beads-client.el
 +++ beads-client.el
 @@ -58,53 +58,104 @@
@@ -742,7 +762,18 @@ index 3936b35..2772690 100644
      (beads-client-error
       (signal 'beads-client-error (list "Daemon unhealthy" err)))))
  
-@@ -597,6 +649,7 @@ Converts :kebab-case to snake_case for JSON."
+@@ -469,7 +521,9 @@ Returns deletion result."
+ (defun beads-client-stats ()
+   "Get issue statistics.
+ Returns stats object with counts and breakdowns."
+-  (beads-client-request "stats" nil))
++  (let ((response (beads-client-request "stats" nil)))
++    (or (alist-get 'summary response)
++        response)))
+ 
+ (defun beads-client-count (&optional filters)
+   "Count issues with optional FILTERS.
+@@ -597,6 +651,7 @@ Converts :kebab-case to snake_case for JSON."
    "Clear the cached database path.
  Useful when switching between projects."
    (interactive)
@@ -750,6 +781,56 @@ index 3936b35..2772690 100644
    (setq beads-client--cached-db-path nil)
    (setq beads-client--cache-time nil))
  
+diff --git beads-transient-test.el beads-transient-test.el
+new file mode 100644
+index 0000000..15db6fb
+--- /dev/null
++++ beads-transient-test.el
+@@ -0,0 +1,44 @@
++;;; beads-transient-test.el --- Tests for beads-transient -*- lexical-binding: t -*-
++
++(require 'ert)
++(require 'cl-lib)
++(require 'beads-transient)
++(require 'beads-filter)
++
++(ert-deftest beads-transient/status-filter-default-uses-status-value ()
++  (should
++   (equal
++    (beads--status-filter-default
++     '(:config (:type status :value "open")))
++    "open")))
++
++(ert-deftest beads-transient/status-filter-default-maps-blocked-filter ()
++  (should
++   (equal
++    (beads--status-filter-default
++     '(:config (:type blocked :value t)))
++    "blocked")))
++
++(ert-deftest beads-transient/status-filter-default-ignores-non-string-values ()
++  (should-not
++   (beads--status-filter-default
++    '(:config (:type ready :value t)))))
++
++(ert-deftest beads-transient/filter-status-uses-string-default ()
++  (with-temp-buffer
++    (setq major-mode 'beads-list-mode)
++    (setq-local beads-list--filter (beads-filter-blocked))
++    (cl-letf (((symbol-function 'completing-read)
++               (lambda (_prompt _choices _predicate _require-match
++                        &optional initial-input &rest _)
++                 (should (stringp initial-input))
++                 (should (equal initial-input "blocked"))
++                 "all"))
++              ((symbol-function 'beads-list-refresh)
++               (lambda (&optional _silent)
++                 nil)))
++      (beads-filter-status)
++      (should-not beads-list--filter))))
++
++(provide 'beads-transient-test)
++;;; beads-transient-test.el ends here
 diff --git beads-transient.el beads-transient.el
 index 34629c1..0a09158 100644
 --- beads-transient.el

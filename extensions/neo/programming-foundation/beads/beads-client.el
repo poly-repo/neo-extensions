@@ -521,7 +521,9 @@ Returns deletion result."
 (defun beads-client-stats ()
   "Get issue statistics.
 Returns stats object with counts and breakdowns."
-  (beads-client-request "stats" nil))
+  (let ((response (beads-client-request "stats" nil)))
+    (or (alist-get 'summary response)
+        response)))
 
 (defun beads-client-count (&optional filters)
   "Count issues with optional FILTERS.

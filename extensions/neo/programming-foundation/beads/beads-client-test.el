@@ -81,5 +81,25 @@
                '((status . "ok")))))
     (should (beads-client-health))))
 
+(ert-deftest beads-client/stats-unwraps-summary-payload ()
+  (cl-letf (((symbol-function 'beads-client-request)
+             (lambda (_operation _args)
+               '((schema_version . 1)
+                 (summary
+                  (total_issues . 74)
+                  (open_issues . 2))))))
+    (should (equal (beads-client-stats)
+                   '((total_issues . 74)
+                     (open_issues . 2))))))
+
+(ert-deftest beads-client/stats-keeps-legacy-top-level-payload ()
+  (cl-letf (((symbol-function 'beads-client-request)
+             (lambda (_operation _args)
+               '((total_issues . 10)
+                 (open_issues . 3)))))
+    (should (equal (beads-client-stats)
+                   '((total_issues . 10)
+                     (open_issues . 3))))))
+
 (provide 'beads-client-test)
 ;;; beads-client-test.el ends here
