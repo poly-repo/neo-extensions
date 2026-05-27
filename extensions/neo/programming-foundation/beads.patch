@@ -287,6 +287,81 @@ index e0f7583..48f37f8 100644
         (list "label" "remove" id label)))
      (_
       (signal 'beads-backend-error
+diff --git beads-backend-test.el beads-backend-test.el
+new file mode 100644
+index 0000000..353d5c2
+--- /dev/null
++++ beads-backend-test.el
+@@ -0,0 +1,69 @@
++;;; beads-backend-test.el --- Tests for beads-backend -*- lexical-binding: t -*-
++
++(require 'ert)
++(require 'beads-backend)
++
++(ert-deftest beads-backend/alist-get-matches-string-keys ()
++  (should
++   (equal
++    (beads-backend--alist-get 'issue_type '(("issue_type" . "task")))
++    "task"))
++  (should
++   (equal
++    (beads-backend--alist-delete 'title
++                                 '(("title" . "probe")
++                                   ("priority" . 2)))
++    '(("priority" . 2)))))
++
++(ert-deftest beads-backend/alist-to-cli-flags-accepts-string-keys ()
++  (should
++   (equal
++    (beads-backend--alist-to-cli-flags
++     '(("issue_type" . "task")
++       ("priority" . 2)
++       ("labels" . ("bug" "ui"))))
++    '("--issue-type" "task"
++      "--priority" "2"
++      "--labels" "bug"
++      "--labels" "ui"))))
++
++(ert-deftest beads-backend/build-cli-args-filters-string-keys ()
++  (should
++   (equal
++    (beads-backend--build-cli-args
++     "list"
++     '(("status" . "open")
++       ("title_contains" . "neo")
++       ("ignored" . "value"))
++     '(status title_contains))
++    '("list"
++      "--status" "open"
++      "--title-contains" "neo"))))
++
++(ert-deftest beads-backend/bd-create-args-accept-string-keys ()
++  (should
++   (equal
++    (beads-backend-bd--operation-to-cli-args
++     "create"
++     '(("title" . "Probe")
++       ("issue_type" . "task")
++       ("priority" . 2)
++       ("dry_run" . t)))
++    '("create" "Probe"
++      "--type" "task"
++      "--priority" "2"
++      "--dry-run"))))
++
++(ert-deftest beads-backend/bd-count-args-translate-grouping ()
++  (should
++   (equal
++    (beads-backend-bd--operation-to-cli-args
++     "count"
++     '(("status" . "open")
++       ("group_by" . "type")))
++    '("count"
++      "--status" "open"
++      "--by-type"))))
++
++(provide 'beads-backend-test)
++;;; beads-backend-test.el ends here
 diff --git beads-backend.el beads-backend.el
 index 53f41ba..db6d8bc 100644
 --- beads-backend.el
@@ -675,6 +750,42 @@ index 3936b35..2772690 100644
    (setq beads-client--cached-db-path nil)
    (setq beads-client--cache-time nil))
  
+diff --git beads-transient.el beads-transient.el
+index 34629c1..0a09158 100644
+--- beads-transient.el
++++ beads-transient.el
+@@ -331,6 +331,21 @@ Press `q' to close the stats window."
+ (autoload 'beads-conflicts "beads-conflicts" nil t)
+ (autoload 'beads-lint "beads-lint" nil t)
+ 
++(defun beads--status-filter-default (filter)
++  "Return a status prompt default string for FILTER, or nil.
++Only filters that correspond to a concrete status should produce a default."
++  (when filter
++    (let* ((config (plist-get filter :config))
++           (type (plist-get config :type))
++           (value (plist-get config :value)))
++      (cond
++       ((and (eq type 'status) (stringp value))
++        value)
++       ((eq type 'blocked)
++        "blocked")
++       (t
++        nil)))))
++
+ (defun beads-filter-status ()
+   "Filter issues by status.
+ Select a status to filter, or \"all\" to clear the filter."
+@@ -338,8 +353,7 @@ Select a status to filter, or \"all\" to clear the filter."
+   (unless (derived-mode-p 'beads-list-mode)
+     (user-error "Not in beads list mode"))
+   (let* ((choices '("all" "open" "in_progress" "blocked" "hooked" "closed"))
+-         (current (when beads-list--filter
+-                    (plist-get (plist-get beads-list--filter :config) :value)))
++         (current (beads--status-filter-default beads-list--filter))
+          (status (completing-read "Filter by status: " choices nil t
+                                   (or current ""))))
+     (setq beads-list--filter
 diff --git beads.el beads.el
 index 585883c..f8ef0f8 100644
 --- beads.el

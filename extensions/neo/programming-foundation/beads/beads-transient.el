@@ -331,6 +331,21 @@ Press `q' to close the stats window."
 (autoload 'beads-conflicts "beads-conflicts" nil t)
 (autoload 'beads-lint "beads-lint" nil t)
 
+(defun beads--status-filter-default (filter)
+  "Return a status prompt default string for FILTER, or nil.
+Only filters that correspond to a concrete status should produce a default."
+  (when filter
+    (let* ((config (plist-get filter :config))
+           (type (plist-get config :type))
+           (value (plist-get config :value)))
+      (cond
+       ((and (eq type 'status) (stringp value))
+        value)
+       ((eq type 'blocked)
+        "blocked")
+       (t
+        nil)))))
+
 (defun beads-filter-status ()
   "Filter issues by status.
 Select a status to filter, or \"all\" to clear the filter."
@@ -338,8 +353,7 @@ Select a status to filter, or \"all\" to clear the filter."
   (unless (derived-mode-p 'beads-list-mode)
     (user-error "Not in beads list mode"))
   (let* ((choices '("all" "open" "in_progress" "blocked" "hooked" "closed"))
-         (current (when beads-list--filter
-                    (plist-get (plist-get beads-list--filter :config) :value)))
+         (current (beads--status-filter-default beads-list--filter))
          (status (completing-read "Filter by status: " choices nil t
                                   (or current ""))))
     (setq beads-list--filter
