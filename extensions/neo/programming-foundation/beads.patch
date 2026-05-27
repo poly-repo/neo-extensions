@@ -1,8 +1,8 @@
 diff --git beads-backend-bd.el beads-backend-bd.el
-index 9a3631f..0d363b9 100644
+index 9a3631f..0684d53 100644
 --- beads-backend-bd.el
 +++ beads-backend-bd.el
-@@ -21,7 +21,7 @@
+@@ -21,127 +21,146 @@
  ;;; Commentary:
  
  ;; Backend implementation for the bd (beads) CLI.
@@ -11,16 +11,166 @@ index 9a3631f..0d363b9 100644
  
  ;;; Code:
  
-@@ -31,7 +31,7 @@
+ (require 'beads-backend)
+ 
++(defun beads-backend-bd--translate-key (key)
++  "Translate client KEY to the current bd CLI flag name."
++  (pcase (beads-backend--key-name key)
++    ("issue_type" "type")
++    ("acceptance_criteria" "acceptance")
++    ("dependencies" "deps")
++    ("add_labels" "add_label")
++    ("remove_labels" "remove_label")
++    (_ (beads-backend--key-name key))))
++
++(defun beads-backend-bd--translate-args (args)
++  "Translate client ARGS to the current bd CLI argument schema."
++  (mapcar (lambda (pair)
++            (cons (beads-backend-bd--translate-key (car pair))
++                  (cdr pair)))
++          args))
++
+ (defun beads-backend-bd--operation-to-cli-args (operation args)
    "Convert RPC OPERATION and ARGS to CLI arguments for bd."
++  (setq args (beads-backend-bd--translate-args args))
    (pcase operation
      ("health"
 -     '("daemon" "status"))
 +     '("ping"))
      ("list"
       (beads-backend--build-cli-args "list" args
-                                     '(status priority issue_type assignee
-@@ -129,19 +129,13 @@
+-                                    '(status priority issue_type assignee
++                                    '(status priority type assignee
+                                       labels limit title_contains parent)))
+     ("show"
+-     (let ((id (alist-get 'id args)))
++     (let ((id (beads-backend--alist-get 'id args)))
+        (list "show" id)))
+     ("ready"
+      (beads-backend--build-cli-args "ready" args
+-                                    '(assignee priority limit sort_policy parent)))
++                                    '(assignee priority limit sort_policy parent type)))
+     ("create"
+-     (let ((title (alist-get 'title args))
+-           (other-args (assq-delete-all 'title (copy-alist args))))
++     (let ((title (beads-backend--alist-get 'title args))
++           (other-args (beads-backend--alist-delete 'title args)))
+        (append (list "create" title)
+                (beads-backend--alist-to-cli-flags other-args))))
+     ("update"
+-     (let ((id (alist-get 'id args))
+-           (other-args (assq-delete-all 'id (copy-alist args))))
++     (let ((id (beads-backend--alist-get 'id args))
++           (other-args (beads-backend--alist-delete 'id args)))
+        (append (list "update" id)
+                (beads-backend--alist-to-cli-flags other-args))))
+     ("close"
+-     (let ((id (alist-get 'id args))
+-           (reason (alist-get 'reason args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (reason (beads-backend--alist-get 'reason args)))
+        (if reason
+            (list "close" id "--reason" reason)
+          (list "close" id))))
+     ("delete"
+-     (let ((ids (alist-get 'ids args))
+-           (force (alist-get 'force args)))
++     (let ((ids (beads-backend--alist-get 'ids args))
++           (force (beads-backend--alist-get 'force args)))
+        (append (list "delete")
+                (if (listp ids) ids (list ids))
+                (when force '("--force")))))
+     ("stats"
+      '("stats"))
+     ("count"
+-     (beads-backend--build-cli-args "count" args '(status group_by)))
++     (append
++      (beads-backend--build-cli-args "count" args '(status priority type assignee labels))
++      (pcase (beads-backend--alist-get 'group_by args)
++        ("status" '("--by-status"))
++        ("priority" '("--by-priority"))
++        ("type" '("--by-type"))
++        ("label" '("--by-label"))
++        (_ nil))))
+     ("dep_add"
+-     (let ((from-id (alist-get 'from_id args))
+-           (to-id (alist-get 'to_id args))
+-           (dep-type (alist-get 'dep_type args)))
++     (let ((from-id (beads-backend--alist-get 'from_id args))
++           (to-id (beads-backend--alist-get 'to_id args))
++           (dep-type (beads-backend--alist-get 'dep_type args)))
+        (if dep-type
+            (list "dep" "add" from-id to-id "--type" dep-type)
+          (list "dep" "add" from-id to-id))))
+     ("dep_remove"
+-     (let ((from-id (alist-get 'from_id args))
+-           (to-id (alist-get 'to_id args)))
++     (let ((from-id (beads-backend--alist-get 'from_id args))
++           (to-id (beads-backend--alist-get 'to_id args)))
+        (list "dep" "remove" from-id to-id)))
+     ("dep_tree"
+-     (let ((id (alist-get 'id args))
+-           (max-depth (alist-get 'max_depth args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (max-depth (beads-backend--alist-get 'max_depth args)))
+        (if max-depth
+            (list "dep" "tree" id "--max-depth" (number-to-string max-depth))
+          (list "dep" "tree" id))))
+     ("label_add"
+-     (let ((id (alist-get 'id args))
+-           (label (alist-get 'label args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (label (beads-backend--alist-get 'label args)))
+        (list "label" "add" id label)))
+     ("label_remove"
+-     (let ((id (alist-get 'id args))
+-           (label (alist-get 'label args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (label (beads-backend--alist-get 'label args)))
+        (list "label" "remove" id label)))
+     ("get_mutations"
+-     (let ((since-id (alist-get 'since_id args)))
++     (let ((since-id (beads-backend--alist-get 'since_id args)))
+        (if since-id
+            (list "mutations" "--since" since-id)
+          '("mutations"))))
+     ("types"
+      '("types"))
+     ("config_get"
+-     (let ((key (alist-get 'key args)))
++     (let ((key (beads-backend--alist-get 'key args)))
+        (list "config" "get" key)))
+     ("config_set"
+-     (let ((key (alist-get 'key args))
+-           (value (alist-get 'value args)))
++     (let ((key (beads-backend--alist-get 'key args))
++           (value (beads-backend--alist-get 'value args)))
+        (list "config" "set" key value)))
+     ("config_unset"
+-     (let ((key (alist-get 'key args)))
++     (let ((key (beads-backend--alist-get 'key args)))
+        (list "config" "unset" key)))
+     ("resolve-conflicts"
+-     (let ((dry-run (alist-get 'dry_run args)))
++     (let ((dry-run (beads-backend--alist-get 'dry_run args)))
+        (if dry-run
+            '("resolve-conflicts" "--dry-run")
+          '("resolve-conflicts"))))
+     ("duplicates"
+      '("duplicates"))
+     ("duplicate"
+-     (let ((source-id (alist-get 'source_id args))
+-           (target-id (alist-get 'target_id args)))
++     (let ((source-id (beads-backend--alist-get 'source_id args))
++           (target-id (beads-backend--alist-get 'target_id args)))
+        (list "duplicate" source-id "--of" target-id)))
+     ("comments-add"
+-     (let ((id (alist-get 'id args))
+-           (text (alist-get 'text args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (text (beads-backend--alist-get 'text args)))
+        (list "comments" "add" id text)))
+     (_
       (signal 'beads-backend-error
               (list (format "Unknown operation for bd backend: %s" operation))))))
  
@@ -43,7 +193,7 @@ index 9a3631f..0d363b9 100644
     :supported-ops '("health" "list" "show" "ready" "create" "update" "close"
                       "delete" "stats" "count" "dep_add" "dep_remove" "dep_tree"
                       "label_add" "label_remove" "get_mutations" "types"
-@@ -149,7 +143,7 @@
+@@ -149,7 +168,7 @@
                       "resolve-conflicts" "duplicates" "duplicate"
                       "comments-add")
     :op-to-cli-args #'beads-backend-bd--operation-to-cli-args
@@ -52,6 +202,152 @@ index 9a3631f..0d363b9 100644
  
  (beads-backend-register beads-backend-bd)
  
+diff --git beads-backend-br.el beads-backend-br.el
+index e0f7583..48f37f8 100644
+--- beads-backend-br.el
++++ beads-backend-br.el
+@@ -35,30 +35,30 @@
+                                     '(status priority issue_type assignee
+                                       labels limit title_contains parent)))
+     ("show"
+-     (let ((id (alist-get 'id args)))
++     (let ((id (beads-backend--alist-get 'id args)))
+        (list "show" id)))
+     ("ready"
+      (beads-backend--build-cli-args "ready" args
+                                     '(assignee priority limit sort_policy parent)))
+     ("create"
+-     (let ((title (alist-get 'title args))
+-           (other-args (assq-delete-all 'title (copy-alist args))))
++     (let ((title (beads-backend--alist-get 'title args))
++           (other-args (beads-backend--alist-delete 'title args)))
+        (append (list "create" title)
+                (beads-backend--alist-to-cli-flags other-args))))
+     ("update"
+-     (let ((id (alist-get 'id args))
+-           (other-args (assq-delete-all 'id (copy-alist args))))
++     (let ((id (beads-backend--alist-get 'id args))
++           (other-args (beads-backend--alist-delete 'id args)))
+        (append (list "update" id)
+                (beads-backend--alist-to-cli-flags other-args))))
+     ("close"
+-     (let ((id (alist-get 'id args))
+-           (reason (alist-get 'reason args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (reason (beads-backend--alist-get 'reason args)))
+        (if reason
+            (list "close" id "--reason" reason)
+          (list "close" id))))
+     ("delete"
+-     (let ((ids (alist-get 'ids args))
+-           (force (alist-get 'force args)))
++     (let ((ids (beads-backend--alist-get 'ids args))
++           (force (beads-backend--alist-get 'force args)))
+        (append (list "delete")
+                (if (listp ids) ids (list ids))
+                (when force '("--force")))))
+@@ -67,29 +67,29 @@
+     ("count"
+      (beads-backend--build-cli-args "count" args '(status group_by)))
+     ("dep_add"
+-     (let ((from-id (alist-get 'from_id args))
+-           (to-id (alist-get 'to_id args))
+-           (dep-type (alist-get 'dep_type args)))
++     (let ((from-id (beads-backend--alist-get 'from_id args))
++           (to-id (beads-backend--alist-get 'to_id args))
++           (dep-type (beads-backend--alist-get 'dep_type args)))
+        (if dep-type
+            (list "dep" "add" from-id to-id "--type" dep-type)
+          (list "dep" "add" from-id to-id))))
+     ("dep_remove"
+-     (let ((from-id (alist-get 'from_id args))
+-           (to-id (alist-get 'to_id args)))
++     (let ((from-id (beads-backend--alist-get 'from_id args))
++           (to-id (beads-backend--alist-get 'to_id args)))
+        (list "dep" "remove" from-id to-id)))
+     ("dep_tree"
+-     (let ((id (alist-get 'id args))
+-           (max-depth (alist-get 'max_depth args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (max-depth (beads-backend--alist-get 'max_depth args)))
+        (if max-depth
+            (list "dep" "tree" id "--max-depth" (number-to-string max-depth))
+          (list "dep" "tree" id))))
+     ("label_add"
+-     (let ((id (alist-get 'id args))
+-           (label (alist-get 'label args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (label (beads-backend--alist-get 'label args)))
+        (list "label" "add" id label)))
+     ("label_remove"
+-     (let ((id (alist-get 'id args))
+-           (label (alist-get 'label args)))
++     (let ((id (beads-backend--alist-get 'id args))
++           (label (beads-backend--alist-get 'label args)))
+        (list "label" "remove" id label)))
+     (_
+      (signal 'beads-backend-error
+diff --git beads-backend.el beads-backend.el
+index 53f41ba..db6d8bc 100644
+--- beads-backend.el
++++ beads-backend.el
+@@ -141,11 +141,42 @@ BACKEND defaults to the current project's backend."
+ 
+ (defun beads-backend--build-cli-args (command args allowed-keys)
+   "Build CLI args for COMMAND from ARGS, filtering by ALLOWED-KEYS."
+-  (append (list command)
+-          (beads-backend--alist-to-cli-flags
+-           (seq-filter (lambda (pair)
+-                         (memq (car pair) allowed-keys))
+-                       args))))
++  (let ((allowed-key-names (mapcar #'beads-backend--key-name allowed-keys)))
++    (append (list command)
++            (beads-backend--alist-to-cli-flags
++             (seq-filter
++              (lambda (pair)
++                (member (beads-backend--key-name (car pair))
++                        allowed-key-names))
++              args)))))
++
++(defun beads-backend--key-name (key)
++  "Return KEY as a snake_case string suitable for CLI flag generation."
++  (cond
++   ((symbolp key)
++    (symbol-name key))
++   ((stringp key)
++    key)
++   (t
++    (signal 'beads-backend-error
++            (list (format "Unsupported CLI argument key type: %S" key))))))
++
++(defun beads-backend--alist-get (key alist &optional default)
++  "Return the value for KEY in ALIST, accepting symbol or string keys.
++Return DEFAULT when KEY is not present."
++  (let ((key-name (beads-backend--key-name key)))
++    (catch 'beads-backend--found
++      (dolist (pair alist default)
++        (when (equal (beads-backend--key-name (car pair)) key-name)
++          (throw 'beads-backend--found (cdr pair)))))))
++
++(defun beads-backend--alist-delete (key alist)
++  "Return ALIST without KEY, accepting symbol or string keys."
++  (let ((key-name (beads-backend--key-name key)))
++    (seq-remove
++     (lambda (pair)
++       (equal (beads-backend--key-name (car pair)) key-name))
++     alist)))
+ 
+ (defun beads-backend--alist-to-cli-flags (alist)
+   "Convert ALIST to list of CLI flags.
+@@ -155,7 +186,7 @@ Keys are converted from snake_case to --kebab-case."
+       (let* ((key (car pair))
+              (value (cdr pair))
+              (flag-name (concat "--" (replace-regexp-in-string
+-                                      "_" "-" (symbol-name key)))))
++                                      "_" "-" (beads-backend--key-name key)))))
+         (cond
+          ((eq value t)
+           (push flag-name flags))
 diff --git beads-client-test.el beads-client-test.el
 new file mode 100644
 index 0000000..8fc3182

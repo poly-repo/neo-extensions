@@ -35,30 +35,30 @@
                                     '(status priority issue_type assignee
                                       labels limit title_contains parent)))
     ("show"
-     (let ((id (alist-get 'id args)))
+     (let ((id (beads-backend--alist-get 'id args)))
        (list "show" id)))
     ("ready"
      (beads-backend--build-cli-args "ready" args
                                     '(assignee priority limit sort_policy parent)))
     ("create"
-     (let ((title (alist-get 'title args))
-           (other-args (assq-delete-all 'title (copy-alist args))))
+     (let ((title (beads-backend--alist-get 'title args))
+           (other-args (beads-backend--alist-delete 'title args)))
        (append (list "create" title)
                (beads-backend--alist-to-cli-flags other-args))))
     ("update"
-     (let ((id (alist-get 'id args))
-           (other-args (assq-delete-all 'id (copy-alist args))))
+     (let ((id (beads-backend--alist-get 'id args))
+           (other-args (beads-backend--alist-delete 'id args)))
        (append (list "update" id)
                (beads-backend--alist-to-cli-flags other-args))))
     ("close"
-     (let ((id (alist-get 'id args))
-           (reason (alist-get 'reason args)))
+     (let ((id (beads-backend--alist-get 'id args))
+           (reason (beads-backend--alist-get 'reason args)))
        (if reason
            (list "close" id "--reason" reason)
          (list "close" id))))
     ("delete"
-     (let ((ids (alist-get 'ids args))
-           (force (alist-get 'force args)))
+     (let ((ids (beads-backend--alist-get 'ids args))
+           (force (beads-backend--alist-get 'force args)))
        (append (list "delete")
                (if (listp ids) ids (list ids))
                (when force '("--force")))))
@@ -67,29 +67,29 @@
     ("count"
      (beads-backend--build-cli-args "count" args '(status group_by)))
     ("dep_add"
-     (let ((from-id (alist-get 'from_id args))
-           (to-id (alist-get 'to_id args))
-           (dep-type (alist-get 'dep_type args)))
+     (let ((from-id (beads-backend--alist-get 'from_id args))
+           (to-id (beads-backend--alist-get 'to_id args))
+           (dep-type (beads-backend--alist-get 'dep_type args)))
        (if dep-type
            (list "dep" "add" from-id to-id "--type" dep-type)
          (list "dep" "add" from-id to-id))))
     ("dep_remove"
-     (let ((from-id (alist-get 'from_id args))
-           (to-id (alist-get 'to_id args)))
+     (let ((from-id (beads-backend--alist-get 'from_id args))
+           (to-id (beads-backend--alist-get 'to_id args)))
        (list "dep" "remove" from-id to-id)))
     ("dep_tree"
-     (let ((id (alist-get 'id args))
-           (max-depth (alist-get 'max_depth args)))
+     (let ((id (beads-backend--alist-get 'id args))
+           (max-depth (beads-backend--alist-get 'max_depth args)))
        (if max-depth
            (list "dep" "tree" id "--max-depth" (number-to-string max-depth))
          (list "dep" "tree" id))))
     ("label_add"
-     (let ((id (alist-get 'id args))
-           (label (alist-get 'label args)))
+     (let ((id (beads-backend--alist-get 'id args))
+           (label (beads-backend--alist-get 'label args)))
        (list "label" "add" id label)))
     ("label_remove"
-     (let ((id (alist-get 'id args))
-           (label (alist-get 'label args)))
+     (let ((id (beads-backend--alist-get 'id args))
+           (label (beads-backend--alist-get 'label args)))
        (list "label" "remove" id label)))
     (_
      (signal 'beads-backend-error

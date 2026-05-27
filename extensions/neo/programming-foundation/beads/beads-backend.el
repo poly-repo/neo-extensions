@@ -141,11 +141,42 @@ BACKEND defaults to the current project's backend."
 
 (defun beads-backend--build-cli-args (command args allowed-keys)
   "Build CLI args for COMMAND from ARGS, filtering by ALLOWED-KEYS."
-  (append (list command)
-          (beads-backend--alist-to-cli-flags
-           (seq-filter (lambda (pair)
-                         (memq (car pair) allowed-keys))
-                       args))))
+  (let ((allowed-key-names (mapcar #'beads-backend--key-name allowed-keys)))
+    (append (list command)
+            (beads-backend--alist-to-cli-flags
+             (seq-filter
+              (lambda (pair)
+                (member (beads-backend--key-name (car pair))
+                        allowed-key-names))
+              args)))))
+
+(defun beads-backend--key-name (key)
+  "Return KEY as a snake_case string suitable for CLI flag generation."
+  (cond
+   ((symbolp key)
+    (symbol-name key))
+   ((stringp key)
+    key)
+   (t
+    (signal 'beads-backend-error
+            (list (format "Unsupported CLI argument key type: %S" key))))))
+
+(defun beads-backend--alist-get (key alist &optional default)
+  "Return the value for KEY in ALIST, accepting symbol or string keys.
+Return DEFAULT when KEY is not present."
+  (let ((key-name (beads-backend--key-name key)))
+    (catch 'beads-backend--found
+      (dolist (pair alist default)
+        (when (equal (beads-backend--key-name (car pair)) key-name)
+          (throw 'beads-backend--found (cdr pair)))))))
+
+(defun beads-backend--alist-delete (key alist)
+  "Return ALIST without KEY, accepting symbol or string keys."
+  (let ((key-name (beads-backend--key-name key)))
+    (seq-remove
+     (lambda (pair)
+       (equal (beads-backend--key-name (car pair)) key-name))
+     alist)))
 
 (defun beads-backend--alist-to-cli-flags (alist)
   "Convert ALIST to list of CLI flags.
@@ -155,7 +186,7 @@ Keys are converted from snake_case to --kebab-case."
       (let* ((key (car pair))
              (value (cdr pair))
              (flag-name (concat "--" (replace-regexp-in-string
-                                      "_" "-" (symbol-name key)))))
+                                      "_" "-" (beads-backend--key-name key)))))
         (cond
          ((eq value t)
           (push flag-name flags))
