@@ -9,6 +9,8 @@
 (require 'neo-programming-foundation-treesit)
 
 (neo/use-package flymake)
+(neo/use-package transient)
+(neo/use-package vui)
 
 (declare-function eglot-managed-p "eglot")
 (declare-function eglot-format-buffer "eglot")
@@ -245,5 +247,16 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
 ;;:hook
 ;;(prog-mode . cov-mode))
 
+(defun neo--programming-foundation-load-beads ()
+  "Load the Beads module once extension packages are available."
+  (remove-hook 'neo/after-framework-bootstrap-hook
+               #'neo--programming-foundation-load-beads)
+  (unless (featurep 'beads)
+    (require 'beads)))
+
+(if neo/framework-bootstrapped-p
+    (neo--programming-foundation-load-beads)
+  (add-hook 'neo/after-framework-bootstrap-hook
+            #'neo--programming-foundation-load-beads))
 
 ;;; Note, no (provide 'neo-programing-foundation) here, extensions are loaded not required.
