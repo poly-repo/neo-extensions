@@ -1,9 +1,63 @@
+diff --git beads-backend-bd.el beads-backend-bd.el
+index 9a3631f..0d363b9 100644
+--- beads-backend-bd.el
++++ beads-backend-bd.el
+@@ -21,7 +21,7 @@
+ ;;; Commentary:
+ 
+ ;; Backend implementation for the bd (beads) CLI.
+-;; Supports daemon mode and all operations.
++;; Current bd releases are CLI-only from Neo's perspective.
+ 
+ ;;; Code:
+ 
+@@ -31,7 +31,7 @@
+   "Convert RPC OPERATION and ARGS to CLI arguments for bd."
+   (pcase operation
+     ("health"
+-     '("daemon" "status"))
++     '("ping"))
+     ("list"
+      (beads-backend--build-cli-args "list" args
+                                     '(status priority issue_type assignee
+@@ -129,19 +129,13 @@
+      (signal 'beads-backend-error
+              (list (format "Unknown operation for bd backend: %s" operation))))))
+ 
+-(defun beads-backend-bd--cli-extra-flags (operation)
+-  "Return extra CLI flags for OPERATION on bd."
+-  (pcase operation
+-    ("duplicates" '("--no-daemon"))
+-    (_ nil)))
+-
+ (defconst beads-backend-bd
+   (make-beads-backend
+    :name "bd"
+    :cli-program "bd"
+-   :supports-daemon t
+-   :socket-name "bd.sock"
+-   :daemon-start-args '("daemon" "start" "--foreground")
++   :supports-daemon nil
++   :socket-name nil
++   :daemon-start-args nil
+    :supported-ops '("health" "list" "show" "ready" "create" "update" "close"
+                      "delete" "stats" "count" "dep_add" "dep_remove" "dep_tree"
+                      "label_add" "label_remove" "get_mutations" "types"
+@@ -149,7 +143,7 @@
+                      "resolve-conflicts" "duplicates" "duplicate"
+                      "comments-add")
+    :op-to-cli-args #'beads-backend-bd--operation-to-cli-args
+-   :cli-extra-flags #'beads-backend-bd--cli-extra-flags))
++   :cli-extra-flags nil))
+ 
+ (beads-backend-register beads-backend-bd)
+ 
 diff --git beads-client-test.el beads-client-test.el
 new file mode 100644
-index 0000000..628b07b
+index 0000000..8fc3182
 --- /dev/null
 +++ beads-client-test.el
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,85 @@
 +;;; beads-client-test.el --- Tests for beads-client -*- lexical-binding: t -*-
 +
 +(require 'ert)
@@ -65,10 +119,32 @@ index 0000000..628b07b
 +      (beads-client-clear-cache)
 +      (delete-directory workspace-root t))))
 +
++(ert-deftest beads-client/request-auto-falls-back-to-cli-without-daemon ()
++  (let ((beads-client-connection-strategy 'auto))
++    (cl-letf (((symbol-function 'beads-backend-supports-daemon-p)
++               (lambda (&optional _backend)
++                 nil))
++              ((symbol-function 'beads-client--cli-fallback)
++               (lambda (operation args)
++                 `((operation . ,operation)
++                   (args . ,args))))
++              ((symbol-function 'beads-client--request-socket)
++               (lambda (&rest _args)
++                 (ert-fail "Auto mode should not touch the socket when daemon support is unavailable"))))
++      (should (equal (beads-client-request "list" '((status . "open")))
++                     '((operation . "list")
++                       (args . ((status . "open")))))))))
++
++(ert-deftest beads-client/health-accepts-bd-ping-status ()
++  (cl-letf (((symbol-function 'beads-client-request)
++             (lambda (_operation _args)
++               '((status . "ok")))))
++    (should (beads-client-health))))
++
 +(provide 'beads-client-test)
 +;;; beads-client-test.el ends here
 diff --git beads-client.el beads-client.el
-index 3936b35..deb3134 100644
+index 3936b35..2772690 100644
 --- beads-client.el
 +++ beads-client.el
 @@ -58,53 +58,104 @@
@@ -246,7 +322,34 @@ index 3936b35..deb3134 100644
  
  (defun beads-client--get-managed-daemon ()
    "Get the managed daemon process for the current project, if any."
-@@ -381,10 +433,7 @@ This is the internal function that does the actual socket communication."
+@@ -294,15 +346,17 @@ Connection behavior depends on `beads-client-connection-strategy':
+                '("Current backend does not support daemon mode")))
+      (beads-client--request-socket operation args))
+     ((or 'auto 'managed)
+-     (condition-case err
+-         (progn
+-           (beads-client--ensure-daemon)
+-           (beads-client--request-socket operation args))
+-       (beads-client-error
+-        (let ((err-msg (cadr err)))
+-          (if (beads-client--connection-error-p err-msg)
+-              (beads-client--cli-fallback operation args)
+-            (signal 'beads-client-error (cdr err)))))))))
++     (if (not (beads-backend-supports-daemon-p))
++         (beads-client--cli-fallback operation args)
++       (condition-case err
++           (progn
++             (beads-client--ensure-daemon)
++             (beads-client--request-socket operation args))
++         (beads-client-error
++          (let ((err-msg (cadr err)))
++            (if (beads-client--connection-error-p err-msg)
++                (beads-client--cli-fallback operation args)
++              (signal 'beads-client-error (cdr err))))))))))
+ 
+ (defun beads-client--connection-error-p (err-msg)
+   "Return non-nil if ERR-MSG indicates a connection problem.
+@@ -381,10 +435,7 @@ This is the internal function that does the actual socket communication."
    "Execute CLI as fallback for RPC OPERATION with ARGS.
  Delegates to the backend abstraction layer for operation translation.
  Returns parsed JSON output."
@@ -258,7 +361,17 @@ index 3936b35..deb3134 100644
      (condition-case err
          (beads-backend-cli-execute operation args project-root)
        (beads-backend-error
-@@ -597,6 +646,7 @@ Converts :kebab-case to snake_case for JSON."
+@@ -396,7 +447,8 @@ Returns parsed JSON output."
+ Returns t if healthy, signals error otherwise."
+   (condition-case err
+       (let ((response (beads-client-request "health" nil)))
+-        (equal (alist-get 'status response) "healthy"))
++        (not (null (member (alist-get 'status response)
++                           '("healthy" "ok")))))
+     (beads-client-error
+      (signal 'beads-client-error (list "Daemon unhealthy" err)))))
+ 
+@@ -597,6 +649,7 @@ Converts :kebab-case to snake_case for JSON."
    "Clear the cached database path.
  Useful when switching between projects."
    (interactive)
@@ -267,10 +380,17 @@ index 3936b35..deb3134 100644
    (setq beads-client--cache-time nil))
  
 diff --git beads.el beads.el
-index 585883c..a62bef1 100644
+index 585883c..f8ef0f8 100644
 --- beads.el
 +++ beads.el
-@@ -32,10 +32,11 @@
+@@ -27,15 +27,16 @@
+ 
+ ;; beads.el provides an Emacs interface to the Beads issue tracking system.
+ ;; Beads is a Git-backed, AI-native issue tracker that stores data in `.beads/`
+-;; and communicates with a daemon via Unix socket RPC.
++;; and communicates either through the CLI directly or, when supported by the
++;; active backend, via a daemon.
+ ;;
  ;; Usage:
  ;;   M-x beads  - Open the Beads issue list
  ;;
@@ -279,9 +399,8 @@ index 585883c..a62bef1 100644
 -;; daemon socket (e.g. `.beads/bd.sock`).  Multiple CLI backends are supported
 -;; (bd, br) and auto-detected per project; see `beads-cli-program'.
 +;; The client automatically discovers the Beads workspace from `BEADS_DIR',
-+;; `BEADS_DB', the nearest `.beads/' directory, or `bd where --json', then
-+;; connects to the daemon socket (e.g. `.beads/bd.sock').  Multiple CLI
-+;; backends are supported (bd, br) and auto-detected per project; see
++;; `BEADS_DB', the nearest `.beads/' directory, or `bd where --json'. Multiple
++;; CLI backends are supported (bd, br) and auto-detected per project; see
 +;; `beads-cli-program'.
  ;;
  ;; You can use beads.el on multiple projects at the same time.

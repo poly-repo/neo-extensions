@@ -59,5 +59,27 @@
       (beads-client-clear-cache)
       (delete-directory workspace-root t))))
 
+(ert-deftest beads-client/request-auto-falls-back-to-cli-without-daemon ()
+  (let ((beads-client-connection-strategy 'auto))
+    (cl-letf (((symbol-function 'beads-backend-supports-daemon-p)
+               (lambda (&optional _backend)
+                 nil))
+              ((symbol-function 'beads-client--cli-fallback)
+               (lambda (operation args)
+                 `((operation . ,operation)
+                   (args . ,args))))
+              ((symbol-function 'beads-client--request-socket)
+               (lambda (&rest _args)
+                 (ert-fail "Auto mode should not touch the socket when daemon support is unavailable"))))
+      (should (equal (beads-client-request "list" '((status . "open")))
+                     '((operation . "list")
+                       (args . ((status . "open")))))))))
+
+(ert-deftest beads-client/health-accepts-bd-ping-status ()
+  (cl-letf (((symbol-function 'beads-client-request)
+             (lambda (_operation _args)
+               '((status . "ok")))))
+    (should (beads-client-health))))
+
 (provide 'beads-client-test)
 ;;; beads-client-test.el ends here

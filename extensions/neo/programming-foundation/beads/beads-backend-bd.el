@@ -21,7 +21,7 @@
 ;;; Commentary:
 
 ;; Backend implementation for the bd (beads) CLI.
-;; Supports daemon mode and all operations.
+;; Current bd releases are CLI-only from Neo's perspective.
 
 ;;; Code:
 
@@ -31,7 +31,7 @@
   "Convert RPC OPERATION and ARGS to CLI arguments for bd."
   (pcase operation
     ("health"
-     '("daemon" "status"))
+     '("ping"))
     ("list"
      (beads-backend--build-cli-args "list" args
                                     '(status priority issue_type assignee
@@ -129,19 +129,13 @@
      (signal 'beads-backend-error
              (list (format "Unknown operation for bd backend: %s" operation))))))
 
-(defun beads-backend-bd--cli-extra-flags (operation)
-  "Return extra CLI flags for OPERATION on bd."
-  (pcase operation
-    ("duplicates" '("--no-daemon"))
-    (_ nil)))
-
 (defconst beads-backend-bd
   (make-beads-backend
    :name "bd"
    :cli-program "bd"
-   :supports-daemon t
-   :socket-name "bd.sock"
-   :daemon-start-args '("daemon" "start" "--foreground")
+   :supports-daemon nil
+   :socket-name nil
+   :daemon-start-args nil
    :supported-ops '("health" "list" "show" "ready" "create" "update" "close"
                      "delete" "stats" "count" "dep_add" "dep_remove" "dep_tree"
                      "label_add" "label_remove" "get_mutations" "types"
@@ -149,7 +143,7 @@
                      "resolve-conflicts" "duplicates" "duplicate"
                      "comments-add")
    :op-to-cli-args #'beads-backend-bd--operation-to-cli-args
-   :cli-extra-flags #'beads-backend-bd--cli-extra-flags))
+   :cli-extra-flags nil))
 
 (beads-backend-register beads-backend-bd)
 

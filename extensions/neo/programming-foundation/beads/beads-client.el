@@ -346,15 +346,17 @@ Connection behavior depends on `beads-client-connection-strategy':
                '("Current backend does not support daemon mode")))
      (beads-client--request-socket operation args))
     ((or 'auto 'managed)
-     (condition-case err
-         (progn
-           (beads-client--ensure-daemon)
-           (beads-client--request-socket operation args))
-       (beads-client-error
-        (let ((err-msg (cadr err)))
-          (if (beads-client--connection-error-p err-msg)
-              (beads-client--cli-fallback operation args)
-            (signal 'beads-client-error (cdr err)))))))))
+     (if (not (beads-backend-supports-daemon-p))
+         (beads-client--cli-fallback operation args)
+       (condition-case err
+           (progn
+             (beads-client--ensure-daemon)
+             (beads-client--request-socket operation args))
+         (beads-client-error
+          (let ((err-msg (cadr err)))
+            (if (beads-client--connection-error-p err-msg)
+                (beads-client--cli-fallback operation args)
+              (signal 'beads-client-error (cdr err))))))))))
 
 (defun beads-client--connection-error-p (err-msg)
   "Return non-nil if ERR-MSG indicates a connection problem.
@@ -445,7 +447,8 @@ Returns parsed JSON output."
 Returns t if healthy, signals error otherwise."
   (condition-case err
       (let ((response (beads-client-request "health" nil)))
-        (equal (alist-get 'status response) "healthy"))
+        (not (null (member (alist-get 'status response)
+                           '("healthy" "ok")))))
     (beads-client-error
      (signal 'beads-client-error (list "Daemon unhealthy" err)))))
 
