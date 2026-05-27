@@ -58,53 +58,104 @@
 (defvar beads-client--daemon-start-in-progress (make-hash-table :test 'equal)
   "Hash table tracking which projects have daemon start in progress.")
 
+(defvar beads-client--cached-workspace-info nil)
 (defvar beads-client--cached-db-path nil)
 (defvar beads-client--cache-time nil)
 (defconst beads-client--cache-ttl 10)
 
+(defun beads-client--workspace-cache-valid-p ()
+  "Return non-nil when the cached workspace metadata is still usable."
+  (and beads-client--cached-workspace-info
+       beads-client--cache-time
+       (< (float-time (time-since beads-client--cache-time))
+          beads-client--cache-ttl)
+       (let ((beads-dir (alist-get 'path beads-client--cached-workspace-info))
+             (db-path (alist-get 'database_path beads-client--cached-workspace-info)))
+         (and beads-dir
+              db-path
+              (file-exists-p beads-dir)
+              (file-exists-p db-path)))))
+
+(defun beads-client--cache-workspace-info (info)
+  "Cache workspace INFO and return it."
+  (setq beads-client--cached-workspace-info info)
+  (setq beads-client--cached-db-path (alist-get 'database_path info))
+  (setq beads-client--cache-time (current-time))
+  info)
+
+(defun beads-client--workspace-info-from-directory (beads-dir)
+  "Return workspace metadata for BEADS-DIR using local filesystem discovery."
+  (when-let ((db-path (beads-client--find-db-in-dir beads-dir)))
+    `((path . ,beads-dir)
+      (database_path . ,db-path))))
+
+(defun beads-client--workspace-info-from-cli (&optional directory)
+  "Return workspace metadata from `bd where --json' in DIRECTORY.
+Returns nil when `bd' is unavailable or cannot resolve a workspace."
+  (when-let* ((program
+               (let ((configured beads-cli-program))
+                 (cond
+                  ((null configured)
+                   (executable-find "bd"))
+                  ((string= (file-name-nondirectory configured) "bd")
+                   (or (executable-find configured)
+                       (and (file-executable-p configured) configured)))
+                  (t nil)))))
+    (with-temp-buffer
+      (let ((default-directory (or directory default-directory)))
+        (when (zerop (call-process program nil t nil "where" "--json"))
+          (goto-char (point-min))
+          (let ((json-object-type 'alist)
+                (json-array-type 'list))
+            (condition-case nil
+                (let ((info (json-read)))
+                  (when-let ((beads-dir (alist-get 'path info))
+                             (db-path (alist-get 'database_path info)))
+                    `((path . ,(expand-file-name beads-dir))
+                      (database_path . ,(expand-file-name db-path)))))
+              (json-error nil))))))))
+
+(defun beads-client--workspace-info ()
+  "Return Beads workspace metadata for the current context.
+The returned alist contains `path' and `database_path' entries."
+  (if (beads-client--workspace-cache-valid-p)
+      beads-client--cached-workspace-info
+    (let ((info
+           (or
+            (let ((beads-dir (getenv "BEADS_DIR")))
+              (when beads-dir
+                (setq beads-dir (expand-file-name beads-dir))
+                (setq beads-dir (beads-client--follow-redirect beads-dir))
+                (or (beads-client--workspace-info-from-directory beads-dir)
+                    (beads-client--workspace-info-from-cli
+                     (file-name-directory (directory-file-name beads-dir))))))
+
+            (let ((beads-db (getenv "BEADS_DB")))
+              (when beads-db
+                (let ((db-path (expand-file-name beads-db)))
+                  `((path . ,(file-name-directory (directory-file-name db-path)))
+                    (database_path . ,db-path)))))
+
+            (let ((dir (expand-file-name default-directory))
+                  workspace-info)
+              (while (and dir
+                          (not workspace-info)
+                          (not (string= dir "/"))
+                          (not (string= dir (expand-file-name "~/.."))))
+                (let* ((beads-dir (expand-file-name ".beads" dir))
+                       (redirected-dir (beads-client--follow-redirect beads-dir)))
+                  (setq workspace-info
+                        (beads-client--workspace-info-from-directory redirected-dir))
+                  (setq dir (file-name-directory (directory-file-name dir)))))
+              workspace-info)
+
+            (beads-client--workspace-info-from-cli))))
+      (when info
+        (beads-client--cache-workspace-info info)))))
+
 (cl-defun beads-client--find-database ()
-  "Find the Beads database path using auto-discovery.
-Checks BEADS_DIR env, BEADS_DB env, then walks up from default-directory."
-  (when (and beads-client--cached-db-path
-             beads-client--cache-time
-             (< (float-time (time-since beads-client--cache-time))
-                beads-client--cache-ttl))
-    (when (file-exists-p beads-client--cached-db-path)
-      (cl-return-from beads-client--find-database beads-client--cached-db-path)))
-
-  (let ((db-path
-         (or
-          (let ((beads-dir (getenv "BEADS_DIR")))
-            (when beads-dir
-              (setq beads-dir (expand-file-name beads-dir))
-              (setq beads-dir (beads-client--follow-redirect beads-dir))
-              (beads-client--find-db-in-dir beads-dir)))
-
-          (let ((beads-db (getenv "BEADS_DB")))
-            (when beads-db
-              (expand-file-name beads-db)))
-
-          (let ((dir (expand-file-name default-directory)))
-            (while (and dir
-                        (not (string= dir "/"))
-                        (not (string= dir (expand-file-name "~/.."))))
-              (let* ((beads-dir (expand-file-name ".beads" dir))
-                     (redirected-dir (beads-client--follow-redirect beads-dir))
-                     (db (beads-client--find-db-in-dir redirected-dir)))
-                (when db
-                  (cl-return-from beads-client--find-database
-                                  (progn
-                                    (setq beads-client--cached-db-path db)
-                                    (setq beads-client--cache-time (current-time))
-                                    db)))
-                (setq dir (file-name-directory (directory-file-name dir)))))
-            nil))))
-
-    (when db-path
-      (setq beads-client--cached-db-path db-path)
-      (setq beads-client--cache-time (current-time)))
-
-    db-path))
+  "Find the Beads database path for the current workspace."
+  (alist-get 'database_path (beads-client--workspace-info)))
 
 (defun beads-client--follow-redirect (beads-dir)
   "Follow redirect file if present in BEADS-DIR."
@@ -129,21 +180,22 @@ Checks BEADS_DIR env, BEADS_DB env, then walks up from default-directory."
 
 (defun beads-client--socket-path ()
   "Get the Unix socket path for the Beads daemon."
-  (let ((db-path (beads-client--find-database)))
-    (unless db-path
+  (let* ((workspace-info (beads-client--workspace-info))
+         (beads-dir (alist-get 'path workspace-info)))
+    (unless beads-dir
       (signal 'beads-client-error '("No Beads database found")))
     (let ((sock-name (beads-backend-socket-name-for-project)))
       (unless sock-name
         (signal 'beads-client-error '("Current backend does not support daemon")))
-      (expand-file-name sock-name (file-name-directory db-path)))))
+      (expand-file-name sock-name beads-dir))))
 
 (defun beads-client--project-root ()
   "Get the project root directory for the current Beads workspace.
 This is the parent directory of .beads/."
-  (when-let ((db-path (beads-client--find-database)))
+  (when-let ((beads-dir (alist-get 'path (beads-client--workspace-info))))
     (file-name-directory
      (directory-file-name
-      (file-name-directory db-path)))))
+      beads-dir))))
 
 (defun beads-client--get-managed-daemon ()
   "Get the managed daemon process for the current project, if any."
@@ -381,10 +433,7 @@ This is the internal function that does the actual socket communication."
   "Execute CLI as fallback for RPC OPERATION with ARGS.
 Delegates to the backend abstraction layer for operation translation.
 Returns parsed JSON output."
-  (let ((project-root (when-let ((db (beads-client--find-database)))
-                        (file-name-directory
-                         (directory-file-name
-                          (file-name-directory db))))))
+  (let ((project-root (beads-client--project-root)))
     (condition-case err
         (beads-backend-cli-execute operation args project-root)
       (beads-backend-error
@@ -597,6 +646,7 @@ Converts :kebab-case to snake_case for JSON."
   "Clear the cached database path.
 Useful when switching between projects."
   (interactive)
+  (setq beads-client--cached-workspace-info nil)
   (setq beads-client--cached-db-path nil)
   (setq beads-client--cache-time nil))
 
