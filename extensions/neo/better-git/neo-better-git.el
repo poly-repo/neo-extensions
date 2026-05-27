@@ -225,7 +225,9 @@
 
 (defun neo/forge-migrate-legacy-database-if-needed ()
   "Seed Neo's Forge database from the legacy profile when it is still empty."
-  (let ((target (expand-file-name "forge/database.sqlite" no-littering-var-directory))
+  (let ((target (if (boundp 'forge-database-file)
+                    forge-database-file
+                  (expand-file-name "forge/database.sqlite" no-littering-var-directory)))
         (legacy neo/forge-legacy-database-file))
     (when (and (neo--forge-database-has-repositories-p legacy)
                (not (neo--forge-database-has-repositories-p target)))
@@ -233,14 +235,57 @@
       (copy-file legacy target t t t t)
       (message "Neo: migrated Forge repository metadata from %s" legacy))))
 
+(defun neo--forge-register-repository-at-directory (directory)
+  "Register DIRECTORY in Forge using only local git metadata.
+
+Neo marks locally discovered repositories as tracked so commands like
+pull-request creation are available before the first successful
+network-backed Forge pull."
+  (when (file-accessible-directory-p directory)
+    (let ((default-directory (file-name-as-directory (expand-file-name directory))))
+      (when-let ((repo (ignore-errors
+                         (and (magit-gitdir)
+                              (forge-get-repository :stub?)))))
+        (setq repo (forge-get-repository repo nil :insert!))
+        (oset repo worktree (magit-toplevel))
+        (oset repo condition :tracked)
+        repo))))
+
+(defun neo/forge-seed-discovered-repositories ()
+  "Seed Forge's repository database from Neo's discovered projects.
+
+Missing projects and repositories on unsupported remotes are skipped
+silently so one broken entry does not block startup."
+  (interactive)
+  (let ((count 0))
+    (when (boundp 'projectile-known-projects)
+      (dolist (project (delete-dups (copy-sequence projectile-known-projects)))
+        (when (ignore-errors
+                (neo--forge-register-repository-at-directory project))
+          (setq count (1+ count)))))
+    count))
+
+(defun neo/forge-seed-current-project ()
+  "Register the current Projectile project in Forge."
+  (when-let ((project-root (and (fboundp 'projectile-project-root)
+                                (ignore-errors (projectile-project-root)))))
+    (neo--forge-register-repository-at-directory project-root)))
+
+(defun neo/forge-bootstrap-repositories ()
+  "Prepare Forge repository metadata for Neo startup."
+  (neo/forge-migrate-legacy-database-if-needed))
+
 
 ;;; TODO find a good binding for forge-post-submit otherwise markdown mode takes over C-c C-c
 ;;; maybe C-x #
 (neo/use-package forge
   :after magit
-  :init
-  (neo/forge-migrate-legacy-database-if-needed)
   :config
+  (neo/forge-bootstrap-repositories)
+  (with-eval-after-load 'projectile
+    (neo/forge-seed-discovered-repositories)
+    (add-hook 'projectile-after-switch-project-hook
+              #'neo/forge-seed-current-project))
   (set-face-attribute 'forge-issue-completed nil :strike-through t)
   (setq forge-topic-list-columns
         '(("#" 5 forge-topic-list-sort-by-number
