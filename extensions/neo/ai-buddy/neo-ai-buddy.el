@@ -9,6 +9,7 @@
 
 (require 'neo-ai-buddy-gemini)
 (require 'neo-ai-buddy-claude)
+(require 'neo-ai-buddy-codex)
 
 ;; for ai-code
 (global-set-key (kbd "C-c a") #'ai-code-menu)
