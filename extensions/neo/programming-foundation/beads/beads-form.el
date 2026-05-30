@@ -28,6 +28,7 @@
 (require 'wid-edit)
 (require 'cl-lib)
 (require 'beads-client)
+(require 'beads-faces)
 
 (declare-function beads-show-hint "beads")
 (declare-function vui-mount "vui")
@@ -231,7 +232,7 @@ Derives from `vui-mode' and adds form-specific keybindings.
 
   (widget-insert "  ")
   (beads-form--add-field 'priority "Priority" 'menu-choice
-                         (format "P%d" (alist-get 'priority issue 2))
+                         (beads--priority-string (alist-get 'priority issue 2) 2)
                          :choices '("P0" "P1" "P2" "P3" "P4"))
 
   (widget-insert "  ")

@@ -27,6 +27,7 @@
 (require 'beads-client)
 (require 'beads-backend)
 (require 'beads-edit)
+(require 'beads-faces)
 (require 'seq)
 
 (declare-function vui-mount "vui")
@@ -363,7 +364,7 @@ Uses CLI fallback since RPC does not support comment_add."
   (let* ((issue (beads-detail--require-issue))
          (id (alist-get 'id issue))
          (priority (alist-get 'priority issue))
-         (priority-str (format "P%d" priority))
+         (priority-str (beads--priority-string priority 2))
          (choices '("P0" "P1" "P2" "P3" "P4")))
     (when-let ((new-value (completing-read "Priority: " choices nil t priority-str)))
       (unless (string= new-value priority-str)
@@ -515,7 +516,7 @@ Uses CLI fallback since RPC does not support comment_add."
 
     (beads-detail--insert-field "Status" status)
     (insert "     ")
-    (beads-detail--insert-field "Priority" (format "P%d" priority))
+    (beads-detail--insert-field "Priority" (beads--priority-string priority 2))
     (insert "     ")
     (beads-detail--insert-field "Type" type)
     (insert "\n")

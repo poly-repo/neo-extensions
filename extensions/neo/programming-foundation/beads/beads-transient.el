@@ -26,6 +26,7 @@
 
 (require 'transient)
 (require 'beads-client)
+(require 'beads-faces)
 (require 'beads-filter)
 
 (defvar beads-list--filter)
@@ -160,7 +161,7 @@ Shows what the issue will look like, then press C-c C-c to create."
         (insert (propertize "Type:  " 'face 'bold)
                 (alist-get 'issue_type preview "") "\n")
         (insert (propertize "Priority: " 'face 'bold)
-                (format "P%d" (alist-get 'priority preview 2)) "\n")
+                (beads--priority-string (alist-get 'priority preview 2) 2) "\n")
         (insert (propertize "Status: " 'face 'bold)
                 (alist-get 'status preview "open") "\n")
         (insert "\n" (make-string 40 ?─) "\n")

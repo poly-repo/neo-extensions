@@ -320,7 +320,7 @@ Used to ensure refresh uses the correct project context.")
   (when beads-list-highlight-p0-rows
     (when-let ((issue (seq-find (lambda (i) (equal (alist-get 'id i) id))
                                 beads-list--issues)))
-      (when (= 0 (alist-get 'priority issue 2))
+      (when (= 0 (beads--priority-number (alist-get 'priority issue) 2))
         'beads-list-row-p0))))
 
 (defun beads-list--print-entry (id cols)
@@ -958,7 +958,7 @@ With completion for known assignees from current issues."
   (if-let ((issue (beads-list--get-issue-at-point)))
       (let* ((id (alist-get 'id issue))
              (priority (alist-get 'priority issue))
-             (priority-str (format "P%d" priority))
+             (priority-str (beads--priority-string priority 2))
              (choices '("P0" "P1" "P2" "P3" "P4")))
         (when-let ((new-value (completing-read "Priority: " choices nil t priority-str)))
           (unless (string= new-value priority-str)

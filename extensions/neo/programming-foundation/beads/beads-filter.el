@@ -24,6 +24,7 @@
 
 ;;; Code:
 
+(require 'beads-faces)
 (require 'seq)
 
 (defgroup beads-filter nil
@@ -60,7 +61,7 @@ Optional CONFIG is a plist of additional filter settings."
   (beads-filter-make
    (format "priority:P%d" priority)
    (lambda (issue)
-     (= (alist-get 'priority issue) priority))
+     (= (beads--priority-number (alist-get 'priority issue) -1) priority))
    (list :type 'priority :value priority)))
 
 (defun beads-filter-by-type (type)

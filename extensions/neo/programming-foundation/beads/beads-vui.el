@@ -76,8 +76,8 @@ Access via (use-beads-callbacks) which returns a plist with:
     (_ 'beads-status-open)))
 
 (defun beads-vui-priority-face (priority)
-  "Return face for PRIORITY number."
-  (pcase priority
+  "Return face for PRIORITY number or numeric string."
+  (pcase (beads--priority-number priority 2)
     (0 'beads-priority-p0)
     (1 'beads-priority-p1)
     (_ nil)))
@@ -109,7 +109,7 @@ Calls ON-REFRESH after successful edit."
                 (beads-get-types))
            (when on-refresh (funcall on-refresh))))
         ('priority
-         (let* ((priority-str (format "P%d" value))
+         (let* ((priority-str (beads--priority-string value 2))
                 (new-value (completing-read "Priority: "
                                             '("P0" "P1" "P2" "P3" "P4")
                                             nil t priority-str)))
@@ -243,7 +243,7 @@ When EDITABLE is non-nil, show edit buttons. ON-REFRESH called after edits."
                                 (beads-vui-make-edit-handler issue 'status on-refresh)))
       (vui-component 'beads-vui-editable-field
                      :label "Priority"
-                     :value (format "P%d" priority)
+                     :value (beads--priority-string priority 2)
                      :face (beads-vui-priority-face priority)
                      :on-edit (when editable
                                 (beads-vui-make-edit-handler issue 'priority on-refresh)))
@@ -504,7 +504,7 @@ Markdown fields (description, design, acceptance, notes) use dedicated
 edit buffers and save directly - they are not part of the form save."
   :state ((title (alist-get 'title issue ""))
           (status (alist-get 'status issue "open"))
-          (priority (format "P%d" (alist-get 'priority issue 2)))
+          (priority (beads--priority-string (alist-get 'priority issue 2) 2))
           (issue-type (alist-get 'issue_type issue "task"))
           (assignee (or (alist-get 'assignee issue) ""))
           (external-ref (or (alist-get 'external_ref issue) "")))
@@ -518,7 +518,10 @@ edit buffers and save directly - they are not part of the form save."
               (unless (equal status (alist-get 'status issue "open"))
                 (setq changes (plist-put changes :status status)))
               (let ((new-pri (string-to-number (substring priority 1))))
-                (unless (equal new-pri (alist-get 'priority issue 2))
+                (unless (equal new-pri
+                               (beads--priority-number
+                                (alist-get 'priority issue 2)
+                                2))
                   (setq changes (plist-put changes :priority new-pri))))
               (unless (equal issue-type (alist-get 'issue_type issue "task"))
                 (setq changes (plist-put changes :issue-type issue-type)))

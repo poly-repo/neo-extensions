@@ -110,6 +110,22 @@ agent, role, and rig types:
   :type 'boolean
   :group 'beads-faces)
 
+(defun beads--priority-number (priority &optional default)
+  "Return PRIORITY as an integer, or DEFAULT when it cannot be normalized.
+PRIORITY may be an integer or a numeric string."
+  (cond
+   ((integerp priority) priority)
+   ((and (stringp priority)
+         (string-match-p "\\`[0-9]+\\'" priority))
+    (string-to-number priority))
+   (t default)))
+
+(defun beads--priority-string (priority &optional default)
+  "Return PRIORITY formatted as a Beads priority string.
+PRIORITY may be an integer or a numeric string. Falls back to
+DEFAULT, or `2' when DEFAULT is nil."
+  (format "P%d" (beads--priority-number priority (or default 2))))
+
 (defun beads--format-status (issue)
   "Format status for ISSUE with face."
   (let ((status (alist-get 'status issue)))
@@ -123,8 +139,8 @@ agent, role, and rig types:
 
 (defun beads--format-priority (issue)
   "Format priority for ISSUE as P0-P4 with face."
-  (let* ((priority (alist-get 'priority issue))
-         (priority-str (format "P%d" priority)))
+  (let* ((priority (beads--priority-number (alist-get 'priority issue) 2))
+         (priority-str (beads--priority-string priority 2)))
     (propertize priority-str
                 'face (pcase priority
                         (0 'beads-priority-p0)
