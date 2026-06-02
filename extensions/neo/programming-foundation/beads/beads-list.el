@@ -834,7 +834,7 @@ Prompts for confirmation."
         (dolist (id ids)
           (condition-case nil
               (progn
-                (beads-client-delete id)
+                (beads-client-delete (list id) :force t)
                 (setq count (1+ count)))
             (beads-client-error
              (setq errors (1+ errors)))))

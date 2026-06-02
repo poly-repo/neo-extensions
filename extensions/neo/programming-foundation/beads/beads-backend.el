@@ -58,6 +58,12 @@ Can be set per-project via .dir-locals.el."
 (defvar beads-backend--project-cache (make-hash-table :test 'equal)
   "Cache of project-root to backend mappings.")
 
+(defvar beads-backend--beads-dir nil
+  "When non-nil, injected as BEADS_DIR into CLI subprocess environments.
+Set dynamically by the client layer when the workspace is known, so that
+`bd' can locate the database even when run in a directory that has no
+.beads/ ancestor (e.g. a git worktree).")
+
 (defun beads-backend-register (backend)
   "Register BACKEND in the backend registry."
   (let ((name (beads-backend-name backend)))
@@ -214,6 +220,11 @@ Signals `beads-backend-error' on failure."
          (cmd-args (append extra op-args '("--json"))))
     (with-temp-buffer
       (let* ((default-directory (or project-root default-directory))
+             (process-environment
+              (if beads-backend--beads-dir
+                  (cons (format "BEADS_DIR=%s" beads-backend--beads-dir)
+                        process-environment)
+                process-environment))
              (exit-code (apply #'call-process program nil t nil cmd-args)))
         (unless (zerop exit-code)
           (signal 'beads-backend-error
@@ -234,7 +245,12 @@ Signals `beads-backend-error' on failure."
 PROJECT-ROOT overrides the working directory."
   (let* ((backend (beads-backend-for-project))
          (program (beads-backend-cli-program-path backend)))
-    (let ((default-directory (or project-root default-directory)))
+    (let* ((default-directory (or project-root default-directory))
+           (process-environment
+            (if beads-backend--beads-dir
+                (cons (format "BEADS_DIR=%s" beads-backend--beads-dir)
+                      process-environment)
+              process-environment)))
       (apply #'call-process program nil nil nil args))))
 
 (defun beads-backend-clear-cache ()

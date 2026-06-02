@@ -262,7 +262,7 @@ Prompts for confirmation with `yes-or-no-p'."
       (when (yes-or-no-p prompt)
         (condition-case err
             (progn
-              (beads-client-delete (list id))
+              (beads-client-delete (list id) :force t)
               (message "Deleted issue %s" id)
               (cond
                ((derived-mode-p 'beads-list-mode)

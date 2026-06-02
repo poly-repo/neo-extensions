@@ -52,6 +52,20 @@
   :type 'integer
   :group 'beads)
 
+(defcustom beads-dir nil
+  "Path to the Beads data directory (.beads/).
+When non-nil, overrides environment-based workspace discovery.  Use this
+in git worktrees where the .beads/ directory lives in a separate
+repository that is not an ancestor of `default-directory'.
+
+Set per-project via .dir-locals.el:
+
+  ((nil . ((beads-dir . \"/path/to/repo/.beads\"))))"
+  :type '(choice (const :tag "Auto-detect" nil)
+                 (directory :tag "Beads data directory"))
+  :group 'beads
+  :safe #'string-or-null-p)
+
 (defvar beads-client--project-daemons (make-hash-table :test 'equal)
   "Hash table mapping project root paths to daemon processes.")
 
@@ -122,6 +136,10 @@ The returned alist contains `path' and `database_path' entries."
       beads-client--cached-workspace-info
     (let ((info
            (or
+            (when beads-dir
+              (let ((expanded (expand-file-name beads-dir)))
+                (beads-client--workspace-info-from-directory expanded)))
+
             (let ((beads-dir (getenv "BEADS_DIR")))
               (when beads-dir
                 (setq beads-dir (expand-file-name beads-dir))
@@ -435,7 +453,9 @@ This is the internal function that does the actual socket communication."
   "Execute CLI as fallback for RPC OPERATION with ARGS.
 Delegates to the backend abstraction layer for operation translation.
 Returns parsed JSON output."
-  (let ((project-root (beads-client--project-root)))
+  (let* ((workspace (beads-client--workspace-info))
+         (project-root (when workspace (beads-client--project-root)))
+         (beads-backend--beads-dir (alist-get 'path workspace)))
     (condition-case err
         (beads-backend-cli-execute operation args project-root)
       (beads-backend-error
