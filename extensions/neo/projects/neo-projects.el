@@ -70,29 +70,39 @@ Decision is based on `neo/project-last-switched-times' and
                     (string-prefix-p current-project (file-truename (buffer-file-name buf))))
           (bury-buffer buf))))))
 
-(defun neo/projectile-switch-project-action ()
-  "Switch to a projectile project and optionally open that project's .personal-notes.org.
+(defun neo--persp-exists-p (name)
+  "Return non-nil if a perspective named NAME already exists."
+  (and (featurep 'perspective)
+       (member name (persp-names))))
 
-.opens .personal-notes.org from the project root only if the project hasn't
-been switched to in more than `neo/projectile-notes-open-threshold' seconds."
+(defun neo/projectile-switch-project-action ()
+  "Switch to a projectile project.
+
+On the first switch to a project (new perspective), open
+`.personal-notes.org' if present and recent enough, otherwise
+`magit-status'. On revisits, let perspective.el restore the saved
+window configuration without overriding it."
   (interactive)
-    (let* ((project-root (projectile-project-root))
-           (notes-file-name ".personal-notes.org")
-           (notes-path (expand-file-name notes-file-name project-root)))
-      (neo/projectile-update-treemacs)
-      (neo/bury-other-project-buffers)
-      (message "neo/projectile-switch-project-action in %s <%s>"
-	   project-root
-	   (persp-name (persp-curr)))
+  (let* ((project-root (projectile-project-root))
+         (notes-file-name ".personal-notes.org")
+         (notes-path (expand-file-name notes-file-name project-root))
+         (new-persp (neo/projectile-update-treemacs)))
+    (when new-persp
+      (neo/bury-other-project-buffers))
+    (message "neo/projectile-switch-project-action in %s <%s> (new=%s)"
+             project-root
+             (persp-name (persp-curr))
+             new-persp)
+    (when new-persp
       (if (and (neo--should-open-notes-p project-root)
                (file-exists-p notes-path))
           (find-file-other-window notes-path)
-	(when (and (vc-git-responsible-p default-directory)
-		   (fboundp 'magit-status))
-	  (magit-status)))
-      ;; record that we've switched to this project now
-      (puthash project-root (float-time (current-time)) neo/project-last-switched-times))
-  )
+        (when (and (vc-git-responsible-p default-directory)
+                   (fboundp 'magit-status))
+          (magit-status))))
+    ;; record that we've switched to this project now
+    (puthash project-root (float-time (current-time))
+             neo/project-last-switched-times)))
 
 (neo/use-package projectile
   :demand t
@@ -198,13 +208,17 @@ been switched to in more than `neo/projectile-notes-open-threshold' seconds."
       (treemacs-do-add-project-to-workspace root name))))
 
 (defun neo/projectile-update-treemacs ()
+  "Update treemacs to show only the current project; switch perspective.
+Return non-nil if a new perspective was created for this project."
   (when (fboundp 'projectile-project-root)
     (when-let ((root (projectile-project-root))
 	       (name (projectile-project-name)))
-      (persp-switch name)
-      (neo/treemacs-show-only-project
-       root
-       (projectile-project-name root)))))
+      (let ((new-persp (not (neo--persp-exists-p name))))
+        (persp-switch name)
+        (neo/treemacs-show-only-project
+         root
+         (projectile-project-name root))
+        new-persp))))
 
 (add-hook 'emacs-startup-hook #'neo/projectile-update-treemacs)
 ;(add-hook 'projectile-after-switch-project-hook
