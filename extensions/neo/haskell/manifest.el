@@ -1,0 +1,13 @@
+(neo/extension
+ :name "haskell"
+ :title "Lazy by default, eager about types."
+ :publisher "neo"
+ :description "Haskell support: haskell-mode + HLS via eglot, lsp-haskell fallback, autoformat with stylish-haskell."
+ :categories (neo)
+ :keywords (programming haskell)
+ :requires ()
+ :depends-on ("neo:programming-foundation")
+ :repository (
+	      :type "git"
+	      :url "https://github.com/poly-repo/neo-extensions.git"
+	      :path "extensions/neo/haskell"))

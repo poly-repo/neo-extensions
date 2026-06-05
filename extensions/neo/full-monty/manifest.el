@@ -20,6 +20,7 @@
 	    "neo:workflow"
 	    "neo:build"
 	    "neo:python"
+	    "neo:haskell"
 	    "neo:latex"
 	    "neo:mlody"
 	    "neo:ai-buddy"
