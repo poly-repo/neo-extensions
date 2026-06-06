@@ -9,11 +9,238 @@
 (require 'neo-programming-foundation-treesit)
 
 (neo/use-package flymake)
+(neo/use-package posframe)
 (neo/use-package transient)
 (neo/use-package vui)
 
 (declare-function eglot-managed-p "eglot")
 (declare-function eglot-format-buffer "eglot")
+(declare-function eglot-hover-eldoc-function "eglot")
+(declare-function posframe-hide "posframe")
+(declare-function posframe-show "posframe")
+
+(defcustom neo/eglot-hover-popup-enabled t
+  "Show automatic Eglot hover docs in a popup when Emacs can do so.
+
+The point of this toggle is to make the richer LSP payload visible
+without forcing users to watch the echo area.  When disabled, or when
+popup support is unavailable, Eglot falls back to the usual echo-area
+display."
+  :type 'boolean
+  :group 'neo)
+
+(defcustom neo/eglot-hover-popup-buffer " *neo-eglot-hover*"
+  "Use this buffer name for the Eglot hover popup."
+  :type 'string
+  :group 'neo)
+
+(defcustom neo/eglot-hover-popup-delay 0.35
+  "Wait this many seconds before showing an Eglot hover popup."
+  :type 'number
+  :group 'neo)
+
+(defcustom neo/eglot-hover-popup-poll-interval 0.05
+  "Poll the mouse at this interval while Eglot hover popups are enabled."
+  :type 'number
+  :group 'neo)
+
+(defvar neo--eglot-hover-timer nil
+  "Timer used to drive mouse-based Eglot hover popups.")
+
+(when (timerp neo--eglot-hover-timer)
+  ;; A previous version could install a malformed repeating timer.
+  ;; Cancelling it at reload time lets `eval-buffer' repair the live
+  ;; session instead of requiring a restart.
+  (cancel-timer neo--eglot-hover-timer)
+  (setq neo--eglot-hover-timer nil))
+
+(defvar neo--eglot-hover-candidate nil
+  "Most recent symbol-sized mouse hover candidate.")
+
+(defvar neo--eglot-hover-candidate-since 0.0
+  "Timestamp at which `neo--eglot-hover-candidate' last changed.")
+
+(defvar neo--eglot-hover-target nil
+  "Current mouse hover target for Eglot popups.
+
+When non-nil, this is a plist containing the window, buffer, bounds,
+and point currently being hovered.")
+
+(defun neo--eglot-hover-popup-available-p ()
+  "Return non-nil when Eglot hover docs can use a popup."
+  (and neo/eglot-hover-popup-enabled
+       (display-graphic-p)
+       (fboundp 'posframe-show)
+       (fboundp 'posframe-hide)
+       (not (minibufferp (current-buffer)))))
+
+(defun neo--eglot-hide-hover-popup ()
+  "Dismiss the Eglot hover popup for the current frame."
+  (when (fboundp 'posframe-hide)
+    (posframe-hide neo/eglot-hover-popup-buffer)))
+
+(defun neo--eglot-reset-hover-popup ()
+  "Forget the current hover target and dismiss any Eglot hover popup."
+  (setq neo--eglot-hover-candidate nil)
+  (setq neo--eglot-hover-candidate-since 0.0)
+  (setq neo--eglot-hover-target nil)
+  (neo--eglot-hide-hover-popup))
+
+(defun neo--eglot-format-docs-for-popup (docs)
+  "Render DOCS into one string suitable for popup display.
+
+The popup needs the same information ElDoc already computed, but laid
+out vertically so type information and longer hover docs remain
+readable at a glance."
+  (with-temp-buffer
+    (setq-local nobreak-char-display nil)
+    (cl-loop
+     for (doc . plist) in docs
+     for thing = (plist-get plist :thing)
+     for face = (plist-get plist :face)
+     for index from 0
+     do
+     (when (> index 0)
+       (insert "\n\n"))
+     (when thing
+       (insert (propertize (format "%s" thing)
+                           'face (or face 'bold))
+               "\n"))
+     (insert (string-trim-right doc)))
+    (string-trim-right (buffer-string))))
+
+(defun neo--eglot-hover-target-equal-p (left right)
+  "Return non-nil when LEFT and RIGHT denote the same hover target."
+  (and left
+       right
+       (eq (plist-get left :window) (plist-get right :window))
+       (eq (plist-get left :buffer) (plist-get right :buffer))
+       (= (plist-get left :start) (plist-get right :start))
+       (= (plist-get left :end) (plist-get right :end))))
+
+(defun neo--eglot-bounds-at-point ()
+  "Return a compact hover span at point, or nil when nothing is hoverable."
+  (or (bounds-of-thing-at-point 'symbol)
+      (bounds-of-thing-at-point 'word)
+      (when (and (not (eobp))
+                 (not (looking-at-p "[[:space:]\n]")))
+        (cons (point) (1+ (point))))))
+
+(defun neo--eglot-mouse-hover-target ()
+  "Return hover target metadata for the symbol currently under the mouse."
+  (pcase-let* ((`(,frame ,col . ,row) (mouse-position))
+               (`(,_frame ,pixel-x . ,pixel-y) (mouse-pixel-position))
+               (window
+                (and frame
+                     col
+                     row
+                     (window-at col row frame))))
+    (when (and window (window-live-p window))
+      (pcase-let* ((`(,left ,top . ,_) (window-inside-pixel-edges window))
+                   (posn (posn-at-x-y
+                          (max 0 (- pixel-x left))
+                          (max 0 (- pixel-y top))
+                          window))
+                   (point (and posn (posn-point posn))))
+        (when (integerp point)
+          (with-current-buffer (window-buffer window)
+            (save-excursion
+              (goto-char point)
+              (when-let ((bounds (neo--eglot-bounds-at-point)))
+                (list :window window
+                      :buffer (current-buffer)
+                      :point point
+                      :start (car bounds)
+                      :end (cdr bounds))))))))))
+
+(defun neo--eglot-managed-hover-target-p (target)
+  "Return non-nil when TARGET is hoverable by Eglot."
+  (and target
+       (window-live-p (plist-get target :window))
+       (buffer-live-p (plist-get target :buffer))
+       (with-current-buffer (plist-get target :buffer)
+         (and (bound-and-true-p eglot--managed-mode)
+              (not (minibufferp (current-buffer)))))))
+
+(defun neo--eglot-show-hover-popup (target docs)
+  "Show popup for TARGET using DOCS."
+  (when (neo--eglot-hover-popup-available-p)
+    (let ((text (neo--eglot-format-docs-for-popup docs))
+          (buffer (plist-get target :buffer))
+          (window (plist-get target :window))
+          (point (plist-get target :point)))
+      (unless (string-empty-p text)
+        (save-selected-window
+          (with-selected-window window
+            (with-current-buffer buffer
+              (posframe-show
+               neo/eglot-hover-popup-buffer
+               :string text
+               :position point
+               :background-color (face-background 'tooltip nil t)
+               :foreground-color (face-foreground 'tooltip nil t)
+               :internal-border-width 1
+               :internal-border-color
+               (or (face-foreground 'shadow nil t)
+                   (face-foreground 'tooltip nil t))))))))))
+
+(defun neo--eglot-hover-callback (target docstring &rest plist)
+  "Display DOCSTRING for TARGET if the mouse is still hovering it."
+  (when (neo--eglot-hover-target-equal-p target neo--eglot-hover-target)
+    (if (and docstring (not (string-empty-p docstring)))
+        (neo--eglot-show-hover-popup target (list (cons docstring plist)))
+      (neo--eglot-hide-hover-popup))))
+
+(defun neo--eglot-request-hover-at-target (target)
+  "Request Eglot hover docs for TARGET."
+  (let ((buffer (plist-get target :buffer))
+        (window (plist-get target :window))
+        (point (plist-get target :point)))
+    (save-selected-window
+      (with-selected-window window
+        (with-current-buffer buffer
+          (save-excursion
+            (goto-char point)
+            (eglot-hover-eldoc-function
+             (lambda (docstring &rest plist)
+               (apply #'neo--eglot-hover-callback
+                      target
+                      docstring
+                      plist)))))))))
+
+(defun neo--eglot-hover-track-mouse ()
+  "Track the mouse and request hover docs when it rests on a symbol."
+  (let* ((raw-target (neo--eglot-mouse-hover-target))
+         (target (and (neo--eglot-managed-hover-target-p raw-target)
+                      raw-target))
+         (now (float-time)))
+    (unless (neo--eglot-hover-target-equal-p target neo--eglot-hover-candidate)
+      (setq neo--eglot-hover-candidate target)
+      (setq neo--eglot-hover-candidate-since now)
+      (unless (neo--eglot-hover-target-equal-p target neo--eglot-hover-target)
+        (setq neo--eglot-hover-target nil)
+        (neo--eglot-hide-hover-popup)))
+    (when (and target
+               (not (neo--eglot-hover-target-equal-p
+                     target
+                     neo--eglot-hover-target))
+               (>= (- now neo--eglot-hover-candidate-since)
+                   neo/eglot-hover-popup-delay))
+      (setq neo--eglot-hover-target target)
+      (neo--eglot-request-hover-at-target target))))
+
+(defun neo--eglot-ensure-hover-timer ()
+  "Start the timer backing mouse-driven Eglot hover popups."
+  (when (timerp neo--eglot-hover-timer)
+    ;; Replacing any pre-existing timer matters here because an earlier
+    ;; buggy version stored the poll interval where the callback should
+    ;; have been.  Cancelling first lets a reload heal the live session.
+    (cancel-timer neo--eglot-hover-timer))
+  (setq neo--eglot-hover-timer
+        (run-with-timer
+         neo/eglot-hover-popup-poll-interval
+         neo/eglot-hover-popup-poll-interval
+         #'neo--eglot-hover-track-mouse)))
 
 (defun neo/eglot-set-server (modes server-command)
   "Install SERVER-COMMAND for MODES in `eglot-server-programs`.
@@ -76,7 +303,8 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
     (setq eglot-stay-out-of nil))
   :hook
   ((c++-mode c++-ts-mode) . eglot-ensure)
-  (eglot-managed-mode . neo/eglot-format-on-save))
+  (eglot-managed-mode . neo/eglot-format-on-save)
+  (eglot-managed-mode . neo--eglot-configure-eldoc))
 
 ;; (before-save . (lambda ()
 ;; 		   (when (eglot-managed-p)
@@ -89,6 +317,11 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
   (eglot-code-actions nil nil "source.includeFix"))
 
 (defun neo--eglot-specific-eldoc ()
+  "Prefer richer Eglot hover docs while keeping default ElDoc sources.
+
+The extra hover provider is what turns \"just a type blip\" into a
+useful popup with documentation.  Keeping `t' in the list preserves
+whatever Eglot or the major mode already registered locally."
   ;; Use custom documentation-functions (with custom priorities, given
   ;; by order):
   (setq-local eldoc-documentation-functions
@@ -103,6 +336,27 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
   ;; (setq-local eldoc-documentation-strategy
   ;;   #'eldoc-documentation-enthusiast)
   )
+
+(defun neo--eglot-configure-eldoc ()
+  "Configure popup-backed ElDoc presentation for the current buffer.
+
+This runs from `eglot-managed-mode'.  Entering Eglot management swaps
+in the richer hover provider ordering and enables the mouse-hover
+popup timer.  Leaving Eglot restores the buffer to normal ElDoc
+behavior."
+  (if (bound-and-true-p eglot--managed-mode)
+      (progn
+        (neo--eglot-specific-eldoc)
+        (setq-local eldoc-documentation-strategy
+                    #'eldoc-documentation-compose-eagerly)
+        (neo--eglot-ensure-hover-timer)
+        (add-hook 'pre-command-hook #'neo--eglot-reset-hover-popup nil t))
+    (remove-hook 'pre-command-hook #'neo--eglot-reset-hover-popup t)
+    (when (eq (plist-get neo--eglot-hover-target :buffer) (current-buffer))
+      (setq neo--eglot-hover-target nil))
+    (neo--eglot-hide-hover-popup)
+    (kill-local-variable 'eldoc-documentation-functions)
+    (kill-local-variable 'eldoc-documentation-strategy)))
 
 ;; (neo/use-package eglot-signature-eldoc-talkative
 ;;   :after eldoc
