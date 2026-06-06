@@ -14,8 +14,7 @@
   ;; double substitutions and fights over font-lock.
   (haskell-font-lock-symbols nil)
   :hook
-  ((haskell-mode . interactive-haskell-mode)
-   (haskell-mode . neo/haskell-mode-setup)))
+  (haskell-mode . neo/haskell-mode-setup))
 
 (defvar neo/haskell-prettify-symbols
   '(;; Lambda and arrows
@@ -68,6 +67,81 @@ commonly imported combinators. Entries that read as plain identifiers
 treat them as syntactic words, so module-qualified or in-string
 occurrences stay literal.")
 
+(with-eval-after-load 'project
+  ;; `project.el' otherwise falls back to the repository's `.git'
+  ;; marker, which is too coarse for multi-package Haskell workspaces.
+  ;; Teaching it about the common Haskell roots keeps Eglot/HLS pointed
+  ;; at the package or cabal project that actually owns the buffer.
+  (add-to-list 'project-vc-extra-root-markers "cabal.project")
+  (add-to-list 'project-vc-extra-root-markers "stack.yaml")
+  (add-to-list 'project-vc-extra-root-markers "hie.yaml"))
+
+(defun neo--haskell-locate-dominating-directory (start predicate)
+  "Walk upward from START until PREDICATE returns non-nil for a directory.
+
+This exists because Haskell project roots are often identified by file
+patterns such as `*.cabal', whereas `locate-dominating-file' only
+matches a single literal file or directory name."
+  (let ((dir (file-name-as-directory (expand-file-name start)))
+        parent
+        found)
+    (while (and dir (not found))
+      (when (funcall predicate dir)
+        (setq found dir))
+      (setq parent (file-name-directory (directory-file-name dir)))
+      (setq dir (unless (or (null parent) (equal dir parent)) parent)))
+    found))
+
+(defun neo--haskell-project-root ()
+  "Return the smallest practical Haskell workspace root for the buffer.
+
+HLS behaves best when launched from the package or cabal project that
+owns the file, not from an arbitrarily large VC root. Prefer explicit
+Haskell markers first, then fall back to `project.el' / `.git'."
+  (or (locate-dominating-file default-directory "hie.yaml")
+      (neo--haskell-locate-dominating-directory
+       default-directory
+       (lambda (dir)
+         (directory-files dir nil "\\.cabal\\'" t)))
+      (locate-dominating-file default-directory "cabal.project")
+      (locate-dominating-file default-directory "stack.yaml")
+      (when-let ((project (and (fboundp 'project-current)
+                               (project-current nil))))
+        (expand-file-name (project-root project)))
+      (locate-dominating-file default-directory ".git")
+      default-directory))
+
+(defun neo--haskell-enable-eglot-ui ()
+  "Turn on HLS-specific Eglot features for the current Haskell buffer.
+
+Inlay hints are the missing piece between hover-only support and the
+kind of ambient type feedback users expect from HLS."
+  (when (and (derived-mode-p 'haskell-mode 'haskell-ts-mode)
+             (fboundp 'eglot-inlay-hints-mode))
+    (eglot-inlay-hints-mode 1)))
+
+(defun neo--haskell-start-language-client ()
+  "Start the preferred language client for the current Haskell buffer.
+
+Prefer HLS via Eglot. Fall back to `lsp-mode' if that is the only
+client available, and fall back to `interactive-haskell-mode' only
+when no LSP client is available. Running both HLS and
+`interactive-haskell-mode' together tends to produce the exact
+symptom profile we want to avoid: legacy hover/import helpers working
+while completion and xref come from the wrong backend or not at all."
+  (cond
+   ((and (neo/extensionp "neo:programming-foundation")
+         (fboundp 'eglot-ensure))
+    (let ((default-directory (neo--haskell-project-root)))
+      (eglot-ensure))
+    'eglot)
+   ((fboundp 'lsp-deferred)
+    (lsp-deferred)
+    'lsp)
+   (t
+    (interactive-haskell-mode 1)
+    'interactive)))
+
 (defun neo/haskell-mode-setup ()
   "Wire up LSP, stylish-haskell autoformat, and Unicode prettification.
 
@@ -80,12 +154,15 @@ format-on-save behavior they had.
 `prettify-symbols-mode' is enabled with
 `neo/haskell-prettify-symbols'; `unprettify-at-point' is set to
 `right-edge' so editing near a glyph reveals the underlying tokens."
-  (when (neo/extensionp "neo:programming-foundation")
-    (cond
-     ((fboundp 'eglot-ensure)
-      (eglot-ensure))
-     ((fboundp 'lsp-deferred)
-      (lsp-deferred))))
+  (add-hook 'eglot-managed-mode-hook #'neo--haskell-enable-eglot-ui nil :local)
+  (pcase (neo--haskell-start-language-client)
+    ('eglot
+     ;; Reused workspaces can flip management on before the local hook
+     ;; above gets a chance to fire, so enable the HLS niceties eagerly
+     ;; when the buffer is already under Eglot's control.
+     (when (and (fboundp 'eglot-managed-p)
+                (eglot-managed-p))
+       (neo--haskell-enable-eglot-ui))))
   (add-hook 'before-save-hook #'haskell-mode-stylish-buffer nil :local)
   (setq-local prettify-symbols-alist neo/haskell-prettify-symbols)
   (setq-local prettify-symbols-unprettify-at-point 'right-edge)
