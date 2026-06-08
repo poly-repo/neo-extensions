@@ -44,6 +44,15 @@ display."
   :type 'number
   :group 'neo)
 
+(defcustom neo/eglot-hover-popup-exit-delay 0.12
+  "Keep an Eglot hover popup alive this long after the mouse leaves it.
+
+The delay is intentionally short.  It exists so users can move the
+mouse from an identifier into the popup itself without the popup
+vanishing in the gap between the two."
+  :type 'number
+  :group 'neo)
+
 (defvar neo--eglot-hover-timer nil
   "Timer used to drive mouse-based Eglot hover popups.")
 
@@ -66,6 +75,12 @@ display."
 When non-nil, this is a plist containing the window, buffer, bounds,
 and point currently being hovered.")
 
+(defvar neo--eglot-hover-popup-frame nil
+  "Child frame currently showing the Eglot hover popup.")
+
+(defvar neo--eglot-hover-away-since 0.0
+  "Timestamp at which the mouse last left both the hover target and popup.")
+
 (defun neo--eglot-hover-popup-available-p ()
   "Return non-nil when Eglot hover docs can use a popup."
   (and neo/eglot-hover-popup-enabled
@@ -76,6 +91,7 @@ and point currently being hovered.")
 
 (defun neo--eglot-hide-hover-popup ()
   "Dismiss the Eglot hover popup for the current frame."
+  (setq neo--eglot-hover-popup-frame nil)
   (when (fboundp 'posframe-hide)
     (posframe-hide neo/eglot-hover-popup-buffer)))
 
@@ -83,6 +99,7 @@ and point currently being hovered.")
   "Forget the current hover target and dismiss any Eglot hover popup."
   (setq neo--eglot-hover-candidate nil)
   (setq neo--eglot-hover-candidate-since 0.0)
+  (setq neo--eglot-hover-away-since 0.0)
   (setq neo--eglot-hover-target nil)
   (neo--eglot-hide-hover-popup))
 
@@ -162,6 +179,23 @@ readable at a glance."
          (and (bound-and-true-p eglot--managed-mode)
               (not (minibufferp (current-buffer)))))))
 
+(defun neo--eglot-hover-popup-live-p ()
+  "Return non-nil when the hover popup currently has a live child frame."
+  (and (frame-live-p neo--eglot-hover-popup-frame)
+       (frame-visible-p neo--eglot-hover-popup-frame)))
+
+(defun neo--eglot-mouse-over-hover-popup-p ()
+  "Return non-nil when the mouse is currently over the hover popup."
+  (and (neo--eglot-hover-popup-live-p)
+       (pcase-let ((`(,frame ,_column . ,_row) (mouse-position)))
+         (eq frame neo--eglot-hover-popup-frame))))
+
+(defun neo--eglot-current-mouse-target ()
+  "Return the current Eglot-managed hover target under the mouse, if any."
+  (let ((raw-target (neo--eglot-mouse-hover-target)))
+    (and (neo--eglot-managed-hover-target-p raw-target)
+         raw-target)))
+
 (defun neo--eglot-show-hover-popup (target docs)
   "Show popup for TARGET using DOCS."
   (when (neo--eglot-hover-popup-available-p)
@@ -173,16 +207,17 @@ readable at a glance."
         (save-selected-window
           (with-selected-window window
             (with-current-buffer buffer
-              (posframe-show
-               neo/eglot-hover-popup-buffer
-               :string text
-               :position point
-               :background-color (face-background 'tooltip nil t)
-               :foreground-color (face-foreground 'tooltip nil t)
-               :internal-border-width 1
-               :internal-border-color
-               (or (face-foreground 'shadow nil t)
-                   (face-foreground 'tooltip nil t))))))))))
+              (setq neo--eglot-hover-popup-frame
+                    (posframe-show
+                     neo/eglot-hover-popup-buffer
+                     :string text
+                     :position point
+                     :background-color (face-background 'tooltip nil t)
+                     :foreground-color (face-foreground 'tooltip nil t)
+                     :internal-border-width 1
+                     :internal-border-color
+                     (or (face-foreground 'shadow nil t)
+                         (face-foreground 'tooltip nil t)))))))))))
 
 (defun neo--eglot-hover-callback (target docstring &rest plist)
   "Display DOCSTRING for TARGET if the mouse is still hovering it."
@@ -210,24 +245,57 @@ readable at a glance."
 
 (defun neo--eglot-hover-track-mouse ()
   "Track the mouse and request hover docs when it rests on a symbol."
-  (let* ((raw-target (neo--eglot-mouse-hover-target))
-         (target (and (neo--eglot-managed-hover-target-p raw-target)
-                      raw-target))
+  (let* ((target (neo--eglot-current-mouse-target))
+         (mouse-over-popup (neo--eglot-mouse-over-hover-popup-p))
          (now (float-time)))
-    (unless (neo--eglot-hover-target-equal-p target neo--eglot-hover-candidate)
-      (setq neo--eglot-hover-candidate target)
-      (setq neo--eglot-hover-candidate-since now)
-      (unless (neo--eglot-hover-target-equal-p target neo--eglot-hover-target)
-        (setq neo--eglot-hover-target nil)
-        (neo--eglot-hide-hover-popup)))
-    (when (and target
-               (not (neo--eglot-hover-target-equal-p
-                     target
-                     neo--eglot-hover-target))
-               (>= (- now neo--eglot-hover-candidate-since)
-                   neo/eglot-hover-popup-delay))
-      (setq neo--eglot-hover-target target)
-      (neo--eglot-request-hover-at-target target))))
+    (cond
+     (mouse-over-popup
+      ;; Staying over the popup itself is part of the hover interaction:
+      ;; it gives users a chance to click links or buttons without racing
+      ;; the hide timer.
+      (setq neo--eglot-hover-away-since 0.0))
+     (target
+      (setq neo--eglot-hover-away-since 0.0)
+      (unless (neo--eglot-hover-target-equal-p target neo--eglot-hover-candidate)
+        (setq neo--eglot-hover-candidate target)
+        (setq neo--eglot-hover-candidate-since now)
+        (unless (neo--eglot-hover-target-equal-p target neo--eglot-hover-target)
+          (setq neo--eglot-hover-target nil)
+          (neo--eglot-hide-hover-popup)))
+      (when (and (not (neo--eglot-hover-target-equal-p
+                       target
+                       neo--eglot-hover-target))
+                 (>= (- now neo--eglot-hover-candidate-since)
+                     neo/eglot-hover-popup-delay))
+        (setq neo--eglot-hover-target target)
+        (neo--eglot-request-hover-at-target target)))
+     ((or neo--eglot-hover-target
+          neo--eglot-hover-candidate
+          (neo--eglot-hover-popup-live-p))
+      (when (zerop neo--eglot-hover-away-since)
+        (setq neo--eglot-hover-away-since now))
+      (when (>= (- now neo--eglot-hover-away-since)
+                neo/eglot-hover-popup-exit-delay)
+        (neo--eglot-reset-hover-popup))))))
+
+(defun neo--eglot-preserve-hover-popup-for-command-p ()
+  "Return non-nil when the current command should keep the hover popup alive.
+
+This is what allows clickable controls inside the popup: a mouse click
+that begins with the pointer already over the popup should not be
+treated as an unrelated command that dismisses the popup first."
+  (or (neo--eglot-mouse-over-hover-popup-p)
+      (neo--eglot-hover-target-equal-p
+       (neo--eglot-current-mouse-target)
+       neo--eglot-hover-target)))
+
+(defun neo--eglot-reset-hover-popup-before-command ()
+  "Dismiss hover popup before unrelated commands.
+
+When the mouse is still on the originating identifier or on the popup
+itself, keep the popup alive so users can interact with it."
+  (unless (neo--eglot-preserve-hover-popup-for-command-p)
+    (neo--eglot-reset-hover-popup)))
 
 (defun neo--eglot-ensure-hover-timer ()
   "Start the timer backing mouse-driven Eglot hover popups."
@@ -350,8 +418,8 @@ behavior."
         (setq-local eldoc-documentation-strategy
                     #'eldoc-documentation-compose-eagerly)
         (neo--eglot-ensure-hover-timer)
-        (add-hook 'pre-command-hook #'neo--eglot-reset-hover-popup nil t))
-    (remove-hook 'pre-command-hook #'neo--eglot-reset-hover-popup t)
+        (add-hook 'pre-command-hook #'neo--eglot-reset-hover-popup-before-command nil t))
+    (remove-hook 'pre-command-hook #'neo--eglot-reset-hover-popup-before-command t)
     (when (eq (plist-get neo--eglot-hover-target :buffer) (current-buffer))
       (setq neo--eglot-hover-target nil))
     (neo--eglot-hide-hover-popup)
