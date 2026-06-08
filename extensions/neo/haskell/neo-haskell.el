@@ -16,6 +16,15 @@
   :hook
   (haskell-mode . neo/haskell-mode-setup))
 
+(defconst neo/haskell-tool-search-directories
+  (mapcar #'expand-file-name '("~/.ghcup/bin" "~/.cabal/bin"))
+  "Directories to search when GUI Emacs misses Haskell tools on PATH.
+
+Shell sessions usually inherit these paths from login startup files,
+but GUI launchers often do not.  Resolving HLS explicitly keeps the
+Eglot setup simple while avoiding the interactive \"program not found\"
+prompt.")
+
 (defvar neo/haskell-prettify-symbols
   '(;; Lambda and arrows
     ("\\"          . ?λ)
@@ -75,6 +84,57 @@ occurrences stay literal.")
   (add-to-list 'project-vc-extra-root-markers "cabal.project")
   (add-to-list 'project-vc-extra-root-markers "stack.yaml")
   (add-to-list 'project-vc-extra-root-markers "hie.yaml"))
+
+(defun neo--haskell-find-executable (program)
+  "Return an absolute path to PROGRAM when neo can find it.
+
+Prefer `executable-find' so user overrides inside Emacs still win.  If
+GUI Emacs started without the Haskell toolchain directories on PATH,
+fall back to the standard ghcup/cabal user-level bin locations."
+  (or (executable-find program)
+      (cl-loop
+       for dir in neo/haskell-tool-search-directories
+       for candidate = (expand-file-name program dir)
+       when (file-executable-p candidate)
+       return candidate)))
+
+(defun neo--haskell-existing-tool-directories ()
+  "Return Haskell tool directories that exist on this machine.
+
+The configured search list includes common user-level install
+locations, but not every machine will have both directories. Filtering
+up front keeps `exec-path' and subprocess PATH entries tidy."
+  (cl-remove-if-not #'file-directory-p neo/haskell-tool-search-directories))
+
+(defun neo--haskell-buffer-path ()
+  "Return PATH for Haskell buffers with the preferred toolchain first.
+
+Resolving the wrapper itself is not enough when GUI Emacs launches with
+the wrong PATH. HLS asks `cabal' and `ghc' which compiler a project
+uses, so those tools must come from the same ghcup/cabal installation
+as the wrapper."
+  (string-join
+   (delete-dups
+    (append (neo--haskell-existing-tool-directories)
+            (split-string (or (getenv "PATH") "") path-separator t)))
+   path-separator))
+
+(defun neo--haskell-prepare-buffer-environment ()
+  "Prefer the user-level Haskell toolchain for this buffer's processes.
+
+Making the environment buffer-local keeps the fix narrowly scoped to
+Haskell buffers while ensuring Eglot, HLS, and formatters all see the
+same `cabal', `ghc', and related tools."
+  (let ((buffer-path (neo--haskell-buffer-path)))
+    (setq-local exec-path
+                (delete-dups
+                 (append (neo--haskell-existing-tool-directories) exec-path)))
+    (setq-local process-environment
+                (cons (format "PATH=%s" buffer-path)
+                      (cl-remove-if
+                       (lambda (entry)
+                         (string-prefix-p "PATH=" entry))
+                       process-environment)))))
 
 (defun neo--haskell-locate-dominating-directory (start predicate)
   "Walk upward from START until PREDICATE returns non-nil for a directory.
@@ -154,6 +214,7 @@ format-on-save behavior they had.
 `prettify-symbols-mode' is enabled with
 `neo/haskell-prettify-symbols'; `unprettify-at-point' is set to
 `right-edge' so editing near a glyph reveals the underlying tokens."
+  (neo--haskell-prepare-buffer-environment)
   (add-hook 'eglot-managed-mode-hook #'neo--haskell-enable-eglot-ui nil :local)
   (pcase (neo--haskell-start-language-client)
     ('eglot
@@ -176,7 +237,9 @@ format-on-save behavior they had.
   (when (fboundp 'neo/eglot-set-server)
     (neo/eglot-set-server
      '(haskell-mode haskell-ts-mode)
-     '("haskell-language-server-wrapper" "--lsp"))))
+     (list (or (neo--haskell-find-executable "haskell-language-server-wrapper")
+               "haskell-language-server-wrapper")
+           "--lsp"))))
 
 ;; lsp-haskell is the lsp-mode integration for HLS. It's installed so
 ;; users who prefer lsp-mode get a working setup, but the
@@ -185,7 +248,9 @@ format-on-save behavior they had.
 (neo/use-package lsp-haskell
   :after lsp-mode
   :custom
-  (lsp-haskell-server-path "haskell-language-server-wrapper")
+  (lsp-haskell-server-path
+   (or (neo--haskell-find-executable "haskell-language-server-wrapper")
+       "haskell-language-server-wrapper"))
   (lsp-haskell-formatting-provider "stylish-haskell"))
 
 ;;; Note, no (provide 'neo-haskell) here, extensions are loaded not required.
