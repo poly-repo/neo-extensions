@@ -5,8 +5,9 @@
 ;;; Lazy by default, eager about types.
 
 ;; haskell-mode supplies the major mode, REPL integration, and the
-;; `haskell-mode-stylish-buffer' command that shells out to
-;; stylish-haskell on PATH.
+;; `haskell-mode-stylish-buffer' command. We point that command at an
+;; absolute stylish-haskell path below because GUI Emacs often misses
+;; user-level Cabal tools on PATH.
 (neo/use-package haskell-mode
   :custom
   ;; `haskell-mode' ships its own ad-hoc symbol prettifier that we
@@ -136,6 +137,20 @@ same `cabal', `ghc', and related tools."
                          (string-prefix-p "PATH=" entry))
                        process-environment)))))
 
+(defun neo--haskell-configure-stylish-haskell ()
+  "Configure format-on-save for the current Haskell buffer.
+
+`haskell-mode-stylish-buffer' delegates to
+`haskell-mode-stylish-haskell-path'. Setting that variable
+buffer-locally avoids a common GUI Emacs failure mode where
+`stylish-haskell' exists in `~/.cabal/bin' but `call-process-region'
+cannot resolve the bare executable name."
+  (if-let ((stylish-haskell (neo--haskell-find-executable "stylish-haskell")))
+      (progn
+        (setq-local haskell-mode-stylish-haskell-path stylish-haskell)
+        (add-hook 'before-save-hook #'haskell-mode-stylish-buffer nil :local))
+    (message "neo-haskell: stylish-haskell not found; skipping format-on-save")))
+
 (defun neo--haskell-locate-dominating-directory (start predicate)
   "Walk upward from START until PREDICATE returns non-nil for a directory.
 
@@ -224,7 +239,7 @@ format-on-save behavior they had.
      (when (and (fboundp 'eglot-managed-p)
                 (eglot-managed-p))
        (neo--haskell-enable-eglot-ui))))
-  (add-hook 'before-save-hook #'haskell-mode-stylish-buffer nil :local)
+  (neo--haskell-configure-stylish-haskell)
   (setq-local prettify-symbols-alist neo/haskell-prettify-symbols)
   (setq-local prettify-symbols-unprettify-at-point 'right-edge)
   (prettify-symbols-mode 1))
