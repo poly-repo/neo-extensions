@@ -1,3 +1,5 @@
+;;; neo-dashboard.el --- Dashboard integration -*- lexical-binding: t; -*-
+
 ;; TODO require font Orbitron (a Google web font)
 
 (defconst neo--hacker-image
@@ -9,11 +11,15 @@
 (defun neo--setup-banner ()
   (if (file-readable-p neo--hacker-image)
       (progn
-        (setq dashboard-startup-banner neo--hacker-image)
-        (setq dashboard-banner-logo-title "W   E      A   R   E      L   E   G   I   O   N   S")
-        (set-face-attribute 'dashboard-banner-logo-title nil :font "Orbitron" :height 200 :weight 'bold :foreground "#196DB5"))
-    (setq dashboard-startup-banner 'logo)
-    (setq dashboard-banner-logo-title "Welcome to Emacs Neo")))
+        (setq dashboard-startup-banner neo--hacker-image
+              dashboard-banner-logo-title "W   E      A   R   E      L   E   G   I   O   N   S")
+        (set-face-attribute 'dashboard-banner-logo-title nil
+                            :font "Orbitron"
+                            :height 200
+                            :weight 'bold
+                            :foreground "#196DB5"))
+    (setq dashboard-startup-banner 'logo
+          dashboard-banner-logo-title "Welcome to Emacs Neo")))
   
 ;; (neo/use-package dashboard
 ;;     :after dashboard-hackernews
@@ -44,22 +50,50 @@
   "Perspective active before the dashboard was shown.")
 
 
+(defun neo/dashboard--buffer-name ()
+  "Return the dashboard buffer name."
+  (if (boundp 'dashboard-buffer-name)
+      dashboard-buffer-name
+    "*dashboard*"))
+
+(defun neo/dashboard--perspective-available-p ()
+  "Return non-nil when perspective support can be used."
+  (and (require 'perspective nil t)
+       (fboundp 'persp-current-name)
+       (fboundp 'persp-switch)))
+
+(defun neo/dashboard--ensure-perspective-mode ()
+  "Enable `persp-mode' when perspective is available."
+  (when (and (fboundp 'persp-mode)
+             (not (bound-and-true-p persp-mode)))
+    (persp-mode 1)))
+
+(defun neo/dashboard--add-buffer (buffer)
+  "Add BUFFER to the current perspective when perspective is available."
+  (when (and (buffer-live-p buffer)
+             (fboundp 'persp-add-buffer))
+    (persp-add-buffer buffer)))
+
 (defun neo/dashboard-initial-buffer ()
   "Return the dashboard buffer for `initial-buffer-choice`."
   (when (require 'dashboard nil t)
     (neo/dashboard--enter)
     (dashboard-open)
-    (get-buffer "*dashboard*")))
+    (when-let ((buffer (get-buffer (neo/dashboard--buffer-name))))
+      (neo/dashboard--add-buffer buffer)
+      buffer)))
 
 
 (defun neo/dashboard--enter ()
   "Record originating perspective and switch to dashboard perspective."
-  (when (featurep 'perspective)
-    (unless neo/dashboard--origin-persp
-      ;; Save current perspective (string)
-      (setq neo/dashboard--origin-persp (persp-current-name)))
-    ;; Switch to dashboard perspective (creates if missing)
-    (persp-switch neo/dashboard-persp)))
+  (when (neo/dashboard--perspective-available-p)
+    (neo/dashboard--ensure-perspective-mode)
+    (let ((current-persp (persp-current-name)))
+      (unless (or neo/dashboard--origin-persp
+                  (string= current-persp neo/dashboard-persp))
+        (setq neo/dashboard--origin-persp current-persp))
+      (unless (string= current-persp neo/dashboard-persp)
+        (persp-switch neo/dashboard-persp)))))
 
 (defun neo/dashboard--leave ()
   "Restore perspective active before dashboard."
@@ -69,13 +103,16 @@
     (setq neo/dashboard--origin-persp nil)))
 
 (defun neo/dashboard ()
+  "Show the dashboard in the dashboard perspective."
   (interactive)
-  (neo/dashboard-initial-buffer))
+  (when-let ((buffer (neo/dashboard-initial-buffer)))
+    (switch-to-buffer buffer)))
 
 (defun neo/dashboard-quit ()
   "Quit the dashboard and restore original perspective."
   (interactive)
-  (kill-buffer "*dashboard*")
+  (when-let ((buffer (get-buffer (neo/dashboard--buffer-name))))
+    (kill-buffer buffer))
   (neo/dashboard--leave))
 
 (neo/use-package dashboard
