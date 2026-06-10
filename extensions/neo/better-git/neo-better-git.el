@@ -27,7 +27,6 @@
 					    (unstaged . show)
 					    (untracked . show)
 					    (unpushed . show)
-					    (issues . show)
 					    (stashes . hide)
 					    (commit . show)
 					    (local . hide) ; maybe this is the "Branches" section
@@ -73,7 +72,7 @@
 
 (with-eval-after-load 'magit
   (define-key magit-status-mode-map (kbd "w")
-              #'neo/magit-worktree-or-issue-action))
+              #'neo/magit-worktree-action))
 
 (defconst neo/git-branch-stop-words
   '("a" "an" "the" "and" "or" "to" "of" "in" "on" "for"
@@ -129,25 +128,15 @@
   (projectile-invalidate-cache nil)
   (projectile-switch-project-by-name path))
 
-(defun neo/ensure-workspace ()
+(defun neo/ensure-worktree ()
   (magit-section-case
     (worktree
-     (neo/switch-to-project (oref it value)))
-    (issue
-     (let* ((issue (oref it value))
-            (id (oref issue number))
-            (title (oref issue title))
-            (branch (neo/git-branch-from-issue id title))
-            (directory (expand-file-name
-			(replace-regexp-in-string "/" "-" branch)
-			"~/.local/share/wtrees/")))
-       (neo/magit-worktree-create directory branch)
-       (neo/switch-to-project directory)))))
+     (neo/switch-to-project (oref it value)))))
 
-(defun neo/magit-worktree-or-issue-action ()
-  "Run projectile-switch-project when on worktree or issue sections."
+(defun neo/magit-worktree-action ()
+  "Switch to the worktree at point in the Magit status buffer."
   (interactive)
-  (neo/ensure-workspace))
+  (neo/ensure-worktree))
 
 (with-eval-after-load 'magit
   ;; Refresh the repo status buffer whenever you save a file in that repo.
