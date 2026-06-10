@@ -159,11 +159,14 @@
       (when (fboundp 'magit-mode-get-buffers)
         (magit-mode-get-buffers))))))
 
+(defun neo--better-git-display-buffer-same-window (buffer)
+  "Display BUFFER in the main window using `display-buffer-same-window'."
+  (with-selected-window (neo--better-git-main-window)
+    (display-buffer-same-window buffer nil)))
+
 (defun neo--better-git-show-magit-buffer (buffer)
   "Display BUFFER in a main window without disturbing side windows."
-  (let ((magit-display-buffer-function #'display-buffer-same-window))
-    (with-selected-window (neo--better-git-main-window)
-      (magit-display-buffer buffer #'display-buffer-same-window))))
+  (neo--better-git-display-buffer-same-window buffer))
 
 (defun neo--better-git-ensure-project-magit-status (project-root)
   "Ensure PROJECT-ROOT has a visible Magit status buffer in the current perspective."
@@ -171,7 +174,8 @@
              (fboundp 'magit-status-setup-buffer))
     (let ((buffer
            (or (neo--better-git-project-magit-buffer project-root)
-               (let ((magit-display-buffer-function #'display-buffer-same-window))
+               (let ((magit-display-buffer-function
+                      #'neo--better-git-display-buffer-same-window))
                  (with-selected-window (neo--better-git-main-window)
                    (magit-status-setup-buffer project-root))))))
       (when (and (featurep 'perspective)

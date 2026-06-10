@@ -7,6 +7,8 @@
   "Ignore package declarations while loading extension code in tests."
   nil)
 
+(defvar magit-display-buffer-function nil)
+
 (provide 'neo-better-git-brancher)
 
 (load-file (expand-file-name "../neo-better-git.el"
@@ -47,7 +49,32 @@
             (neo--better-git-ensure-project-magit-status "/tmp/project"))
         (kill-buffer buffer))
       (expect added :to-equal buffer)
-      (expect shown :to-equal buffer))))
+      (expect shown :to-equal buffer)))
+
+  (it "uses a Magit-compatible display callback when creating a status buffer"
+    (let* ((buffer (get-buffer-create "*neo-better-git-display-test*"))
+           (displayed nil)
+           (main-window (selected-window)))
+      (unwind-protect
+          (cl-letf (((symbol-function 'vc-git-responsible-p)
+                     (lambda (_path) t))
+                    ((symbol-function 'neo--better-git-project-magit-buffer)
+                     (lambda (_path) nil))
+                    ((symbol-function 'neo--better-git-main-window)
+                     (lambda () main-window))
+                    ((symbol-function 'display-buffer-same-window)
+                     (lambda (buf alist)
+                       (setq displayed (list buf alist))
+                       main-window))
+                    ((symbol-function 'magit-status-setup-buffer)
+                     (lambda (&optional _path)
+                       (funcall magit-display-buffer-function buffer)
+                       buffer))
+                    ((symbol-function 'get-buffer-window)
+                     (lambda (_buf &optional _all-frames) main-window)))
+            (neo--better-git-ensure-project-magit-status "/tmp/project"))
+        (kill-buffer buffer))
+      (expect displayed :to-equal (list buffer nil)))))
 
 (provide 'test-neo-better-git)
 ;;; test-neo-better-git.el ends here
