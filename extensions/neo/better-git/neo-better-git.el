@@ -1,5 +1,7 @@
 ;;; -*- lexical-binding: t -*-
 
+(require 'vc-git)
+
 (neo/use-package transient)
 
 (neo/use-package magit
@@ -128,10 +130,67 @@
   (projectile-invalidate-cache nil)
   (projectile-switch-project-by-name path))
 
+(defun neo--better-git-main-window ()
+  "Return a non-side window from the selected frame."
+  (or (seq-find
+       (lambda (window)
+         (and (window-live-p window)
+              (not (window-parameter window 'window-side))))
+       (window-list nil 'no-mini))
+      (selected-window)))
+
+(defun neo--better-git-project-magit-buffer (project-root)
+  "Return a Magit status buffer for PROJECT-ROOT, preferring the current perspective."
+  (let ((project-root (file-name-as-directory (expand-file-name project-root))))
+    (seq-find
+     (lambda (buffer)
+       (and (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (and (derived-mode-p 'magit-status-mode)
+                   default-directory
+                   (file-equal-p project-root
+                                 (file-name-as-directory
+                                  (expand-file-name default-directory)))))))
+     (append
+      (when (and (featurep 'perspective)
+                 (fboundp 'persp-buffers)
+                 (fboundp 'persp-curr))
+        (persp-buffers (persp-curr)))
+      (when (fboundp 'magit-mode-get-buffers)
+        (magit-mode-get-buffers))))))
+
+(defun neo--better-git-show-magit-buffer (buffer)
+  "Display BUFFER in a main window without disturbing side windows."
+  (let ((magit-display-buffer-function #'display-buffer-same-window))
+    (with-selected-window (neo--better-git-main-window)
+      (magit-display-buffer buffer #'display-buffer-same-window))))
+
+(defun neo--better-git-ensure-project-magit-status (project-root)
+  "Ensure PROJECT-ROOT has a visible Magit status buffer in the current perspective."
+  (when (and (vc-git-responsible-p project-root)
+             (fboundp 'magit-status-setup-buffer))
+    (let ((buffer
+           (or (neo--better-git-project-magit-buffer project-root)
+               (let ((magit-display-buffer-function #'display-buffer-same-window))
+                 (with-selected-window (neo--better-git-main-window)
+                   (magit-status-setup-buffer project-root))))))
+      (when (and (featurep 'perspective)
+                 (fboundp 'persp-add-buffer)
+                 (buffer-live-p buffer))
+        (persp-add-buffer buffer))
+      (unless (get-buffer-window buffer)
+        (neo--better-git-show-magit-buffer buffer))
+      buffer)))
+
+(defun neo/better-git-switch-to-project (path)
+  "Switch to PATH and show its Magit status without disturbing side windows."
+  (neo/switch-to-project path)
+  (neo--better-git-ensure-project-magit-status path))
+
 (defun neo/ensure-worktree ()
   (magit-section-case
     (worktree
-     (neo/switch-to-project (oref it value)))))
+     (neo/better-git-switch-to-project (oref it value)))))
 
 (defun neo/magit-worktree-action ()
   "Switch to the worktree at point in the Magit status buffer."
