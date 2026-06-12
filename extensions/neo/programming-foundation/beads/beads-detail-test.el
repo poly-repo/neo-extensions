@@ -8,7 +8,7 @@
 
 (ert-deftest beads-detail/view-children-applies-parent-filter ()
   (let ((issue '((id . "omega-6hnb")
-                 (title . "Epoch: build the Haskell version of Mlody"))))
+                 (title . "Build the Haskell version of Mlody"))))
     (with-temp-buffer
       (setq-local beads-detail--current-issue issue)
       (cl-letf (((symbol-function 'beads-list)

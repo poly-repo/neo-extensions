@@ -40,7 +40,7 @@
       (beads-filter-status)
       (should-not beads-list--filter))))
 
-(ert-deftest beads-transient/filter-parent-offers-only-epochs ()
+(ert-deftest beads-transient/filter-parent-offers-only-epics ()
   (with-temp-buffer
     (setq major-mode 'beads-list-mode)
     (let (seen-filters seen-choices)
@@ -48,9 +48,9 @@
                  (lambda (&optional filters)
                    (setq seen-filters filters)
                    '(((id . "omega-6hnb")
-                      (title . "Epoch: build the Haskell version of Mlody")
+                      (title . "Build the Haskell version of Mlody")
                       (issue_type . "epic")
-                      (labels . ["epoch" "haskell" "mlody"]))
+                      (labels . ["haskell" "mlody"]))
                      ((id . "omega-91i")
                       (title . "Bridge all input/output/config values")
                       (issue_type . "epic")
@@ -58,23 +58,23 @@
                      ((id . "omega-6hnb.1")
                       (title . "Add a desugaring pass family with a type-sugar sub-pass")
                       (issue_type . "task")
-                      (labels . ["epoch" "mlody"])))))
+                      (labels . ["mlody"])))))
                 ((symbol-function 'completing-read)
                  (lambda (_prompt choices _predicate _require-match &rest _)
                    (setq seen-choices choices)
-                   "omega-6hnb: Epoch: build the Haskell version of Mlody"))
+                   "omega-6hnb: Build the Haskell version of Mlody"))
                 ((symbol-function 'beads-list-refresh)
                  (lambda (&optional _silent)
                    nil))
                 ((symbol-function 'message)
-                 (lambda (&rest _args)
+                  (lambda (&rest _args)
                    nil)))
         (beads-filter-parent)
         (should (equal seen-filters '(:issue-type "epic")))
         (should
-         (member "omega-6hnb: Epoch: build the Haskell version of Mlody"
+         (member "omega-6hnb: Build the Haskell version of Mlody"
                  seen-choices))
-        (should-not
+        (should
          (member "omega-91i: Bridge all input/output/config values"
                  seen-choices))
         (should-not

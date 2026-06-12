@@ -81,12 +81,9 @@ Shows beginning and end of string with … in the middle."
               ellipsis
               (substring str (- (length str) tail-len))))))
 
-(defun beads-transient--epoch-p (issue)
-  "Return non-nil when ISSUE represents an epoch container."
-  (let ((labels (alist-get 'labels issue)))
-    (and (string= (alist-get 'issue_type issue) "epic")
-         labels
-         (seq-contains-p labels "epoch" #'equal))))
+(defun beads-transient--epic-p (issue)
+  "Return non-nil when ISSUE is an epic."
+  (string= (alist-get 'issue_type issue) "epic"))
 
 (defun beads-create-issue ()
   "Create a new issue interactively.
@@ -437,20 +434,20 @@ Includes built-in types and any custom types found in current issues."
     (beads-list-refresh)))
 
 (defun beads-filter-parent ()
-  "Filter issues by parent epoch."
+  "Filter issues by parent epic."
   (interactive)
   (unless (derived-mode-p 'beads-list-mode)
     (user-error "Not in beads list mode"))
-  (let* ((issues (beads-client-list '(:issue-type "epic")))
-         (epochs (seq-filter #'beads-transient--epoch-p issues))
+  (let* ((issues (seq-filter #'beads-transient--epic-p
+                             (beads-client-list '(:issue-type "epic"))))
          (parents (mapcar (lambda (i)
                             (cons (format "%s: %s"
                                           (alist-get 'id i)
                                           (alist-get 'title i))
                                   (alist-get 'id i)))
-                          epochs))
+                          issues))
          (choices (cons '("all" . nil) parents))
-         (selection (completing-read "Filter by parent epoch: "
+         (selection (completing-read "Filter by parent epic: "
                                      (mapcar #'car choices) nil t))
          (parent-id (cdr (assoc selection choices))))
     (setq beads-list--filter
@@ -740,7 +737,7 @@ Uses canonical order from `beads-list--column-order' for insertion."
     ("t" "Type" beads-filter-type)
     ("a" "Assignee" beads-filter-assignee)
     ("l" "Label" beads-filter-label)
-    ("e" "Parent epoch" beads-filter-parent)]
+    ("e" "Parent epic" beads-filter-parent)]
    ["Quick Filters"
     ("r" "Ready (no blockers)" beads-filter-ready-issues)
     ("b" "Blocked" beads-filter-blocked-issues)
