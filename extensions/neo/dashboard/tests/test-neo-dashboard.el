@@ -52,17 +52,49 @@
       (expect switches :to-equal nil)
       (expect neo/dashboard--origin-persp :to-equal nil)))
 
+  (it "reuses the legacy dashboard perspective without switching away"
+    (let ((switches nil)
+          (added nil)
+          (buffer nil))
+      (cl-letf (((symbol-function 'persp-current-name)
+                 (lambda () (neo/dashboard--buffer-name)))
+                ((symbol-function 'persp-switch)
+                 (lambda (name) (push name switches)))
+                ((symbol-function 'persp-add-buffer)
+                 (lambda (buf) (setq added buf)))
+                ((symbol-function 'dashboard-open)
+                 (lambda ()
+                   (setq buffer (get-buffer-create (neo/dashboard--buffer-name))))))
+        (expect (neo/dashboard-initial-buffer) :to-equal buffer))
+      (expect switches :to-equal nil)
+      (expect neo/dashboard--origin-persp :to-equal nil)
+      (expect added :to-equal buffer)))
+
+  (it "adds an existing dashboard buffer to the current perspective"
+    (let ((added nil)
+          (buffer (get-buffer-create (neo/dashboard--buffer-name))))
+      (unwind-protect
+          (cl-letf (((symbol-function 'persp-add-buffer)
+                     (lambda (buf) (setq added buf))))
+            (neo/dashboard--ensure-current-buffer-added)
+            (expect added :to-equal buffer))
+        (kill-buffer buffer))))
+
   (it "displays the dashboard buffer for interactive calls"
     (let ((buffer (get-buffer-create "*neo-dashboard-test*"))
-          (shown nil))
+          (shown nil)
+          (added nil))
       (unwind-protect
           (cl-letf (((symbol-function 'neo/dashboard-initial-buffer)
                      (lambda () buffer))
+                    ((symbol-function 'neo/dashboard--add-buffer)
+                     (lambda (buf) (setq added buf)))
                     ((symbol-function 'switch-to-buffer)
                      (lambda (buf) (setq shown buf))))
             (neo/dashboard))
         (kill-buffer buffer))
-      (expect shown :to-equal buffer))))
+      (expect shown :to-equal buffer)
+      (expect added :to-equal buffer))))
 
 (provide 'test-neo-dashboard)
 ;;; test-neo-dashboard.el ends here

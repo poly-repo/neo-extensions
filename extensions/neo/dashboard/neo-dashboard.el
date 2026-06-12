@@ -74,13 +74,27 @@
              (fboundp 'persp-add-buffer))
     (persp-add-buffer buffer)))
 
+(defun neo/dashboard--ensure-current-buffer-added (&optional buffer)
+  "Ensure BUFFER belongs to the current perspective.
+When BUFFER is nil, use the current dashboard buffer if it exists."
+  (when-let ((dashboard-buffer
+              (cond
+               ((buffer-live-p buffer) buffer)
+               ((get-buffer (neo/dashboard--buffer-name))))))
+    (neo/dashboard--add-buffer dashboard-buffer)))
+
+(defun neo/dashboard--current-perspective-dashboard-p (current-persp)
+  "Return non-nil when CURRENT-PERSP is a dashboard perspective."
+  (or (string= current-persp neo/dashboard-persp)
+      (string= current-persp (neo/dashboard--buffer-name))))
+
 (defun neo/dashboard-initial-buffer ()
   "Return the dashboard buffer for `initial-buffer-choice`."
   (when (require 'dashboard nil t)
     (neo/dashboard--enter)
     (dashboard-open)
     (when-let ((buffer (get-buffer (neo/dashboard--buffer-name))))
-      (neo/dashboard--add-buffer buffer)
+      (neo/dashboard--ensure-current-buffer-added buffer)
       buffer)))
 
 
@@ -90,9 +104,9 @@
     (neo/dashboard--ensure-perspective-mode)
     (let ((current-persp (persp-current-name)))
       (unless (or neo/dashboard--origin-persp
-                  (string= current-persp neo/dashboard-persp))
+                  (neo/dashboard--current-perspective-dashboard-p current-persp))
         (setq neo/dashboard--origin-persp current-persp))
-      (unless (string= current-persp neo/dashboard-persp)
+      (unless (neo/dashboard--current-perspective-dashboard-p current-persp)
         (persp-switch neo/dashboard-persp)))))
 
 (defun neo/dashboard--leave ()
@@ -106,7 +120,8 @@
   "Show the dashboard in the dashboard perspective."
   (interactive)
   (when-let ((buffer (neo/dashboard-initial-buffer)))
-    (switch-to-buffer buffer)))
+    (switch-to-buffer buffer)
+    (neo/dashboard--ensure-current-buffer-added buffer)))
 
 (defun neo/dashboard-quit ()
   "Quit the dashboard and restore original perspective."
@@ -125,6 +140,8 @@
 			  (hackernews . 10)))
 
   (dashboard-setup-startup-hook)
+  (advice-add 'dashboard-open :after #'neo/dashboard--ensure-current-buffer-added)
+  (advice-add 'dashboard-refresh-buffer :after #'neo/dashboard--ensure-current-buffer-added)
   :custom
   (dashboard-hide-cursor t)
   ;; (dashboard-items
@@ -142,5 +159,4 @@
         ("q" . neo/dashboard-quit))
   :hook
   (neo/after-framework-bootstrap .  #'dashboard-insert-startupify-lists)
-  (neo/after-framework-bootstrap . #'dashboard-initialize)
-  )
+  (neo/after-framework-bootstrap . #'dashboard-initialize))
