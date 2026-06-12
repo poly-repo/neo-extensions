@@ -24,6 +24,7 @@
 
 ;;; Code:
 
+(require 'beads-core)
 (require 'beads-faces)
 (require 'seq)
 
@@ -128,11 +129,11 @@ Search is case-insensitive."
 
 (defun beads-filter-by-parent (parent-id)
   "Create filter for issues with PARENT-ID as their parent.
-Enables epic-scoped views by filtering to children of a specific issue."
+Enables parent-scoped views by filtering to children of a specific issue."
   (beads-filter-make
    (format "parent:%s" parent-id)
    (lambda (issue)
-     (string= (alist-get 'parent_id issue) parent-id))
+     (string= (beads-core-issue-parent-id issue) parent-id))
    (list :type 'parent :value parent-id)))
 
 (defun beads-filter-not-closed ()

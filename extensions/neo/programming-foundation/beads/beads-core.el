@@ -50,6 +50,17 @@ SEPARATOR-WIDTH defaults to 50."
 PROPERTY-NAME should be a symbol like `beads-orphan-id'."
   (get-text-property (point) property-name))
 
+(defun beads-core-issue-get (issue key &optional default)
+  "Return KEY from ISSUE, accepting symbol or string keys.
+Return DEFAULT when KEY is not present."
+  (beads-backend--alist-get key issue default))
+
+(defun beads-core-issue-parent-id (issue)
+  "Return the parent ID for ISSUE.
+Accept both `parent_id' and `parent' to handle backend schema drift."
+  (or (beads-core-issue-get issue 'parent_id)
+      (beads-core-issue-get issue 'parent)))
+
 (defun beads-core-goto-issue-at-point (property-name)
   "Open issue at point in detail view using PROPERTY-NAME for ID.
 PROPERTY-NAME should be a symbol like `beads-orphan-id'."

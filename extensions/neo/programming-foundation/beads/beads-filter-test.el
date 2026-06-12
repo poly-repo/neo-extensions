@@ -12,5 +12,17 @@
      (funcall (beads-filter-predicate filter)
               '((priority . "3"))))))
 
+(ert-deftest beads-filter/by-parent-accepts-parent-alias ()
+  (let ((filter (beads-filter-by-parent "omega-6hnb")))
+    (should
+     (funcall (beads-filter-predicate filter)
+              '((parent . "omega-6hnb"))))
+    (should
+     (funcall (beads-filter-predicate filter)
+              '((parent_id . "omega-6hnb"))))
+    (should-not
+     (funcall (beads-filter-predicate filter)
+              '((parent . "omega-other"))))))
+
 (provide 'beads-filter-test)
 ;;; beads-filter-test.el ends here

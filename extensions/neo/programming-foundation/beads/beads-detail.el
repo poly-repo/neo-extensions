@@ -26,6 +26,7 @@
 
 (require 'beads-client)
 (require 'beads-backend)
+(require 'beads-core)
 (require 'beads-edit)
 (require 'beads-faces)
 (require 'seq)
@@ -265,7 +266,7 @@ Uses a single reusable buffer in a side window without focusing."
   "Navigate to the parent issue of the current issue."
   (interactive)
   (let* ((issue (beads-detail--require-issue))
-         (parent-id (alist-get 'parent_id issue)))
+         (parent-id (beads-core-issue-parent-id issue)))
     (unless parent-id
       (user-error "This issue has no parent"))
     (condition-case err
@@ -284,8 +285,7 @@ Filters the issue list to show only issues whose parent is this issue."
     (require 'beads-filter)
     (beads-list)
     (with-current-buffer (get-buffer "*Beads Issues*")
-      (setq-local beads-list--filter-state
-                  (plist-put beads-list--filter-state :parent-filter id))
+      (setq-local beads-list--filter (beads-filter-by-parent id))
       (beads-list-refresh)
       (message "Showing children of %s" id))))
 
@@ -512,7 +512,7 @@ Uses CLI fallback since RPC does not support comment_add."
         (created-by (alist-get 'created_by issue))
         (created (alist-get 'created_at issue))
         (labels (alist-get 'labels issue))
-        (parent-id (alist-get 'parent_id issue)))
+        (parent-id (beads-core-issue-parent-id issue)))
 
     (beads-detail--insert-field "Status" status)
     (insert "     ")

@@ -31,6 +31,7 @@
 ;;; Code:
 
 (require 'vui)
+(require 'beads-core)
 (require 'beads-faces)
 (require 'beads-client)
 
@@ -231,7 +232,7 @@ When EDITABLE is non-nil, show edit buttons. ON-REFRESH called after edits."
         (created-by (alist-get 'created_by issue))
         (created (alist-get 'created_at issue))
         (labels (alist-get 'labels issue))
-        (parent-id (alist-get 'parent_id issue)))
+        (parent-id (beads-core-issue-parent-id issue)))
     (vui-vstack
      (vui-hstack
       :spacing 5
