@@ -461,6 +461,26 @@ Returns parsed JSON output."
       (beads-backend-error
        (signal 'beads-client-error (cdr err))))))
 
+(defun beads-client--issue-alist-p (value)
+  "Return non-nil when VALUE looks like a single issue alist."
+  (and (listp value)
+       (consp value)
+       (let ((first (car value)))
+         (and (consp first)
+              (let ((key (car first)))
+                (or (symbolp key)
+                    (stringp key)))))))
+
+(defun beads-client--normalize-show-response (response)
+  "Return a single issue object for show RESPONSE.
+`bd show --json' returns a one-element array, while other backends may
+already return a bare issue alist."
+  (if (and (consp response)
+           (null (cdr response))
+           (beads-client--issue-alist-p (car response)))
+      (car response)
+    response))
+
 
 (defun beads-client-health ()
   "Check daemon health.
@@ -485,7 +505,8 @@ Returns array of issue objects."
 Returns issue object."
   (unless id
     (signal 'beads-client-error (list "Issue ID required")))
-  (beads-client-request "show" `((id . ,id))))
+  (beads-client--normalize-show-response
+   (beads-client-request "show" `((id . ,id)))))
 
 (defun beads-client-ready (&optional filters)
   "Get unblocked issues with optional FILTERS.

@@ -36,5 +36,26 @@
            (funcall (beads-filter-predicate beads-list--filter)
                     '((parent . "omega-6hnb.1")))))))))
 
+(ert-deftest beads-list/goto-issue-opens-unwrapped-show-payload ()
+  (let (opened-issue)
+    (cl-letf (((symbol-function 'beads-list--get-issue-at-point)
+               (lambda ()
+                 '((id . "omega-of13")
+                   (title . "Preview title"))))
+              ((symbol-function 'beads-client-request)
+               (lambda (_operation _args)
+                 '(((id . "omega-of13")
+                    (title . "Move REPL rendering to Doc or Text")
+                    (parent . "omega-6hnb")))))
+              ((symbol-function 'beads-detail-open)
+               (lambda (issue)
+                 (setq opened-issue issue))))
+      (beads-list-goto-issue)
+      (should
+       (equal opened-issue
+              '((id . "omega-of13")
+                (title . "Move REPL rendering to Doc or Text")
+                (parent . "omega-6hnb")))))))
+
 (provide 'beads-detail-test)
 ;;; beads-detail-test.el ends here

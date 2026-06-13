@@ -75,6 +75,32 @@
                      '((operation . "list")
                        (args . ((status . "open")))))))))
 
+(ert-deftest beads-client/show-unwraps-single-item-cli-array ()
+  (cl-letf (((symbol-function 'beads-client-request)
+             (lambda (operation args)
+               (should (equal operation "show"))
+               (should (equal args '((id . "omega-of13"))))
+               '(((id . "omega-of13")
+                  (title . "Move REPL rendering to Doc or Text")
+                  (parent . "omega-6hnb"))))))
+    (should
+     (equal (beads-client-show "omega-of13")
+            '((id . "omega-of13")
+              (title . "Move REPL rendering to Doc or Text")
+              (parent . "omega-6hnb"))))))
+
+(ert-deftest beads-client/show-keeps-direct-issue-payload ()
+  (cl-letf (((symbol-function 'beads-client-request)
+             (lambda (_operation _args)
+               '((id . "omega-of13")
+                 (title . "Move REPL rendering to Doc or Text")
+                 (parent . "omega-6hnb")))))
+    (should
+     (equal (beads-client-show "omega-of13")
+            '((id . "omega-of13")
+              (title . "Move REPL rendering to Doc or Text")
+              (parent . "omega-6hnb"))))))
+
 (ert-deftest beads-client/health-accepts-bd-ping-status ()
   (cl-letf (((symbol-function 'beads-client-request)
              (lambda (_operation _args)
