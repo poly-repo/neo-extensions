@@ -75,31 +75,47 @@ Decision is based on `neo/project-last-switched-times' and
   (and (featurep 'perspective)
        (member name (persp-names))))
 
+(defun neo--projects-ensure-project-magit-status (project-root &optional force)
+  "Prefer a project Magit status buffer for PROJECT-ROOT.
+
+When FORCE is non-nil and `neo-better-git' is unavailable, fall back
+to `magit-status'."
+  (cond
+   ((fboundp 'neo--better-git-ensure-project-magit-status)
+    (neo--better-git-ensure-project-magit-status project-root force))
+   ((and force
+         (vc-git-responsible-p project-root)
+         (fboundp 'magit-status))
+    (magit-status))))
+
 (defun neo/projectile-switch-project-action ()
   "Switch to a projectile project.
 
 On the first switch to a project (new perspective), open
 `.personal-notes.org' if present and recent enough, otherwise
-`magit-status'. On revisits, let perspective.el restore the saved
-window configuration without overriding it."
+prefer `magit-status'. On revisits, let perspective.el restore the
+saved window configuration while still allowing Magit to reclaim
+low-priority buffers such as `*scratch*'."
   (interactive)
   (let* ((project-root (projectile-project-root))
          (notes-file-name ".personal-notes.org")
          (notes-path (expand-file-name notes-file-name project-root))
-         (new-persp (neo/projectile-update-treemacs)))
+         (new-persp (neo/projectile-update-treemacs))
+         (opened-notes nil))
     (when new-persp
       (neo/bury-other-project-buffers))
     (message "neo/projectile-switch-project-action in %s <%s> (new=%s)"
              project-root
              (persp-name (persp-curr))
              new-persp)
-    (when new-persp
-      (if (and (neo--should-open-notes-p project-root)
+    (when (and new-persp
+               (neo--should-open-notes-p project-root)
                (file-exists-p notes-path))
-          (find-file-other-window notes-path)
-        (when (and (vc-git-responsible-p default-directory)
-                   (fboundp 'magit-status))
-          (magit-status))))
+      (find-file-other-window notes-path)
+      (setq opened-notes t))
+    (neo--projects-ensure-project-magit-status
+     project-root
+     (and new-persp (not opened-notes)))
     ;; record that we've switched to this project now
     (puthash project-root (float-time (current-time))
              neo/project-last-switched-times)))
