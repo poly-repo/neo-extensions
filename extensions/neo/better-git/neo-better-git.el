@@ -351,6 +351,11 @@ silently so one broken entry does not block startup."
   "Prepare Forge repository metadata for Neo startup."
   (neo/forge-migrate-legacy-database-if-needed))
 
+(defun neo/forge-remove-topic-sections-from-status ()
+  "Remove Forge topic sections that should not appear in Magit status."
+  (remove-hook 'magit-status-sections-hook #'forge-insert-issues)
+  (remove-hook 'magit-status-sections-hook #'forge-insert-discussions))
+
 
 ;;; TODO find a good binding for forge-post-submit otherwise markdown mode takes over C-c C-c
 ;;; maybe C-x #
@@ -358,6 +363,7 @@ silently so one broken entry does not block startup."
   :after magit
   :config
   (neo/forge-bootstrap-repositories)
+  (neo/forge-remove-topic-sections-from-status)
   (with-eval-after-load 'projectile
     (neo/forge-seed-discovered-repositories)
     (add-hook 'projectile-after-switch-project-hook

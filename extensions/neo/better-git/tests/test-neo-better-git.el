@@ -8,6 +8,7 @@
   nil)
 
 (defvar magit-display-buffer-function nil)
+(defvar magit-status-sections-hook nil)
 
 (provide 'neo-better-git-brancher)
 
@@ -118,6 +119,17 @@
             (neo--better-git-ensure-project-magit-status "/tmp/project"))
         (kill-buffer buffer))
       (expect shown :to-be nil)))
+
+  (it "removes Forge issues and discussions from Magit status sections"
+    (let ((magit-status-sections-hook '(forge-insert-status-headers
+                                        forge-insert-issues
+                                        forge-insert-discussions
+                                        magit-insert-staged-changes)))
+      (neo/forge-remove-topic-sections-from-status)
+      (expect magit-status-sections-hook
+              :to-equal
+              '(forge-insert-status-headers
+                magit-insert-staged-changes))))
   )
 
 (provide 'test-neo-better-git)
