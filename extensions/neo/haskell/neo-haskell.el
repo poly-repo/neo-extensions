@@ -212,6 +212,63 @@ Haskell markers first, then fall back to `project.el' / `.git'."
       (locate-dominating-file default-directory ".git")
       default-directory))
 
+(defun neo--haskell-standalone-workspace-p ()
+  "Return non-nil when the current buffer lives in a direct-file workspace.
+
+These workspaces are anchored by `hie.yaml' but intentionally do not
+define a Cabal or Stack project. In that case, `interactive-haskell-mode'
+tries to force a package-oriented REPL, which is exactly the wrong fit
+for one-off lab files."
+  (let* ((root (file-name-as-directory (neo--haskell-project-root)))
+         (hie-yaml (expand-file-name "hie.yaml" root)))
+    (and (file-exists-p hie-yaml)
+         (not (directory-files root nil "\\.cabal\\'" t))
+         (not (file-exists-p (expand-file-name "cabal.project" root)))
+         (not (file-exists-p (expand-file-name "stack.yaml" root))))))
+
+(defun neo--haskell-standalone-repl-buffer-name ()
+  "Return the REPL buffer name for the current standalone workspace."
+  (format "*neo-haskell:%s*"
+          (directory-file-name
+           (file-name-nondirectory
+            (directory-file-name (neo--haskell-project-root))))))
+
+(defun neo--haskell-configure-standalone-repl (buffer)
+  "Enable Haskell REPL integrations for BUFFER when available."
+  (when (require 'inf-haskell nil t)
+    (with-current-buffer buffer
+      (setq inferior-haskell-buffer buffer)
+      (unless (derived-mode-p 'inferior-haskell-mode)
+        (inferior-haskell-mode)
+        (run-hooks 'inferior-haskell-hook)))))
+
+(defun neo--haskell-ensure-standalone-repl ()
+  "Start or reuse a plain `ghci' buffer for the current workspace."
+  (require 'comint)
+  (let* ((default-directory (neo--haskell-project-root))
+         (buffer-name (neo--haskell-standalone-repl-buffer-name))
+         (buffer (get-buffer-create buffer-name))
+         (process-name (concat "neo-haskell-ghci:" buffer-name))
+         (ghci (or (neo--haskell-find-executable "ghci") "ghci")))
+    (unless (comint-check-proc buffer)
+      (apply #'make-comint-in-buffer
+             process-name
+             buffer
+             ghci
+             nil
+             '("-ignore-dot-ghci" "-i." "-XGHC2024"))
+      (neo--haskell-configure-standalone-repl buffer))
+    buffer))
+
+(defun neo--haskell-load-buffer-into-standalone-repl ()
+  "Save the current buffer and load it into a plain `ghci' REPL."
+  (save-buffer)
+  (let ((repl-buffer (neo--haskell-ensure-standalone-repl)))
+    (comint-send-string
+     (get-buffer-process repl-buffer)
+     (format ":load %S\n" (expand-file-name buffer-file-name)))
+    repl-buffer))
+
 (defun neo--haskell-enable-eglot-ui ()
   "Turn on HLS-specific Eglot features for the current Haskell buffer.
 
@@ -228,18 +285,20 @@ kind of ambient type feedback users expect from HLS."
 eagerly enable `interactive-haskell-mode'. Turn it on lazily here so
 users still get the familiar `C-c C-z' REPL jump when they ask for it."
   (interactive)
-  (unless (fboundp 'interactive-haskell-mode)
-    (user-error "neo-haskell: interactive-haskell-mode is unavailable"))
-  (unless (bound-and-true-p interactive-haskell-mode)
-    (interactive-haskell-mode 1))
-  (neo--haskell-load-buffer-into-repl)
-  (cond
-   ((fboundp 'haskell-interactive-switch)
-    (call-interactively #'haskell-interactive-switch))
-   ((fboundp 'haskell-interactive-bring)
-    (call-interactively #'haskell-interactive-bring))
-   (t
-    (user-error "neo-haskell: no haskell-mode REPL switch command is available"))))
+  (if (neo--haskell-standalone-workspace-p)
+      (pop-to-buffer (neo--haskell-load-buffer-into-standalone-repl))
+    (unless (fboundp 'interactive-haskell-mode)
+      (user-error "neo-haskell: interactive-haskell-mode is unavailable"))
+    (unless (bound-and-true-p interactive-haskell-mode)
+      (interactive-haskell-mode 1))
+    (neo--haskell-load-buffer-into-repl)
+    (cond
+     ((fboundp 'haskell-interactive-switch)
+      (call-interactively #'haskell-interactive-switch))
+     ((fboundp 'haskell-interactive-bring)
+      (call-interactively #'haskell-interactive-bring))
+     (t
+      (user-error "neo-haskell: no haskell-mode REPL switch command is available")))))
 
 (defun neo--haskell-load-buffer-into-repl ()
   "Save the current buffer and load it into the active Haskell REPL."
