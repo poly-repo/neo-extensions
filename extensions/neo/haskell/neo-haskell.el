@@ -4,6 +4,23 @@
 ;;;
 ;;; Lazy by default, eager about types.
 
+(defun neo--haskell-ts-mode-preferred-p ()
+  "Return non-nil when `haskell-ts-mode' should replace `haskell-mode'.
+
+Only prefer the tree-sitter frontend when the package is installed and
+the Haskell grammar is ready to use. This keeps `.hs' files opening
+cleanly on machines that have not installed the grammar yet."
+  (and (locate-library "haskell-ts-mode")
+       (fboundp 'treesit-ready-p)
+       (treesit-ready-p 'haskell t)))
+
+(defun neo--haskell-prefer-ts-mode ()
+  "Prefer `haskell-ts-mode' for Haskell buffers when tree-sitter is ready."
+  (if (neo--haskell-ts-mode-preferred-p)
+      (setf (alist-get 'haskell-mode major-mode-remap-alist) 'haskell-ts-mode)
+    (setq major-mode-remap-alist
+          (assq-delete-all 'haskell-mode major-mode-remap-alist))))
+
 ;; haskell-mode supplies the major mode, REPL integration, and the
 ;; `haskell-mode-stylish-buffer' command. We point that command at an
 ;; absolute stylish-haskell path below because GUI Emacs often misses
@@ -16,6 +33,15 @@
   (haskell-font-lock-symbols nil)
   :hook
   (haskell-mode . neo/haskell-mode-setup))
+
+;; Tree-sitter Haskell lives in a separate package from the classic
+;; `haskell-mode' frontend, but we want the same editor behavior in
+;; both worlds whenever the user opts into `haskell-ts-mode'.
+(neo/use-package haskell-ts-mode
+  :init
+  (neo--haskell-prefer-ts-mode)
+  :hook
+  (haskell-ts-mode . neo/haskell-mode-setup))
 
 (defconst neo/haskell-tool-search-directories
   (mapcar #'expand-file-name '("~/.ghcup/bin" "~/.cabal/bin"))
@@ -195,6 +221,39 @@ kind of ambient type feedback users expect from HLS."
              (fboundp 'eglot-inlay-hints-mode))
     (eglot-inlay-hints-mode 1)))
 
+(defun neo/haskell-switch-to-repl ()
+  "Switch to the Haskell interactive shell for the current session.
+
+`neo/haskell-mode-setup' prefers HLS via Eglot and therefore does not
+eagerly enable `interactive-haskell-mode'. Turn it on lazily here so
+users still get the familiar `C-c C-z' REPL jump when they ask for it."
+  (interactive)
+  (unless (fboundp 'interactive-haskell-mode)
+    (user-error "neo-haskell: interactive-haskell-mode is unavailable"))
+  (unless (bound-and-true-p interactive-haskell-mode)
+    (interactive-haskell-mode 1))
+  (neo--haskell-load-buffer-into-repl)
+  (cond
+   ((fboundp 'haskell-interactive-switch)
+    (call-interactively #'haskell-interactive-switch))
+   ((fboundp 'haskell-interactive-bring)
+    (call-interactively #'haskell-interactive-bring))
+   (t
+    (user-error "neo-haskell: no haskell-mode REPL switch command is available"))))
+
+(defun neo--haskell-load-buffer-into-repl ()
+  "Save the current buffer and load it into the active Haskell REPL."
+  (unless buffer-file-name
+    (user-error "neo-haskell: current buffer is not visiting a file"))
+  (save-buffer)
+  (cond
+   ((fboundp 'haskell-process-load-file)
+    (haskell-process-load-file))
+   ((fboundp 'haskell-process-load-or-reload)
+    (haskell-process-load-or-reload))
+   (t
+    (user-error "neo-haskell: no haskell-mode load command is available"))))
+
 (defun neo--haskell-start-language-client ()
   "Start the preferred language client for the current Haskell buffer.
 
@@ -230,6 +289,7 @@ format-on-save behavior they had.
 `neo/haskell-prettify-symbols'; `unprettify-at-point' is set to
 `right-edge' so editing near a glyph reveals the underlying tokens."
   (neo--haskell-prepare-buffer-environment)
+  (local-set-key (kbd "C-c C-z") #'neo/haskell-switch-to-repl)
   (add-hook 'eglot-managed-mode-hook #'neo--haskell-enable-eglot-ui nil :local)
   (pcase (neo--haskell-start-language-client)
     ('eglot
