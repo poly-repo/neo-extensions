@@ -233,6 +233,56 @@ for one-off lab files."
            (file-name-nondirectory
             (directory-file-name (neo--haskell-project-root))))))
 
+(defun neo--haskell-standalone-repl-input-partial ()
+  "Return the current standalone REPL input between the prompt and point."
+  (when-let ((process (get-buffer-process (current-buffer))))
+    (buffer-substring-no-properties (process-mark process) (point))))
+
+(defun neo--haskell-standalone-repl-parse-completions (raw-response)
+  "Parse a GHCi `:complete repl' RAW-RESPONSE."
+  (when raw-response
+    (let* ((lines (split-string raw-response "\r?\n" t))
+           (candidates (mapcar #'haskell-string-literal-decode (cdr lines)))
+           (header (car lines)))
+      (unless (string-match
+               "\\`\\([0-9]+\\) \\([0-9]+\\) \\(\".*\"\\)\\'"
+               header)
+        (error "neo-haskell: invalid `:complete' response"))
+      (let ((count (string-to-number (match-string 1 header)))
+            (unused (haskell-string-literal-decode (match-string 3 header))))
+        (unless (= count (length candidates))
+          (error "neo-haskell: inconsistent `:complete' response"))
+        (cons unused candidates)))))
+
+(defun neo--haskell-standalone-repl-completions (input)
+  "Return GHCi completions for INPUT in the current standalone REPL."
+  (neo--haskell-standalone-repl-parse-completions
+   (let ((inferior-haskell-buffer (current-buffer)))
+     (inferior-haskell-get-result
+      (concat ":complete repl "
+              (haskell-string-literal-encode input))))))
+
+(defun neo--haskell-standalone-repl-completion-at-point ()
+  "Offer GHCi completions in the current standalone REPL buffer."
+  (when-let* ((_process (get-buffer-process (current-buffer)))
+              ((comint-after-pmark-p))
+              (input (neo--haskell-standalone-repl-input-partial))
+              ((string-match-p "\\S-" input))
+              (response (neo--haskell-standalone-repl-completions input)))
+    (let* ((unused (car response))
+           (candidates (append (if (string-prefix-p input "import") '("import"))
+                               (if (string-prefix-p input "let") '("let"))
+                               (cdr response))))
+      (list (- (point) (- (length input) (length unused)))
+            (point)
+            candidates))))
+
+(defun neo--haskell-standalone-repl-tab ()
+  "Complete the current standalone GHCi input."
+  (interactive)
+  (when (comint-after-pmark-p)
+    (completion-at-point)))
+
 (defun neo--haskell-configure-standalone-repl (buffer)
   "Enable Haskell REPL integrations for BUFFER when available."
   (when (require 'inf-haskell nil t)
@@ -240,7 +290,10 @@ for one-off lab files."
       (setq inferior-haskell-buffer buffer)
       (unless (derived-mode-p 'inferior-haskell-mode)
         (inferior-haskell-mode)
-        (run-hooks 'inferior-haskell-hook)))))
+        (run-hooks 'inferior-haskell-hook))
+      (add-hook 'completion-at-point-functions
+                #'neo--haskell-standalone-repl-completion-at-point nil t)
+      (local-set-key (kbd "TAB") #'neo--haskell-standalone-repl-tab))))
 
 (defun neo--haskell-ensure-standalone-repl ()
   "Start or reuse a plain `ghci' buffer for the current workspace."

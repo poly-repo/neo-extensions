@@ -83,42 +83,85 @@
 
   (describe "neo--haskell-ensure-standalone-repl"
     (it "starts ghci with the direct-cradle flags"
-      (let ((calls nil))
-        (cl-letf (((symbol-function 'neo--haskell-project-root)
-                   (lambda () "/tmp/codelabs/haskell/"))
-                  ((symbol-function 'neo--haskell-find-executable)
-                   (lambda (_program) nil))
-                  ((symbol-function 'require)
-                   (lambda (&rest _args) t))
-                  ((symbol-function 'get-buffer-create)
-                   (lambda (name)
-                     (push (list 'buffer name) calls)
-                     'ghci-buffer))
-                  ((symbol-function 'comint-check-proc)
-                   (lambda (_buffer) nil))
-                  ((symbol-function 'neo--haskell-configure-standalone-repl)
-                   (lambda (buffer)
-                     (push (list 'configure buffer) calls)))
-                  ((symbol-function 'make-comint-in-buffer)
-                   (lambda (&rest args)
-                     (push (cons 'make-comint args) calls)
-                     'ghci-buffer)))
-          (expect (neo--haskell-ensure-standalone-repl) :to-equal 'ghci-buffer))
-        (expect (nreverse calls)
-                :to-equal
-                '((buffer "*neo-haskell:haskell*")
-                  (make-comint
-                   "neo-haskell-ghci:*neo-haskell:haskell*"
-                   ghci-buffer
-                   "ghci"
-                   nil
-                   "-ignore-dot-ghci"
-                   "-i."
-                   "-XGHC2024")
-                  (configure ghci-buffer)))))
+      (let ((calls nil)
+            (repl-buffer (generate-new-buffer " *neo-haskell-ghci*")))
+        (unwind-protect
+            (progn
+              (cl-letf (((symbol-function 'neo--haskell-project-root)
+                         (lambda () "/tmp/codelabs/haskell/"))
+                        ((symbol-function 'neo--haskell-find-executable)
+                         (lambda (_program) nil))
+                        ((symbol-function 'require)
+                         (lambda (&rest _args) t))
+                        ((symbol-function 'get-buffer-create)
+                         (lambda (name &optional _inhibit-buffer-hooks)
+                           (when (equal name "*neo-haskell:haskell*")
+                             (push (list 'buffer name) calls))
+                           repl-buffer))
+                        ((symbol-function 'comint-check-proc)
+                         (lambda (_buffer) nil))
+                        ((symbol-function 'neo--haskell-configure-standalone-repl)
+                         (lambda (buffer)
+                           (push (list 'configure buffer) calls)))
+                        ((symbol-function 'make-comint-in-buffer)
+                         (lambda (&rest args)
+                           (push (cons 'make-comint args) calls)
+                           repl-buffer)))
+                (expect (neo--haskell-ensure-standalone-repl) :to-equal repl-buffer))
+              (expect (cl-subseq (nreverse calls) 0 3)
+                      :to-equal
+                      (list
+                       (list 'buffer "*neo-haskell:haskell*")
+                       (cons 'make-comint
+                             (list
+                              "neo-haskell-ghci:*neo-haskell:haskell*"
+                              repl-buffer
+                              "ghci"
+                              nil
+                              "-ignore-dot-ghci"
+                              "-i."
+                              "-XGHC2024"))
+                       (list 'configure repl-buffer))))
+          (kill-buffer repl-buffer)))))
+
+  (describe "neo--haskell-standalone-repl-parse-completions"
+    (it "parses GHCi `:complete repl` responses"
+      (cl-letf (((symbol-function 'haskell-string-literal-decode)
+                 (lambda (string)
+                   (read string))))
+        (expect
+         (neo--haskell-standalone-repl-parse-completions
+          "2 2 \"import \"\n\"Data.List\"\n\"Data.List.NonEmpty\"\n")
+         :to-equal
+         '("import " "Data.List" "Data.List.NonEmpty")))))
+
+  (describe "neo--haskell-standalone-repl-completion-at-point"
+    (it "offers completions for the current REPL input"
+      (with-temp-buffer
+        (insert "Prelude> import Data.Lis")
+        (goto-char (point-max))
+        (let ((prompt-end (copy-marker (+ (point-min) (length "Prelude> ")))))
+          (cl-letf (((symbol-function 'get-buffer-process)
+                     (lambda (&optional _buffer)
+                       'ghci-process))
+                    ((symbol-function 'process-mark)
+                     (lambda (_process)
+                       prompt-end))
+                    ((symbol-function 'comint-after-pmark-p)
+                     (lambda ()
+                       t))
+                    ((symbol-function 'neo--haskell-standalone-repl-completions)
+                     (lambda (input)
+                       (expect input :to-equal "import Data.Lis")
+                       '("import " "Data.List" "Data.List.NonEmpty"))))
+            (expect (neo--haskell-standalone-repl-completion-at-point)
+                    :to-equal
+                    (list (+ prompt-end (length "import "))
+                          (point-max)
+                          '("Data.List" "Data.List.NonEmpty"))))))))
 
   (describe "neo--haskell-configure-standalone-repl"
-    (it "enables inferior-haskell-mode and runs its hook"
+    (it "enables inferior-haskell-mode, installs completion, and runs its hook"
       (let ((calls nil)
             (repl-buffer (generate-new-buffer " *neo-haskell-ghci*"))
             (had-inferior-haskell-buffer (boundp 'inferior-haskell-buffer))
@@ -143,7 +186,13 @@
                            (push (list 'run-hooks hook) calls))))
                 (neo--haskell-configure-standalone-repl repl-buffer)
                 (expect (symbol-value 'inferior-haskell-buffer)
-                        :to-equal repl-buffer)))
+                        :to-equal repl-buffer)
+                (with-current-buffer repl-buffer
+                  (expect (member #'neo--haskell-standalone-repl-completion-at-point
+                                  completion-at-point-functions)
+                          :not :to-be nil)
+                  (expect (local-key-binding (kbd "TAB"))
+                          :to-equal #'neo--haskell-standalone-repl-tab))))
           (if had-inferior-haskell-buffer
               (setq inferior-haskell-buffer saved-inferior-haskell-buffer)
             (makunbound 'inferior-haskell-buffer))
@@ -152,7 +201,7 @@
                 :to-equal
                 '((require inf-haskell)
                   inferior-mode
-                  (run-hooks inferior-haskell-hook))))))))
+                  (run-hooks inferior-haskell-hook)))))))
 
 (provide 'test-neo-haskell)
 ;;; test-neo-haskell.el ends here
