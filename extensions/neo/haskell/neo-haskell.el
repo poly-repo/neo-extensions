@@ -233,6 +233,16 @@ for one-off lab files."
            (file-name-nondirectory
             (directory-file-name (neo--haskell-project-root))))))
 
+(defvar-local neo--haskell-standalone-repl-source-buffer nil
+  "Most recent source buffer associated with a standalone GHCi REPL.")
+
+(defun neo--haskell-standalone-repl-switch-back ()
+  "Return to the source buffer associated with this standalone REPL."
+  (interactive)
+  (unless (buffer-live-p neo--haskell-standalone-repl-source-buffer)
+    (user-error "neo-haskell: no source buffer is associated with this REPL"))
+  (pop-to-buffer neo--haskell-standalone-repl-source-buffer))
+
 (defun neo--haskell-standalone-repl-input-partial ()
   "Return the current standalone REPL input between the prompt and point."
   (when-let ((process (get-buffer-process (current-buffer))))
@@ -293,7 +303,9 @@ for one-off lab files."
         (run-hooks 'inferior-haskell-hook))
       (add-hook 'completion-at-point-functions
                 #'neo--haskell-standalone-repl-completion-at-point nil t)
-      (local-set-key (kbd "TAB") #'neo--haskell-standalone-repl-tab))))
+      (local-set-key (kbd "TAB") #'neo--haskell-standalone-repl-tab)
+      (local-set-key (kbd "C-c C-z")
+                     #'neo--haskell-standalone-repl-switch-back))))
 
 (defun neo--haskell-ensure-standalone-repl ()
   "Start or reuse a plain `ghci' buffer for the current workspace."
@@ -315,8 +327,13 @@ for one-off lab files."
 
 (defun neo--haskell-load-buffer-into-standalone-repl ()
   "Save the current buffer and load it into a plain `ghci' REPL."
+  (unless buffer-file-name
+    (user-error "neo-haskell: current buffer is not visiting a file"))
   (save-buffer)
-  (let ((repl-buffer (neo--haskell-ensure-standalone-repl)))
+  (let ((source-buffer (current-buffer))
+        (repl-buffer (neo--haskell-ensure-standalone-repl)))
+    (with-current-buffer repl-buffer
+      (setq neo--haskell-standalone-repl-source-buffer source-buffer))
     (comint-send-string
      (get-buffer-process repl-buffer)
      (format ":load %S\n" (expand-file-name buffer-file-name)))

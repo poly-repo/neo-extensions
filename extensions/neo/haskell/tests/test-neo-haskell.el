@@ -124,6 +124,43 @@
                        (list 'configure repl-buffer))))
           (kill-buffer repl-buffer)))))
 
+  (describe "neo--haskell-load-buffer-into-standalone-repl"
+    (it "tracks the source buffer for standalone repl switching"
+      (let ((calls nil)
+            (source-buffer (generate-new-buffer " *neo-haskell-source*"))
+            (repl-buffer (generate-new-buffer " *neo-haskell-ghci*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer source-buffer
+                (setq buffer-file-name "/tmp/codelabs/haskell/monads.hs")
+                (cl-letf (((symbol-function 'save-buffer)
+                           (lambda ()
+                             (push 'save calls)))
+                          ((symbol-function 'neo--haskell-ensure-standalone-repl)
+                           (lambda ()
+                             repl-buffer))
+                          ((symbol-function 'get-buffer-process)
+                           (lambda (buffer)
+                             (expect buffer :to-equal repl-buffer)
+                             'ghci-process))
+                          ((symbol-function 'comint-send-string)
+                           (lambda (process string)
+                             (push (list 'send process string) calls))))
+                  (expect (neo--haskell-load-buffer-into-standalone-repl)
+                          :to-equal repl-buffer)))
+              (with-current-buffer repl-buffer
+                (expect neo--haskell-standalone-repl-source-buffer
+                        :to-equal source-buffer))
+              (expect (nreverse calls)
+                      :to-equal
+                      (list
+                       'save
+                       (list 'send
+                             'ghci-process
+                             ":load \"/tmp/codelabs/haskell/monads.hs\"\n"))))
+          (kill-buffer source-buffer)
+          (kill-buffer repl-buffer)))))
+
   (describe "neo--haskell-standalone-repl-parse-completions"
     (it "parses GHCi `:complete repl` responses"
       (cl-letf (((symbol-function 'haskell-string-literal-decode)
@@ -192,7 +229,9 @@
                                   completion-at-point-functions)
                           :not :to-be nil)
                   (expect (local-key-binding (kbd "TAB"))
-                          :to-equal #'neo--haskell-standalone-repl-tab))))
+                          :to-equal #'neo--haskell-standalone-repl-tab)
+                  (expect (local-key-binding (kbd "C-c C-z"))
+                          :to-equal #'neo--haskell-standalone-repl-switch-back))))
           (if had-inferior-haskell-buffer
               (setq inferior-haskell-buffer saved-inferior-haskell-buffer)
             (makunbound 'inferior-haskell-buffer))
@@ -201,7 +240,24 @@
                 :to-equal
                 '((require inf-haskell)
                   inferior-mode
-                  (run-hooks inferior-haskell-hook)))))))
+                  (run-hooks inferior-haskell-hook))))))
+
+  (describe "neo--haskell-standalone-repl-switch-back"
+    (it "returns to the most recent standalone source buffer"
+      (let ((calls nil)
+            (source-buffer (generate-new-buffer " *neo-haskell-source*"))
+            (repl-buffer (generate-new-buffer " *neo-haskell-ghci*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer repl-buffer
+                (setq neo--haskell-standalone-repl-source-buffer source-buffer)
+                (cl-letf (((symbol-function 'pop-to-buffer)
+                           (lambda (buffer)
+                             (push buffer calls))))
+                  (neo--haskell-standalone-repl-switch-back)))
+              (expect calls :to-equal (list source-buffer)))
+          (kill-buffer source-buffer)
+          (kill-buffer repl-buffer))))))
 
 (provide 'test-neo-haskell)
 ;;; test-neo-haskell.el ends here
