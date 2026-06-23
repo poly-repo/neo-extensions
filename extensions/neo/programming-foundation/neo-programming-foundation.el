@@ -417,12 +417,19 @@ behavior."
         (neo--eglot-specific-eldoc)
         (setq-local eldoc-documentation-strategy
                     #'eldoc-documentation-compose-eagerly)
+        ;; The mouse-hover posframe below is our single hover surface.
+        ;; Route any `help-echo' (flymake diagnostics, etc.) to the echo
+        ;; area instead of a native GUI tooltip so the two popups don't
+        ;; overlap on the same identifier.
+        (when (fboundp 'tooltip-show-help-non-mode)
+          (setq-local show-help-function #'tooltip-show-help-non-mode))
         (neo--eglot-ensure-hover-timer)
         (add-hook 'pre-command-hook #'neo--eglot-reset-hover-popup-before-command nil t))
     (remove-hook 'pre-command-hook #'neo--eglot-reset-hover-popup-before-command t)
     (when (eq (plist-get neo--eglot-hover-target :buffer) (current-buffer))
       (setq neo--eglot-hover-target nil))
     (neo--eglot-hide-hover-popup)
+    (kill-local-variable 'show-help-function)
     (kill-local-variable 'eldoc-documentation-functions)
     (kill-local-variable 'eldoc-documentation-strategy)))
 

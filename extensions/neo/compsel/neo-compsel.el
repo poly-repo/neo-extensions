@@ -129,11 +129,12 @@
 
 (neo/use-package corfu
   :doc "Show completions near the point"
-  ;; :ensure
-  ;; (corfu
-  ;;  :host github
-  ;;  :repo "minad/corfu"
-  ;;  :files (:defaults "extensions/*"))
+  ;; Build corfu's bundled extensions (corfu-popupinfo etc.) onto the
+  ;; load-path so they can be required below.
+  :ensure (corfu
+           :host github
+           :repo "minad/corfu"
+           :files (:defaults "extensions/*"))
   :hook (lsp-completion-mode . kb/corfu-setup-lsp) ; Use corfu for lsp completion
   :custom
   ;; Works with `indent-for-tab-command'. Make sure tab doesn't indent when you
@@ -141,7 +142,7 @@
   (tab-always-indent 'complete)
   (completion-cycle-threshold nil) ; Always show candidates in menu
 
-  (corfu-auto nil)
+  (corfu-auto t)
   (corfu-auto-prefix 2)
   (corfu-auto-delay 0.1)
 
@@ -167,8 +168,13 @@
   ;; Other
   (lsp-completion-provider :none) ; Use corfu instead for lsp completions
 
-  :config (global-corfu-mode)
-  ;; (corfu-popupinfo-mode) TODO loading of extensions in :elpaca doesn't seem to work
+  :config
+  (global-corfu-mode)
+  ;; corfu-popupinfo shows documentation for the selected candidate.
+  ;; Building extensions/*.el (see :ensure above) puts it on the
+  ;; load-path. Guarded so a missing build never breaks completion.
+  (when (require 'corfu-popupinfo nil :noerror)
+    (corfu-popupinfo-mode 1))
   ;; Enable Corfu more generally for every minibuffer, as long as no other
   ;; completion UI is active. If you use Mct or Vertico as your main minibuffer
   ;; completion UI. From
@@ -198,14 +204,13 @@ default lsp-passthrough."
              :files (:defaults "*.el"))
   :after corfu
   :config
-  ;; enable corfu-candidate-overlay mode globally
-  ;; this relies on having corfu-auto set to nil
-  (corfu-candidate-overlay-mode +1)
-  ;; bind Ctrl + TAB to trigger the completion popup of corfu
-  (global-set-key (kbd "C-<tab>") 'completion-at-point)
-  ;; bind Ctrl + Shift + Tab to trigger completion of the first candidate
-  ;; (keybing <iso-lefttab> may not work for your keyboard model)
-  (global-set-key (kbd "C-<iso-lefttab>") 'corfu-candidate-overlay-complete-at-point))
+  ;; The candidate overlay (inline ghost-text) requires `corfu-auto' to
+  ;; be nil. We now use `corfu-auto' = t (an automatic popup menu), so
+  ;; the overlay is disabled to keep the two from fighting. Flip this
+  ;; back (and set `corfu-auto' nil) to return to the ghost-text style.
+  ;; (corfu-candidate-overlay-mode +1)
+  ;; Manual trigger for the completion popup is still handy.
+  (global-set-key (kbd "C-<tab>") 'completion-at-point))
 
 (neo/use-package cape
   ;; Bind dedicated completion commands

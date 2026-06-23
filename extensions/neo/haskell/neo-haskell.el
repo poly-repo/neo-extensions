@@ -31,6 +31,16 @@ cleanly on machines that have not installed the grammar yet."
   ;; replace with `prettify-symbols-mode' below. Leaving both on causes
   ;; double substitutions and fights over font-lock.
   (haskell-font-lock-symbols nil)
+  ;; REPL/process ergonomics, matching what the Spacemacs and Doom
+  ;; Haskell layers enable: offer to drop redundant imports, auto-import
+  ;; modules already loaded in the session, and skip the GHCi overlay
+  ;; since diagnostics come from flymake.
+  (haskell-process-suggest-remove-import-lines t)
+  (haskell-process-auto-import-loaded-modules t)
+  (haskell-process-show-overlays nil)
+  :config
+  ;; Interface files are build artifacts, not completion targets.
+  (add-to-list 'completion-ignored-extensions ".hi")
   :hook
   (haskell-mode . neo/haskell-mode-setup))
 
@@ -42,6 +52,26 @@ cleanly on machines that have not installed the grammar yet."
   (neo--haskell-prefer-ts-mode)
   :hook
   (haskell-ts-mode . neo/haskell-mode-setup))
+;; Hoogle commands resolve lazily; declaring them keeps a clean compile.
+(declare-function consult-hoogle "consult-hoogle")
+(declare-function haskell-hoogle "haskell-mode")
+(declare-function haskell-hoogle-lookup-from-website "haskell-mode")
+(declare-function haskell-navigate-imports "haskell-mode")
+(declare-function haskell-mode-format-imports "haskell-mode")
+(declare-function haskell-collapse-mode "haskell-collapse")
+(declare-function yas-minor-mode "yasnippet")
+(declare-function haskell-auto-insert-module-template "haskell-mode")
+(declare-function haskell-interactive-switch "haskell-interactive-mode")
+(declare-function haskell-process-load-file "haskell-commands")
+(declare-function haskell-process-cabal-build "haskell-commands")
+(declare-function haskell-compile "haskell-compile")
+(declare-function haskell-cabal-add-dependency "haskell-cabal")
+(declare-function haskell-cabal-next-subsection "haskell-cabal")
+(declare-function haskell-cabal-previous-subsection "haskell-cabal")
+(declare-function electric-indent-local-mode "electric")
+
+(defvar neo/haskell-modes '(haskell-mode haskell-ts-mode haskell-literate-mode)
+  "Major modes that count as Haskell source for shared configuration.")
 
 (defconst neo/haskell-tool-search-directories
   (mapcar #'expand-file-name '("~/.ghcup/bin" "~/.cabal/bin"))
@@ -419,6 +449,10 @@ format-on-save behavior they had.
 `right-edge' so editing near a glyph reveals the underlying tokens."
   (neo--haskell-prepare-buffer-environment)
   (local-set-key (kbd "C-c C-z") #'neo/haskell-switch-to-repl)
+  ;; Point haskell-mode's own Hoogle command at the resolved binary so
+  ;; its local lookups work even when GUI Emacs misses `hoogle' on PATH.
+  (when-let ((hoogle (neo--haskell-find-executable "hoogle")))
+    (setq-local haskell-hoogle-command hoogle))
   (add-hook 'eglot-managed-mode-hook #'neo--haskell-enable-eglot-ui nil :local)
   (pcase (neo--haskell-start-language-client)
     ('eglot
@@ -429,9 +463,19 @@ format-on-save behavior they had.
                 (eglot-managed-p))
        (neo--haskell-enable-eglot-ui))))
   (neo--haskell-configure-stylish-haskell)
+  ;; Code folding for `where'/`do'/`let' blocks, like the reference layers.
+  (when (fboundp 'haskell-collapse-mode)
+    (haskell-collapse-mode 1))
   (setq-local prettify-symbols-alist neo/haskell-prettify-symbols)
   (setq-local prettify-symbols-unprettify-at-point 'right-edge)
   (prettify-symbols-mode 1))
+
+(defun neo/haskell-format-imports ()
+  "Sort and align the import block from anywhere in the source file."
+  (interactive)
+  (save-excursion
+    (haskell-navigate-imports)
+    (haskell-mode-format-imports)))
 
 ;; Register haskell-language-server-wrapper for Eglot. Defining this
 ;; with `neo/eglot-set-server' (from neo:programming-foundation) means
@@ -445,6 +489,129 @@ format-on-save behavior they had.
                "haskell-language-server-wrapper")
            "--lsp"))))
 
+(defun neo/haskell-hoogle ()
+  "Search Hoogle for documentation, preferring a local database.
+
+When a local `hoogle' executable resolves, use `consult-hoogle' for a
+live, consult-driven search of the local database.  Otherwise fall back
+to haskell-mode's web lookup against hoogle.haskell.org."
+  (interactive)
+  (cond
+   ((and (neo--haskell-find-executable "hoogle")
+         (fboundp 'consult-hoogle))
+    (call-interactively #'consult-hoogle))
+   ((fboundp 'haskell-hoogle-lookup-from-website)
+    (haskell-hoogle-lookup-from-website))
+   ((fboundp 'haskell-hoogle)
+    (call-interactively #'haskell-hoogle))
+   (t
+    (user-error "neo-haskell: no Hoogle backend available"))))
+
+(with-eval-after-load 'haskell-mode
+  ;; All commands live under the `C-c h' prefix so they don't collide
+  ;; with haskell-mode's own `C-c C-*' REPL bindings.
+  (define-key haskell-mode-map (kbd "C-c h h") #'neo/haskell-hoogle)
+  (define-key haskell-mode-map (kbd "C-c h i") #'haskell-navigate-imports)
+  (define-key haskell-mode-map (kbd "C-c h I") #'neo/haskell-format-imports)
+  (define-key haskell-mode-map (kbd "C-c h m") #'haskell-auto-insert-module-template)
+  ;; REPL / build.  These start a GHCi session on demand without
+  ;; enabling `interactive-haskell-mode', which would otherwise take
+  ;; over completion and xref from Eglot.
+  (define-key haskell-mode-map (kbd "C-c h z") #'haskell-interactive-switch)
+  (define-key haskell-mode-map (kbd "C-c h l") #'haskell-process-load-file)
+  (define-key haskell-mode-map (kbd "C-c h b") #'haskell-process-cabal-build)
+  (define-key haskell-mode-map (kbd "C-c h c") #'haskell-compile))
+
+(defun neo--haskell-disable-electric-indent ()
+  "Disable `electric-indent-mode' locally; it fights cabal's layout."
+  (electric-indent-local-mode -1))
+
+;; Cabal files: turn off electric-indent and expose the most-used
+;; section/dependency commands under `C-c h'.
+(with-eval-after-load 'haskell-cabal
+  (add-hook 'haskell-cabal-mode-hook #'neo--haskell-disable-electric-indent)
+  (define-key haskell-cabal-mode-map (kbd "C-c h d") #'haskell-cabal-add-dependency)
+  (define-key haskell-cabal-mode-map (kbd "C-c h n") #'haskell-cabal-next-subsection)
+  (define-key haskell-cabal-mode-map (kbd "C-c h p") #'haskell-cabal-previous-subsection))
+
+;; Alignment rules for the common Haskell operators. Matching both the
+;; ASCII source and the prettified glyphs keeps `C-x a a' working
+;; regardless of `prettify-symbols-mode'. The `modes' cell is a symbol
+;; that align evaluates to the mode list at run time.
+(with-eval-after-load 'align
+  (add-to-list 'align-rules-list
+               '(neo-haskell-types
+                 (regexp . "\\(\\s-+\\)\\(::\\|∷\\)\\s-+")
+                 (modes . neo/haskell-modes)))
+  (add-to-list 'align-rules-list
+               '(neo-haskell-assignment
+                 (regexp . "\\(\\s-+\\)=\\s-+")
+                 (modes . neo/haskell-modes)))
+  (add-to-list 'align-rules-list
+               '(neo-haskell-arrows
+                 (regexp . "\\(\\s-+\\)\\(->\\|→\\)\\s-+")
+                 (modes . neo/haskell-modes)))
+  (add-to-list 'align-rules-list
+               '(neo-haskell-left-arrows
+                 (regexp . "\\(\\s-+\\)\\(<-\\|←\\)\\s-+")
+                 (modes . neo/haskell-modes))))
+
+;; Tree-sitter. Register the grammar source with NEO's tree-sitter
+;; machinery (from neo:programming-foundation) so that
+;; `M-x neo/treesit-install-grammars' builds it into the
+;; version-segregated cache on `treesit-extra-load-path'. Plain
+;; `treesit-install-language-grammar' installs to a directory NEO does
+;; not search, so haskell-ts-mode would then fail to find the grammar.
+;; Pin the grammar to the revision haskell-ts-mode targets (per its
+;; README). The grammar's master branch renames nodes that the mode's
+;; font-lock queries reference, which otherwise fails with
+;; `treesit-query-error' the moment a Haskell buffer is fontified.
+(with-eval-after-load 'neo-programming-foundation-treesit
+  (add-to-list 'treesit-language-source-alist
+               '(haskell "https://github.com/tree-sitter/tree-sitter-haskell"
+                         "v0.23.1")))
+
+(neo/use-package haskell-ts-mode
+  :defer t)
+
+(add-hook 'haskell-ts-mode-hook #'neo/haskell-mode-setup)
+
+(defcustom neo/haskell-use-tree-sitter nil
+  "When non-nil, edit Haskell with `haskell-ts-mode' instead of `haskell-mode'.
+
+Tree-sitter highlighting depends on the installed `tree-sitter-haskell'
+grammar matching the node names `haskell-ts-mode' queries.  When they
+drift, font-lock raises `treesit-query-error' on every redisplay — and
+because Eglot hover docs fontify `haskell' code blocks the same way, a
+mismatch also breaks documentation popups.  `haskell-mode' has no such
+coupling, so it is the default.
+
+To opt in: install the pinned grammar with
+`M-x neo/treesit-install-grammars' (NOT the vanilla
+`treesit-install-language-grammar'), set this to t, and restart Emacs.
+Confirm first with
+\\='(treesit-query-validate \\='haskell \"(comment)\")\\=' returning nil."
+  :type 'boolean
+  :group 'neo)
+
+;; Remap to haskell-ts-mode only when the user opts in AND the grammar is
+;; installed and loadable. Otherwise stay on haskell-mode so highlighting
+;; and Eglot hover keep working regardless of grammar/mode drift.
+(when (and neo/haskell-use-tree-sitter
+           (fboundp 'treesit-ready-p)
+           (treesit-ready-p 'haskell t))
+  (add-to-list 'major-mode-remap-alist '(haskell-mode . haskell-ts-mode)))
+
+;; Snippets. NEO has no global yasnippet, so enable it buffer-locally in
+;; Haskell buffers and load haskell-snippets' templates alongside it.
+(neo/use-package yasnippet
+  :defer t
+  :hook
+  ((haskell-mode haskell-ts-mode) . yas-minor-mode))
+
+(neo/use-package haskell-snippets
+  :after yasnippet)
+
 ;; lsp-haskell is the lsp-mode integration for HLS. It's installed so
 ;; users who prefer lsp-mode get a working setup, but the
 ;; `neo/haskell-mode-setup' hook above only activates it when Eglot
@@ -456,5 +623,11 @@ format-on-save behavior they had.
    (or (neo--haskell-find-executable "haskell-language-server-wrapper")
        "haskell-language-server-wrapper"))
   (lsp-haskell-formatting-provider "stylish-haskell"))
+
+;; consult-hoogle searches a local Hoogle database through NEO's consult
+;; UI. `neo/haskell-hoogle' prefers it and falls back to web lookup.
+;; Deferred so this optional convenience never taxes startup.
+(neo/use-package consult-hoogle
+  :defer t)
 
 ;;; Note, no (provide 'neo-haskell) here, extensions are loaded not required.
