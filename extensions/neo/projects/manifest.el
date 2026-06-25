@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "projects"
  :title "Projects management"

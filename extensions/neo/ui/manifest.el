@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "ui"
  :title "UI settings"

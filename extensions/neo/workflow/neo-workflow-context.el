@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 ;(require 'magit)
 
 (defcustom neo/workflow-workspace-strategy 'worktree

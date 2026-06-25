@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 ;; ;;; build/extensions.el --- Build extension manifest
 
 (setq base-dir "extensions/")

@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "dashboard"
  :title "Emacs Dashboard"

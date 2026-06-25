@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (require 'iimage)
 
 (declare-function eshell-previous-prompt "esh-cmd")

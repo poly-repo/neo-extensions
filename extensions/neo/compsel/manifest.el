@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "compsel"
  :title "Completion and Selections"

@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "elisp"
  :title "The Elisp Survival Kit"

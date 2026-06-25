@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "mlody"
  :title "Support for the melodic pipeline framework"

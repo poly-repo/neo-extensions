@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (defgroup neo-issue-slug nil
   "Human-readable issue → branch slug generation."
   :group 'neo-workflow)

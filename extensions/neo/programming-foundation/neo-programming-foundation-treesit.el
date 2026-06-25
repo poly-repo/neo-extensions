@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 ;; TODO unfortunately we do not have an ABI version we should patch
 ;; sources to define a variable that incluses it.  As a workaround we
 ;; keep grammars segregated by emacs versions. A bit wasteful but at

@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "programming-foundation"
  :title "Language agnostic software development support"

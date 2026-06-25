@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "haskell"
  :title "Lazy by default, eager about types."

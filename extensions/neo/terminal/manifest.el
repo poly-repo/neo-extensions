@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "terminal"
  :title "Terminal emulation in Emacs"

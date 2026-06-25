@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "Python"
  :title "Tame the snake—Emacs style."

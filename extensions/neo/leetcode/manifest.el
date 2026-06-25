@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "leetcode"
  :title "Leetcode client and problem manager"

@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "Better Git"
  :title "Git + Magit + Toys"

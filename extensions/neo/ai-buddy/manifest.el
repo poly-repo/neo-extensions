@@ -1,3 +1,4 @@
+;;; -*- lexical-binding: t -*-
 (neo/extension
  :name "ai-buddy"
  :title "AI at your fingertips"
