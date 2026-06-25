@@ -2,6 +2,9 @@
 
 ;; TODO require font Orbitron (a Google web font)
 
+(require 'cl-lib)
+(require 'subr-x)
+
 (defconst neo--hacker-image
   (expand-file-name "hacker.png" (file-name-directory (or load-file-name byte-compile-current-file))))
 
@@ -43,7 +46,7 @@
 ;;            (dashboard-mode-hook . (lambda () (message "HOOK") (setq cursor-type nil))))
 ;;     )
 
-(defvar neo/dashboard-persp "Dashboard"
+(defvar neo/dashboard-persp "App:Dashboard"
   "Name of the dashboard perspective.")
 
 (defvar neo/dashboard--origin-persp nil
@@ -55,6 +58,95 @@
   (if (boundp 'dashboard-buffer-name)
       dashboard-buffer-name
     "*dashboard*"))
+
+(defun neo/dashboard--framework ()
+  "Return the current Neo framework instance when available."
+  (when (bound-and-true-p neo--framework)
+    neo--framework))
+
+(defun neo/dashboard--config-value (key)
+  "Return config KEY or nil when it is unavailable."
+  (when (fboundp 'neo/get-config)
+    (neo/get-config key)))
+
+(defun neo/dashboard--format-path-status (path)
+  "Return a compact status string for PATH."
+  (cond
+   ((not path) "unavailable")
+   ((file-symlink-p path)
+    (format "%s -> %s" path (file-symlink-p path)))
+   ((file-exists-p path) path)
+   (t (format "%s [missing]" path))))
+
+(defun neo/dashboard--registry-state (registry-name)
+  "Return a one-line status string for REGISTRY-NAME."
+  (when-let* ((registry (alist-get registry-name neo/extension-registry-alist
+                                   nil nil #'string=)))
+    (if-let* ((override (neo--extension-registry-override registry)))
+        (format "%s: local %s" registry-name override)
+      (let* ((cache-dir (neo/cache-file-path (format "extensions/%s/" registry-name)))
+             (manifest-path (expand-file-name "extensions-current.el" cache-dir)))
+        (format "%s: cached %s"
+                registry-name
+                (neo/dashboard--format-path-status manifest-path))))))
+
+(defun neo/dashboard--extension-state (slug table)
+  "Return yes/no for whether SLUG exists in hash TABLE."
+  (if (and (hash-table-p table) (gethash slug table))
+      "yes"
+    "no"))
+
+(defun neo/dashboard--debug-lines ()
+  "Return a list of environment lines for dashboard debugging."
+  (let* ((framework (neo/dashboard--framework))
+         (available (and framework (neo-framework-available-extensions framework)))
+         (installed (and framework (neo-framework-installed-extensions framework)))
+         (enabled-roots (or (neo/dashboard--config-value "enabled-extensions") "nil"))
+         (extension-source
+          (if (and (fboundp 'neo/use-local-extension-sources-p)
+                   (neo/use-local-extension-sources-p))
+              "local checkout"
+            "cached release"))
+         (config-db (if (fboundp 'neo/config-db-path)
+                        (neo/config-db-path)
+                      "unavailable")))
+    (delq nil
+          (list
+           (format "Instance: %s" (neo/get-emacs-instance-name))
+           (format "Extension source: %s" extension-source)
+           (format "User dir: %s" user-emacs-directory)
+           (when (boundp 'neo/cache-directory)
+             (format "Cache dir: %s" neo/cache-directory))
+           (when (fboundp 'neo/data-directory)
+             (format "Data dir: %s" (neo/data-directory)))
+           (format "Config DB: %s" (neo/dashboard--format-path-status config-db))
+           (format "Enabled roots: %s" enabled-roots)
+           (when framework
+             (format "Framework: %d available / %d installed"
+                     (hash-table-count available)
+                     (hash-table-count installed)))
+           (when framework
+             (format "neo:full-monty available=%s installed=%s"
+                     (neo/dashboard--extension-state "neo:full-monty" available)
+                     (neo/dashboard--extension-state "neo:full-monty" installed)))
+           (when framework
+             (format "neo:haskell available=%s installed=%s"
+                     (neo/dashboard--extension-state "neo:haskell" available)
+                     (neo/dashboard--extension-state "neo:haskell" installed)))
+           (neo/dashboard--registry-state "neo")
+           (neo/dashboard--registry-state "mav")))))
+
+(defun neo/dashboard-insert-neo-environment (_list-size)
+  "Insert Neo environment diagnostics into the dashboard."
+  (let ((lines (neo/dashboard--debug-lines)))
+    (dashboard-insert-section
+     "Neo Environment:"
+     lines
+     (length lines)
+     'neo-environment
+     nil
+     `(lambda (&rest _))
+     el)))
 
 (defun neo/dashboard--perspective-available-p ()
   "Return non-nil when perspective support can be used."
@@ -83,9 +175,18 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
                ((get-buffer (neo/dashboard--buffer-name))))))
     (neo/dashboard--add-buffer dashboard-buffer)))
 
+(defun neo/dashboard--show-buffer (buffer)
+  "Show BUFFER in the selected window and keep it in the current perspective."
+  (when (buffer-live-p buffer)
+    (switch-to-buffer buffer)
+    (neo/dashboard--ensure-current-buffer-added buffer)
+    (when-let* ((window (get-buffer-window buffer t)))
+      (select-window window))))
+
 (defun neo/dashboard--current-perspective-dashboard-p (current-persp)
   "Return non-nil when CURRENT-PERSP is a dashboard perspective."
   (or (string= current-persp neo/dashboard-persp)
+      (string= current-persp "Dashboard")
       (string= current-persp (neo/dashboard--buffer-name))))
 
 (defun neo/dashboard-initial-buffer ()
@@ -120,8 +221,7 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
   "Show the dashboard in the dashboard perspective."
   (interactive)
   (when-let* ((buffer (neo/dashboard-initial-buffer)))
-    (switch-to-buffer buffer)
-    (neo/dashboard--ensure-current-buffer-added buffer)))
+    (neo/dashboard--show-buffer buffer)))
 
 (defun neo/dashboard-quit ()
   "Quit the dashboard and restore original perspective."
@@ -134,10 +234,13 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
   :after dashboard-hackernews
   :config
   (neo--setup-banner)
-  (setq dashboard-items '((recents . 5)
-			  (projects . 5)
-			  (agenda .5)
-			  (hackernews . 10)))
+  (add-to-list 'dashboard-item-generators
+               '(neo-environment . neo/dashboard-insert-neo-environment))
+  (setq dashboard-items '((neo-environment . 9)
+                                  (recents . 5)
+				  (projects . 5)
+				  (agenda .5)
+				  (hackernews . 10)))
 
   (dashboard-setup-startup-hook)
   (advice-add 'dashboard-open :after #'neo/dashboard--ensure-current-buffer-added)

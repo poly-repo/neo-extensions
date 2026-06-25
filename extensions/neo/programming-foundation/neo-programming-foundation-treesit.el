@@ -4,8 +4,8 @@
 ;; keep grammars segregated by emacs versions. A bit wasteful but at
 ;; least correct.
 (defconst neo/treesit-grammar-dir
-  (expand-file-name
-   (format "~/.cache/neo-devel/tree-sitter/emacs-%d.%d/"
+  (neo/cache-file-path
+   (format "tree-sitter/emacs-%d.%d/"
            emacs-major-version
            emacs-minor-version)))
 
