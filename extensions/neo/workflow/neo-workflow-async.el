@@ -79,7 +79,7 @@
    stack
    (lambda (_prs)
      ;; after PRs, fetch CI for the branch in stack
-     (if-let ((branch-name (neo-db-get-branch-for-stack (neo-stack-id stack))))
+     (if-let* ((branch-name (neo-db-get-branch-for-stack (neo-stack-id stack))))
        (let ((branch (neo-load-branch branch-name)))
          (when branch
            (neo-fetch-ci-for-branch branch nil)

@@ -77,7 +77,7 @@
 (defun neo/dashboard--ensure-current-buffer-added (&optional buffer)
   "Ensure BUFFER belongs to the current perspective.
 When BUFFER is nil, use the current dashboard buffer if it exists."
-  (when-let ((dashboard-buffer
+  (when-let* ((dashboard-buffer
               (cond
                ((buffer-live-p buffer) buffer)
                ((get-buffer (neo/dashboard--buffer-name))))))
@@ -93,7 +93,7 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
   (when (require 'dashboard nil t)
     (neo/dashboard--enter)
     (dashboard-open)
-    (when-let ((buffer (get-buffer (neo/dashboard--buffer-name))))
+    (when-let* ((buffer (get-buffer (neo/dashboard--buffer-name))))
       (neo/dashboard--ensure-current-buffer-added buffer)
       buffer)))
 
@@ -119,14 +119,14 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
 (defun neo/dashboard ()
   "Show the dashboard in the dashboard perspective."
   (interactive)
-  (when-let ((buffer (neo/dashboard-initial-buffer)))
+  (when-let* ((buffer (neo/dashboard-initial-buffer)))
     (switch-to-buffer buffer)
     (neo/dashboard--ensure-current-buffer-added buffer)))
 
 (defun neo/dashboard-quit ()
   "Quit the dashboard and restore original perspective."
   (interactive)
-  (when-let ((buffer (get-buffer (neo/dashboard--buffer-name))))
+  (when-let* ((buffer (get-buffer (neo/dashboard--buffer-name))))
     (kill-buffer buffer))
   (neo/dashboard--leave))
 

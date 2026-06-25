@@ -73,7 +73,7 @@ Data aggregated from all branches in the stack."
 (defun neo-stack-detail-refresh (stack)
   "Populate the detail buffer for STACK with branch-level info."
   (let ((entries
-         (if-let ((branch-name (neo-db-get-branch-for-stack (neo-stack-id stack))))
+         (if-let* ((branch-name (neo-db-get-branch-for-stack (neo-stack-id stack))))
            (let* ((branch (neo-load-branch branch-name))
                   (pr (neo-db-get-pr branch-name))
                   (issue (neo-db-get-issue branch-name))

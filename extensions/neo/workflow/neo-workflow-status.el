@@ -522,7 +522,7 @@ This includes:
                    (t))
                   
                   ;; 6. Create Context
-                  (when-let ((saved-stack (neo-load-stack stack-name repo-id)))
+                  (when-let* ((saved-stack (neo-load-stack stack-name repo-id)))
                     (let ((new-context (make-neo-context 
                                         :repository (neo-load-repository repo-id)
                                         :stack saved-stack
@@ -588,7 +588,7 @@ This includes:
                 (neo-db-insert-stack new-stack-name new-stack-name nil repo-id child-stack-title (neo-stack-id parent-stack))
 
                 ;; Load the new stack using repo-id and update UI without full refresh
-                (if-let ((new-stack (neo-load-stack new-stack-name repo-id)))
+                (if-let* ((new-stack (neo-load-stack new-stack-name repo-id)))
                     (progn
                       (setf (neo-stack-children-stacks parent-stack)
                             (append (neo-stack-children-stacks parent-stack) (list new-stack)))
@@ -600,7 +600,7 @@ This includes:
 (defun neo--clear-stacks-for-current-table-issues ()
   "For development: remove stack and priority from all issues in the current vtable."
   (interactive)
-  (if-let ((table (vtable-current-table)))
+  (if-let* ((table (vtable-current-table)))
       (let* ((count 0)
              (priority-labels-to-remove '("low" "med" "mid" "high" "critical"))
              (priority-regexp (regexp-opt priority-labels-to-remove 'words)))
@@ -690,7 +690,7 @@ If multiple priority labels are present, return the most critical one."
   "Get the vtable for REPO-NAME.
 Interactively, prompt for REPO-NAME and display the table info."
   (interactive "sRepo name: ")
-  (if-let ((info (assoc-string repo-name neo--repo-info-alist)))
+  (if-let* ((info (assoc-string repo-name neo--repo-info-alist)))
       (let ((table (car (cdr info))))
         table)
     (message "No table found for repo: %s" repo-name)))
@@ -820,7 +820,7 @@ Respects global filter if set to 'active or 'open."
 (defun neo--new-issue-for-repo ()
   "Create a new issue for the repository at point."
   (interactive)
-  (if-let ((repo-name (get-text-property (point) 'repo-name)))
+  (if-let* ((repo-name (get-text-property (point) 'repo-name)))
       (neo-workflow-issue-open-template repo-name)
     (user-error "No repository found at point")))
 
@@ -1410,7 +1410,7 @@ Also preserves narrowing if active, unless `neo--inhibit-narrowing-restore` is n
   "Refresh the workflow status buffer.
 If TARGET-REPO-NAME and TARGET-ISSUE-ID are provided, position point on that issue."
   (interactive)
-  (when-let ((buffer (get-buffer "*NEO Workflow*")))
+  (when-let* ((buffer (get-buffer "*NEO Workflow*")))
     (with-current-buffer buffer
       (setq neo--repo-info-alist nil)
       (let ((inhibit-read-only t)

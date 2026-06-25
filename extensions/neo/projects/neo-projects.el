@@ -227,7 +227,7 @@ low-priority buffers such as `*scratch*'."
   "Update treemacs to show only the current project; switch perspective.
 Return non-nil if a new perspective was created for this project."
   (when (fboundp 'projectile-project-root)
-    (when-let ((root (projectile-project-root))
+    (when-let* ((root (projectile-project-root))
 	       (name (projectile-project-name)))
       (let ((new-persp (not (neo--persp-exists-p name))))
         (persp-switch name)

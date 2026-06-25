@@ -142,7 +142,7 @@ If COLOR is nil, use the theme's default foreground color."
     (insert "\n\n")
 
     ;; Description
-    (when-let ((desc (neo/extension-description ext)))
+    (when-let* ((desc (neo/extension-description ext)))
       (insert (propertize desc 'face '(:slant italic :height 0.95)))
       (insert "\n\n"))
 
@@ -161,7 +161,7 @@ If COLOR is nil, use the theme's default foreground color."
 		      ("Recommended" ,(neo/extension-depends-on ext))
 		      ("Packages"  ,used-packages)
 		      ))
-	(when-let ((key (car pair))
+	(when-let* ((key (car pair))
 		   (value (cadr pair)))
 	  (insert (neo/manager--info-label (format "%-12s" key)) (neo/manager--info-value ": "))
 

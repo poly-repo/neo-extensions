@@ -44,7 +44,7 @@ Prioritizes `project-current' logic if possible, otherwise checks for .git."
   "Return a project instance if DIR is a known Neo Workflow project."
   (let ((canonical-dir (expand-file-name dir))
         (known-roots (neo-db-get-all-project-paths)))
-    (when-let ((root (seq-find (lambda (root)
+    (when-let* ((root (seq-find (lambda (root)
                                  (string-prefix-p (expand-file-name root) canonical-dir))
                                known-roots)))
       (cons 'neo-workflow root))))

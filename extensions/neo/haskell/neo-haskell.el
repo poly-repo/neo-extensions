@@ -201,7 +201,7 @@ same `cabal', `ghc', and related tools."
 buffer-locally avoids a common GUI Emacs failure mode where
 `stylish-haskell' exists in `~/.cabal/bin' but `call-process-region'
 cannot resolve the bare executable name."
-  (if-let ((stylish-haskell (neo--haskell-find-executable "stylish-haskell")))
+  (if-let* ((stylish-haskell (neo--haskell-find-executable "stylish-haskell")))
       (progn
         (setq-local haskell-mode-stylish-haskell-path stylish-haskell)
         (add-hook 'before-save-hook #'haskell-mode-stylish-buffer nil :local))
@@ -236,7 +236,7 @@ Haskell markers first, then fall back to `project.el' / `.git'."
          (directory-files dir nil "\\.cabal\\'" t)))
       (locate-dominating-file default-directory "cabal.project")
       (locate-dominating-file default-directory "stack.yaml")
-      (when-let ((project (and (fboundp 'project-current)
+      (when-let* ((project (and (fboundp 'project-current)
                                (project-current nil))))
         (expand-file-name (project-root project)))
       (locate-dominating-file default-directory ".git")
@@ -275,7 +275,7 @@ for one-off lab files."
 
 (defun neo--haskell-standalone-repl-input-partial ()
   "Return the current standalone REPL input between the prompt and point."
-  (when-let ((process (get-buffer-process (current-buffer))))
+  (when-let* ((process (get-buffer-process (current-buffer))))
     (buffer-substring-no-properties (process-mark process) (point))))
 
 (defun neo--haskell-standalone-repl-parse-completions (raw-response)
@@ -451,7 +451,7 @@ format-on-save behavior they had.
   (local-set-key (kbd "C-c C-z") #'neo/haskell-switch-to-repl)
   ;; Point haskell-mode's own Hoogle command at the resolved binary so
   ;; its local lookups work even when GUI Emacs misses `hoogle' on PATH.
-  (when-let ((hoogle (neo--haskell-find-executable "hoogle")))
+  (when-let* ((hoogle (neo--haskell-find-executable "hoogle")))
     (setq-local haskell-hoogle-command hoogle))
   (add-hook 'eglot-managed-mode-hook #'neo--haskell-enable-eglot-ui nil :local)
   (pcase (neo--haskell-start-language-client)

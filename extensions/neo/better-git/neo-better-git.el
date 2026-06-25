@@ -319,7 +319,7 @@ pull-request creation are available before the first successful
 network-backed Forge pull."
   (when (file-accessible-directory-p directory)
     (let ((default-directory (file-name-as-directory (expand-file-name directory))))
-      (when-let ((repo (ignore-errors
+      (when-let* ((repo (ignore-errors
                          (and (magit-gitdir)
                               (forge-get-repository :stub?)))))
         (setq repo (forge-get-repository repo nil :insert!))
@@ -343,7 +343,7 @@ silently so one broken entry does not block startup."
 
 (defun neo/forge-seed-current-project ()
   "Register the current Projectile project in Forge."
-  (when-let ((project-root (and (fboundp 'projectile-project-root)
+  (when-let* ((project-root (and (fboundp 'projectile-project-root)
                                 (ignore-errors (projectile-project-root)))))
     (neo--forge-register-repository-at-directory project-root)))
 

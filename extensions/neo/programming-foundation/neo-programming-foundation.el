@@ -163,7 +163,7 @@ readable at a glance."
           (with-current-buffer (window-buffer window)
             (save-excursion
               (goto-char point)
-              (when-let ((bounds (neo--eglot-bounds-at-point)))
+              (when-let* ((bounds (neo--eglot-bounds-at-point)))
                 (list :window window
                       :buffer (current-buffer)
                       :point point

@@ -16,12 +16,12 @@
 (describe "neo-dashboard"
   (before-each
     (setq neo/dashboard--origin-persp nil)
-    (when-let ((buffer (get-buffer (neo/dashboard--buffer-name))))
+    (when-let* ((buffer (get-buffer (neo/dashboard--buffer-name))))
       (kill-buffer buffer)))
 
   (after-each
     (setq neo/dashboard--origin-persp nil)
-    (when-let ((buffer (get-buffer (neo/dashboard--buffer-name))))
+    (when-let* ((buffer (get-buffer (neo/dashboard--buffer-name))))
       (kill-buffer buffer)))
 
   (it "opens the dashboard buffer in the dashboard perspective"

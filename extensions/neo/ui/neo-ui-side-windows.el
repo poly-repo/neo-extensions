@@ -23,7 +23,7 @@
   (while (and neo/side-window-stack
               (not (window-live-p (car neo/side-window-stack))))
     (pop neo/side-window-stack))
-  (if-let ((window (pop neo/side-window-stack)))
+  (if-let* ((window (pop neo/side-window-stack)))
       (delete-window window)
     (message "No side windows to close")))
 
@@ -66,13 +66,13 @@
 (defun neo/toggle-side-window (side)
   "Toggle the visibility of the side window at SIDE."
   (interactive)
-  (if-let ((window (neo/get-side-window side)))
+  (if-let* ((window (neo/get-side-window side)))
       (progn
         (message "Hiding side window: %s" side)
         (delete-window window))
     (progn
       (message "Showing side window: %s" side)
-      (if-let ((buffers (neo/get-side-window-buffers side)))
+      (if-let* ((buffers (neo/get-side-window-buffers side)))
           (display-buffer (car buffers))
 	(neo/dispatch-side side)))))
 					;  (message "No buffers targeting %s side" side)))))
@@ -90,14 +90,14 @@
 (defun neo/bury-side-window-buffer (side)
   "Bury the current buffer in the side window at SIDE."
   (interactive)
-  (when-let ((window (neo/get-side-window side)))
+  (when-let* ((window (neo/get-side-window side)))
     (with-selected-window window
       (bury-buffer))))
 
 (defun neo/kill-side-window-buffer (side)
   "Kill the current buffer in the side window at SIDE."
   (interactive)
-  (when-let ((window (neo/get-side-window side)))
+  (when-let* ((window (neo/get-side-window side)))
     (with-selected-window window
       (kill-buffer (current-buffer)))))
 

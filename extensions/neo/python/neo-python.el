@@ -17,7 +17,7 @@
 
 (defun neo/project-root ()
   "Return the current project's root, or a sensible fallback."
-  (or (when-let ((p (project-current nil)))
+  (or (when-let* ((p (project-current nil)))
         (expand-file-name (project-root p)))
       (locate-dominating-file default-directory ".git")
       (locate-dominating-file default-directory "pyproject.toml")
