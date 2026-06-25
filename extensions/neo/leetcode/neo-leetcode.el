@@ -89,7 +89,26 @@
     (647 . "Palindromic Substrings")
     (1143 . "Longest Common Subsequence")))
 
+(defun neo--leetcode-modernize-obsolete-let-macros ()
+  "Rewrite obsolete let macros in the checked-out Leetcode package."
+  (dolist (file (directory-files-recursively default-directory "\\.el\\'"))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (let ((changed nil))
+        (goto-char (point-min))
+        (while (re-search-forward "\\_<if-let\\_>" nil t)
+          (setq changed t)
+          (replace-match "if-let*" t t))
+        (goto-char (point-min))
+        (while (re-search-forward "\\_<when-let\\_>" nil t)
+          (setq changed t)
+          (replace-match "when-let*" t t))
+        (when changed
+          (write-region nil nil file nil 'silent))))))
+
 (neo/use-package leetcode
+  :ensure (leetcode
+           :pre-build ((neo--leetcode-modernize-obsolete-let-macros)))
   :custom
   (leetcode-directory (expand-file-name "interview/leetcode" neo--leetcode-directory))
   (leetcode-save-solutions t)

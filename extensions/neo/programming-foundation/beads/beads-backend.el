@@ -215,7 +215,7 @@ Signals `beads-backend-error' on failure."
          (program (beads-backend-cli-program-path backend))
          (op-args (funcall (beads-backend-op-to-cli-args backend)
                            operation args))
-         (extra (when-let ((fn (beads-backend-cli-extra-flags backend)))
+         (extra (when-let* ((fn (beads-backend-cli-extra-flags backend)))
                   (funcall fn operation)))
          (cmd-args (append extra op-args '("--json"))))
     (with-temp-buffer

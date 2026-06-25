@@ -62,7 +62,7 @@ Only active when in beads-list-mode with preview mode enabled."
   (when (and beads-preview-mode
              (derived-mode-p 'tabulated-list-mode)
              (eq major-mode 'beads-list-mode))
-    (if-let ((issue (beads-list--get-issue-at-point)))
+    (if-let* ((issue (beads-list--get-issue-at-point)))
         (beads-preview--start-timer issue)
       (beads-preview--cancel-timer))))
 
@@ -95,8 +95,8 @@ Only active when in beads-list-mode with preview mode enabled."
   "Full cleanup when preview mode is disabled."
   (beads-preview--cancel-timer)
   (setq beads-preview--current-issue-id nil)
-  (when-let ((buf (get-buffer "*Beads Preview*")))
-    (when-let ((window (get-buffer-window buf)))
+  (when-let* ((buf (get-buffer "*Beads Preview*")))
+    (when-let* ((window (get-buffer-window buf)))
       (delete-window window))
     (kill-buffer buf)))
 

@@ -318,7 +318,7 @@ Used to ensure refresh uses the correct project context.")
 (defun beads-list--row-face-for-id (id)
   "Return row face for issue ID, or nil if no special styling needed."
   (when beads-list-highlight-p0-rows
-    (when-let ((issue (seq-find (lambda (i) (equal (alist-get 'id i) id))
+    (when-let* ((issue (seq-find (lambda (i) (equal (alist-get 'id i) id))
                                 beads-list--issues)))
       (when (= 0 (beads--priority-number (alist-get 'priority issue) 2))
         'beads-list-row-p0))))
@@ -327,7 +327,7 @@ Used to ensure refresh uses the correct project context.")
   "Print entry ID with COLS, applying row-level styling for P0 issues."
   (let ((beg (point)))
     (tabulated-list-print-entry id cols)
-    (when-let ((row-face (beads-list--row-face-for-id id)))
+    (when-let* ((row-face (beads-list--row-face-for-id id)))
       (font-lock-prepend-text-property beg (point) 'face row-face))))
 
 (defun beads-list--format-header-line (stats)
@@ -413,7 +413,7 @@ Applies `beads-list--filter' if set, and `beads-list--show-only-marked' filter."
                 (goto-char (point-min))
                 (forward-line (1- (min saved-line (line-number-at-pos (point-max))))))
             (goto-char (point-min)))
-          (when-let ((win (get-buffer-window (current-buffer))))
+          (when-let* ((win (get-buffer-window (current-buffer))))
             (set-window-start win (min saved-start (point-max))))
           (beads-list--update-mode-line)
           (unless silent
@@ -605,7 +605,7 @@ Shows ↑ for has parents, ↓ for has children, ↕ for both."
 (defun beads-list--get-issue-at-point ()
   "Get issue data at current line.
 Returns the issue alist or nil if not found."
-  (when-let ((id (tabulated-list-get-id)))
+  (when-let* ((id (tabulated-list-get-id)))
     (seq-find (lambda (issue)
                 (string= (alist-get 'id issue) id))
               beads-list--issues)))
@@ -681,7 +681,7 @@ If in sectioned mode, first switches to column mode."
 (defun beads-list-mark ()
   "Mark issue at point and move to next line."
   (interactive)
-  (when-let ((id (tabulated-list-get-id)))
+  (when-let* ((id (tabulated-list-get-id)))
     (unless (member id beads-list--marked)
       (push id beads-list--marked))
     (beads-list--update-mark-display)
@@ -691,7 +691,7 @@ If in sectioned mode, first switches to column mode."
 (defun beads-list-unmark ()
   "Unmark issue at point and move to next line."
   (interactive)
-  (when-let ((id (tabulated-list-get-id)))
+  (when-let* ((id (tabulated-list-get-id)))
     (setq beads-list--marked (delete id beads-list--marked))
     (beads-list--update-mark-display)
     (forward-line 1)
@@ -743,7 +743,7 @@ If in sectioned mode, first switches to column mode."
   "Return list of marked issue IDs, or ID at point if none marked."
   (if beads-list--marked
       beads-list--marked
-    (when-let ((id (tabulated-list-get-id)))
+    (when-let* ((id (tabulated-list-get-id)))
       (list id))))
 
 (defun beads-list-bulk-status (status)
@@ -848,7 +848,7 @@ Prompts for confirmation."
   "Collect unique assignees from current issue list."
   (let ((assignees nil))
     (dolist (issue beads-list--issues)
-      (when-let ((assignee (alist-get 'assignee issue)))
+      (when-let* ((assignee (alist-get 'assignee issue)))
         (unless (or (string-empty-p assignee)
                     (member assignee assignees))
           (push assignee assignees))))
@@ -858,7 +858,7 @@ Prompts for confirmation."
   "Collect unique issue types from current issue list."
   (let ((types nil))
     (dolist (issue beads-list--issues)
-      (when-let ((type (alist-get 'issue_type issue)))
+      (when-let* ((type (alist-get 'issue_type issue)))
         (unless (or (string-empty-p type)
                     (member type types))
           (push type types))))
@@ -906,7 +906,7 @@ With completion for known assignees from current issues."
 (defun beads-list-goto-issue ()
   "Navigate to or display details for issue at point."
   (interactive)
-  (if-let ((issue (beads-list--get-issue-at-point)))
+  (if-let* ((issue (beads-list--get-issue-at-point)))
       (condition-case err
           (let ((id (alist-get 'id issue)))
             (let ((full-issue (beads-client-show id)))
@@ -918,7 +918,7 @@ With completion for known assignees from current issues."
 (defun beads-list-edit-form ()
   "Open form editor for issue at point."
   (interactive)
-  (if-let ((issue (beads-list--get-issue-at-point)))
+  (if-let* ((issue (beads-list--get-issue-at-point)))
       (condition-case err
           (let ((id (alist-get 'id issue)))
             (let ((full-issue (beads-client-show id)))
@@ -931,7 +931,7 @@ With completion for known assignees from current issues."
 (defun beads-list-edit-title ()
   "Edit title of issue at point."
   (interactive)
-  (if-let ((issue (beads-list--get-issue-at-point)))
+  (if-let* ((issue (beads-list--get-issue-at-point)))
       (let ((id (alist-get 'id issue))
             (title (alist-get 'title issue)))
         (require 'beads-edit)
@@ -942,7 +942,7 @@ With completion for known assignees from current issues."
 (defun beads-list-edit-status ()
   "Edit status of issue at point."
   (interactive)
-  (if-let ((issue (beads-list--get-issue-at-point)))
+  (if-let* ((issue (beads-list--get-issue-at-point)))
       (let ((id (alist-get 'id issue))
             (status (alist-get 'status issue)))
         (require 'beads-edit)
@@ -955,12 +955,12 @@ With completion for known assignees from current issues."
 (defun beads-list-edit-priority ()
   "Edit priority of issue at point."
   (interactive)
-  (if-let ((issue (beads-list--get-issue-at-point)))
+  (if-let* ((issue (beads-list--get-issue-at-point)))
       (let* ((id (alist-get 'id issue))
              (priority (alist-get 'priority issue))
              (priority-str (beads--priority-string priority 2))
              (choices '("P0" "P1" "P2" "P3" "P4")))
-        (when-let ((new-value (completing-read "Priority: " choices nil t priority-str)))
+        (when-let* ((new-value (completing-read "Priority: " choices nil t priority-str)))
           (unless (string= new-value priority-str)
             (let ((new-priority (string-to-number (substring new-value 1))))
               (condition-case err
@@ -975,7 +975,7 @@ With completion for known assignees from current issues."
 (defun beads-list-edit-type ()
   "Edit type of issue at point."
   (interactive)
-  (if-let ((issue (beads-list--get-issue-at-point)))
+  (if-let* ((issue (beads-list--get-issue-at-point)))
       (let ((id (alist-get 'id issue))
             (type (alist-get 'issue_type issue)))
         (require 'beads-edit)
@@ -988,7 +988,7 @@ With completion for known assignees from current issues."
 (defun beads-list-edit-description ()
   "Edit description of issue at point."
   (interactive)
-  (if-let ((issue (beads-list--get-issue-at-point)))
+  (if-let* ((issue (beads-list--get-issue-at-point)))
       (condition-case err
           (let* ((id (alist-get 'id issue))
                  (full-issue (beads-client-show id))

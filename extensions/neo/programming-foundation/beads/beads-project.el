@@ -52,7 +52,7 @@ Called with project root path, returns buffer name string."
 
 (defun beads-project-root ()
   "Get current project root, or nil if not in a project."
-  (when-let ((proj (project-current)))
+  (when-let* ((proj (project-current)))
     (project-root proj)))
 
 (defun beads-project-name (root)
@@ -67,7 +67,7 @@ Called with project root path, returns buffer name string."
   "Get buffer name for current context.
 Returns project-specific name if in a project and per-project buffers enabled,
 otherwise returns the default buffer name."
-  (if-let ((root (and beads-project-per-project-buffers
+  (if-let* ((root (and beads-project-per-project-buffers
                       (beads-project-root))))
       (funcall beads-project-buffer-name-function root)
     "*Beads Issues*"))
@@ -77,7 +77,7 @@ otherwise returns the default buffer name."
   "Open beads list for current project.
 If not in a project, opens the default beads list."
   (interactive)
-  (if-let ((root (beads-project-root)))
+  (if-let* ((root (beads-project-root)))
       (let ((default-directory root))
         (beads-list))
     (beads-list)))

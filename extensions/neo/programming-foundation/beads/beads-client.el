@@ -99,7 +99,7 @@ Set per-project via .dir-locals.el:
 
 (defun beads-client--workspace-info-from-directory (beads-dir)
   "Return workspace metadata for BEADS-DIR using local filesystem discovery."
-  (when-let ((db-path (beads-client--find-db-in-dir beads-dir)))
+  (when-let* ((db-path (beads-client--find-db-in-dir beads-dir)))
     `((path . ,beads-dir)
       (database_path . ,db-path))))
 
@@ -123,7 +123,7 @@ Returns nil when `bd' is unavailable or cannot resolve a workspace."
                 (json-array-type 'list))
             (condition-case nil
                 (let ((info (json-read)))
-                  (when-let ((beads-dir (alist-get 'path info))
+                  (when-let* ((beads-dir (alist-get 'path info))
                              (db-path (alist-get 'database_path info)))
                     `((path . ,(expand-file-name beads-dir))
                       (database_path . ,(expand-file-name db-path)))))
@@ -210,14 +210,14 @@ The returned alist contains `path' and `database_path' entries."
 (defun beads-client--project-root ()
   "Get the project root directory for the current Beads workspace.
 This is the parent directory of .beads/."
-  (when-let ((beads-dir (alist-get 'path (beads-client--workspace-info))))
+  (when-let* ((beads-dir (alist-get 'path (beads-client--workspace-info))))
     (file-name-directory
      (directory-file-name
       beads-dir))))
 
 (defun beads-client--get-managed-daemon ()
   "Get the managed daemon process for the current project, if any."
-  (when-let ((root (beads-client--project-root)))
+  (when-let* ((root (beads-client--project-root)))
     (let ((proc (gethash root beads-client--project-daemons)))
       (when (and proc (process-live-p proc))
         proc))))
@@ -242,7 +242,7 @@ Returns the process, or nil if starting fails."
       (signal 'beads-client-error '("Current backend does not support daemon")))
     (when (gethash root beads-client--daemon-start-in-progress)
       (signal 'beads-client-error '("Daemon start already in progress")))
-    (when-let ((existing (gethash root beads-client--project-daemons)))
+    (when-let* ((existing (gethash root beads-client--project-daemons)))
       (when (process-live-p existing)
         (cl-return-from beads-client--start-managed-daemon existing)))
     (puthash root t beads-client--daemon-start-in-progress)
@@ -303,7 +303,7 @@ Interactive command to manually start the daemon."
 (defun beads-client-stop-daemon ()
   "Stop the managed beads daemon for the current project."
   (interactive)
-  (if-let ((proc (beads-client--get-managed-daemon)))
+  (if-let* ((proc (beads-client--get-managed-daemon)))
       (progn
         (delete-process proc)
         (message "Beads daemon stopped"))

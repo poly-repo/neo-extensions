@@ -253,7 +253,7 @@ Prompts for confirmation with `yes-or-no-p'."
                  ((derived-mode-p 'beads-detail-mode)
                   (alist-get 'title (bound-and-true-p beads-detail--current-issue)))
                  ((derived-mode-p 'beads-list-mode)
-                  (when-let ((entry (tabulated-list-get-entry)))
+                  (when-let* ((entry (tabulated-list-get-entry)))
                     (aref entry 5)))
                  (t nil)))
          (display-title (if title

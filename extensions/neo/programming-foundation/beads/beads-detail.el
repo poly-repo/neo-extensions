@@ -249,7 +249,7 @@ Uses a single reusable buffer in a side window without focusing."
               (erase-buffer)
               (beads-detail--render issue)))
           (goto-char (min saved-point (point-max)))
-          (when-let ((win (get-buffer-window buffer)))
+          (when-let* ((win (get-buffer-window buffer)))
             (set-window-start win (min saved-start (point-max))))
           (beads-detail--refresh-list-buffers)
           (message "Refreshed issue %s" beads-detail--current-issue-id))
@@ -366,7 +366,7 @@ Uses CLI fallback since RPC does not support comment_add."
          (priority (alist-get 'priority issue))
          (priority-str (beads--priority-string priority 2))
          (choices '("P0" "P1" "P2" "P3" "P4")))
-    (when-let ((new-value (completing-read "Priority: " choices nil t priority-str)))
+    (when-let* ((new-value (completing-read "Priority: " choices nil t priority-str)))
       (unless (string= new-value priority-str)
         (let ((new-priority (string-to-number (substring new-value 1))))
           (condition-case err
@@ -457,7 +457,7 @@ Uses CLI fallback since RPC does not support comment_add."
   (let ((refresh-fn (lambda ()
                       (beads-detail-refresh)))
         (navigate-fn (lambda (id)
-                       (when-let ((target (beads-client-show id)))
+                       (when-let* ((target (beads-client-show id)))
                          (beads-detail-open target)))))
     (with-current-buffer buffer
       (beads-detail-vui-mode))
@@ -480,19 +480,19 @@ Uses CLI fallback since RPC does not support comment_add."
   (beads-detail--insert-separator ?─)
   (insert "\n\n")
 
-  (when-let ((description (alist-get 'description issue)))
+  (when-let* ((description (alist-get 'description issue)))
     (unless (string-empty-p description)
       (beads-detail--insert-section "Description" description)))
 
-  (when-let ((design (alist-get 'design issue)))
+  (when-let* ((design (alist-get 'design issue)))
     (unless (string-empty-p design)
       (beads-detail--insert-section "Design Notes" design)))
 
-  (when-let ((acceptance (alist-get 'acceptance_criteria issue)))
+  (when-let* ((acceptance (alist-get 'acceptance_criteria issue)))
     (unless (string-empty-p acceptance)
       (beads-detail--insert-section "Acceptance Criteria" acceptance)))
 
-  (when-let ((comments (alist-get 'comments issue)))
+  (when-let* ((comments (alist-get 'comments issue)))
     (when (> (length comments) 0)
       (beads-detail--insert-comments comments))))
 
@@ -581,7 +581,7 @@ Uses CLI fallback since RPC does not support comment_add."
 
 (defun beads-detail--insert-dependencies (issue)
   "Insert dependencies section for ISSUE if any exist."
-  (when-let ((deps (alist-get 'dependencies issue)))
+  (when-let* ((deps (alist-get 'dependencies issue)))
     (when (> (length deps) 0)
       (insert (propertize "Depends on: " 'face 'beads-detail-label-face))
       (insert "\n")
@@ -590,7 +590,7 @@ Uses CLI fallback since RPC does not support comment_add."
 
 (defun beads-detail--insert-dependents (issue)
   "Insert dependents section for ISSUE if any exist."
-  (when-let ((deps (alist-get 'dependents issue)))
+  (when-let* ((deps (alist-get 'dependents issue)))
     (when (> (length deps) 0)
       (insert (propertize "Dependents: " 'face 'beads-detail-label-face))
       (insert "\n")

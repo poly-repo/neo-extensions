@@ -304,7 +304,7 @@ Derives from `vui-mode' and adds form-specific keybindings.
 
 (defun beads-form--get-value (name)
   "Get current value of widget NAME."
-  (when-let ((widget (alist-get name beads-form--widgets)))
+  (when-let* ((widget (alist-get name beads-form--widgets)))
     (widget-value widget)))
 
 (defun beads-form--collect-changes ()

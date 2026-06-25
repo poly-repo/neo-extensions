@@ -222,7 +222,7 @@ For ancestors, we look for issues that have this as beads--child-id."
   "Open detail view for issue at point."
   (interactive)
   (let ((issue nil))
-    (when-let ((widget (widget-at (point))))
+    (when-let* ((widget (widget-at (point))))
       (setq issue (widget-get widget :node)))
     (unless issue
       (when beads-hierarchy--by-id
@@ -245,7 +245,7 @@ For ancestors, we look for issues that have this as beads--child-id."
   (save-excursion
     (goto-char (point-min))
     (while (not (eobp))
-      (when-let ((widget (widget-at (point))))
+      (when-let* ((widget (widget-at (point))))
         (when (and (widget-get widget :tag)
                    (not (widget-get widget :open)))
           (widget-apply-action widget)))
@@ -266,7 +266,7 @@ For ancestors, we look for issues that have this as beads--child-id."
         (saved-start (window-start)))
     (beads-hierarchy-show beads-hierarchy--root-id)
     (goto-char (min saved-point (point-max)))
-    (when-let ((win (get-buffer-window (current-buffer))))
+    (when-let* ((win (get-buffer-window (current-buffer))))
       (set-window-start win (min saved-start (point-max))))))
 
 ;;;###autoload

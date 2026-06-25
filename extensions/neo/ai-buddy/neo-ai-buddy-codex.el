@@ -25,10 +25,35 @@
   "Return the Elpaca build directory for `vterm'."
   (expand-file-name "vterm" elpaca-builds-directory))
 
+(defun neo--ai-buddy-vterm-module-filename ()
+  "Return the platform-specific filename for `vterm-module'."
+  (concat "vterm-module" module-file-suffix))
+
+(defun neo--ai-buddy-vterm-module-path-in-directory (directory)
+  "Return the `vterm-module' path rooted at DIRECTORY."
+  (expand-file-name (neo--ai-buddy-vterm-module-filename) directory))
+
 (defun neo--ai-buddy-vterm-module-path ()
   "Return the compiled `vterm-module' path for the active platform."
-  (expand-file-name (concat "vterm-module" module-file-suffix)
-                    (neo--ai-buddy-vterm-build-directory)))
+  (neo--ai-buddy-vterm-module-path-in-directory
+   (neo--ai-buddy-vterm-build-directory)))
+
+(defun neo--ai-buddy-vterm-installed-module-path ()
+  "Return the prebuilt `vterm-module' path installed by Neo setup."
+  (let ((xdg-data-home
+         (or (getenv "XDG_DATA_HOME")
+             (expand-file-name ".local/share" (or (getenv "HOME") "~")))))
+    (expand-file-name
+     (neo--ai-buddy-vterm-module-filename)
+     (expand-file-name "emacs/site-lisp/vterm" xdg-data-home))))
+
+(defun neo--ai-buddy-vterm-stage-installed-module (directory)
+  "Copy the prebuilt `vterm-module' into DIRECTORY when available."
+  (let ((installed-module (neo--ai-buddy-vterm-installed-module-path))
+        (destination (neo--ai-buddy-vterm-module-path-in-directory directory)))
+    (when (file-exists-p installed-module)
+      (copy-file installed-module destination t)
+      t)))
 
 (defun neo--ai-buddy-direnv-rc-path (&optional directory)
   "Return the nearest direnv authorization file for DIRECTORY."
@@ -83,21 +108,25 @@
       (error "vterm-module build failed; see buffer %s" (buffer-name buffer)))))
 
 (defun neo--ai-buddy-vterm-build-module (elpaca)
-  "Compile `vterm-module' for ELPACA in its build directory."
+  "Populate `vterm-module' for ELPACA in its build directory."
   (condition-case err
-      (progn
-        (neo--ai-buddy-vterm-build-in-directory (elpaca<-build-dir elpaca))
+      (let* ((build-directory (elpaca<-build-dir elpaca))
+             (module-path (neo--ai-buddy-vterm-module-path-in-directory build-directory)))
+        (unless (file-exists-p module-path)
+          (unless (neo--ai-buddy-vterm-stage-installed-module build-directory)
+            (neo--ai-buddy-vterm-build-in-directory build-directory)))
         (elpaca-continue elpaca))
     (error
      (signal 'elpaca-build-error (list elpaca (error-message-string err))))))
 
 (defun neo--ai-buddy-vterm-ensure-module ()
-  "Compile `vterm-module' in the active Elpaca build directory when missing."
-  (when (and module-file-suffix
-             (file-directory-p (neo--ai-buddy-vterm-build-directory))
-             (not (file-exists-p (neo--ai-buddy-vterm-module-path))))
-    (neo--ai-buddy-vterm-build-in-directory
-     (neo--ai-buddy-vterm-build-directory))))
+  "Populate `vterm-module' in the active Elpaca build directory when missing."
+  (let ((build-directory (neo--ai-buddy-vterm-build-directory)))
+    (when (and module-file-suffix
+               (file-directory-p build-directory)
+               (not (file-exists-p (neo--ai-buddy-vterm-module-path))))
+      (unless (neo--ai-buddy-vterm-stage-installed-module build-directory)
+        (neo--ai-buddy-vterm-build-in-directory build-directory)))))
 
 (neo/use-package vterm
   :ensure (vterm

@@ -133,7 +133,7 @@ Calls ON-REFRESH after successful edit."
   "Navigate to ISSUE-ID using NAVIGATE-FN or default behavior."
   (if navigate-fn
       (funcall navigate-fn issue-id)
-    (when-let ((issue (beads-client-show issue-id)))
+    (when-let* ((issue (beads-client-show issue-id)))
       (beads-detail-open issue))))
 
 ;;; Timestamp formatting
