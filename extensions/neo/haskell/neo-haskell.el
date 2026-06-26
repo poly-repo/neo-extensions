@@ -69,6 +69,10 @@ cleanly on machines that have not installed the grammar yet."
 (declare-function haskell-cabal-next-subsection "haskell-cabal")
 (declare-function haskell-cabal-previous-subsection "haskell-cabal")
 (declare-function electric-indent-local-mode "electric")
+(declare-function eglot-code-actions "eglot")
+(declare-function eglot-inlay-hints-mode "eglot")
+(declare-function flymake-diagnostic-oneliner "flymake")
+(declare-function flymake-diagnostics "flymake")
 
 (defvar neo/haskell-modes '(haskell-mode haskell-ts-mode haskell-literate-mode)
   "Major modes that count as Haskell source for shared configuration.")
@@ -266,6 +270,22 @@ for one-off lab files."
 (defvar-local neo--haskell-standalone-repl-source-buffer nil
   "Most recent source buffer associated with a standalone GHCi REPL.")
 
+(defvar neo--haskell-eglot-quickfix-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map [down-mouse-1] #'ignore)
+    (define-key map [mouse-1] #'neo--haskell-apply-eglot-quickfix-at-mouse)
+    (define-key map (kbd "RET") #'neo--haskell-apply-eglot-quickfix-at-point)
+    map)
+  "Keymap used to make HLS quick-fix diagnostics clickable.")
+
+(defconst neo--haskell-eglot-quickfix-overlay-props
+  `((mouse-face . highlight)
+    (pointer . hand)
+    (keymap . ,neo--haskell-eglot-quickfix-map)
+    (local-map . ,neo--haskell-eglot-quickfix-map)
+    (help-echo . ,#'neo--haskell-eglot-diagnostic-help))
+  "Overlay properties used for clickable HLS quick-fix diagnostics.")
+
 (defun neo--haskell-standalone-repl-switch-back ()
   "Return to the source buffer associated with this standalone REPL."
   (interactive)
@@ -375,8 +395,78 @@ for one-off lab files."
 Inlay hints are the missing piece between hover-only support and the
 kind of ambient type feedback users expect from HLS."
   (when (and (derived-mode-p 'haskell-mode 'haskell-ts-mode)
-             (fboundp 'eglot-inlay-hints-mode))
-    (eglot-inlay-hints-mode 1)))
+             (bound-and-true-p eglot--managed-mode))
+    (neo--haskell-enable-eglot-quickfix-overlays)
+    (when (fboundp 'eglot-inlay-hints-mode)
+      (eglot-inlay-hints-mode 1))))
+
+(defun neo--haskell-eglot-code-action-bounds ()
+  "Return the range that HLS quick fixes should inspect at point."
+  (let (diagnostics bounds)
+    (cond
+     ((use-region-p)
+      (list (region-beginning) (region-end)))
+     ((setq diagnostics (flymake-diagnostics (point)))
+      (cl-loop for diagnostic in diagnostics
+               minimizing (flymake-diagnostic-beg diagnostic) into beg
+               maximizing (flymake-diagnostic-end diagnostic) into end
+               finally return (list beg end)))
+     ((setq bounds (bounds-of-thing-at-point 'sexp))
+      (list (car bounds) (cdr bounds)))
+     (t
+      (list (point) (point))))))
+
+(defun neo--haskell-run-eglot-quickfix (&optional event)
+  "Offer HLS quick fixes at point, using EVENT for popup placement."
+  (when event
+    (mouse-set-point event))
+  (when (and (bound-and-true-p eglot--managed-mode)
+             (fboundp 'eglot-code-actions))
+    (pcase-let ((`(,beg ,end) (neo--haskell-eglot-code-action-bounds)))
+      (when-let* ((actions (eglot-code-actions beg end "quickfix")))
+        (let ((last-nonmenu-event (or event last-nonmenu-event)))
+          (eglot-code-actions beg end "quickfix" t))
+        actions))))
+
+(defun neo--haskell-apply-eglot-quickfix-at-point ()
+  "Apply or offer the HLS quick fix available at point."
+  (interactive)
+  (unless (neo--haskell-run-eglot-quickfix)
+    (user-error "neo-haskell: no Eglot quick fixes available here")))
+
+(defun neo--haskell-apply-eglot-quickfix-at-mouse (event)
+  "Offer HLS quick fixes for the diagnostic clicked by EVENT."
+  (interactive "e")
+  (unless (neo--haskell-run-eglot-quickfix event)
+    (mouse-set-point event)))
+
+(defun neo--haskell-eglot-diagnostic-help (window _overlay position)
+  "Return help text for the HLS diagnostic at POSITION in WINDOW."
+  (with-selected-window window
+    (concat
+     (mapconcat #'flymake-diagnostic-oneliner
+                (flymake-diagnostics position)
+                "\n")
+     "\nmouse-1: show HLS quick fixes\nRET: apply HLS quick fix at point")))
+
+(defun neo--haskell-enable-eglot-quickfix-overlays ()
+  "Make HLS quick-fix diagnostics clickable in the current buffer."
+  (setq-local flymake-diagnostic-types-alist
+              (copy-tree
+               (and (boundp 'flymake-diagnostic-types-alist)
+                    flymake-diagnostic-types-alist)))
+  (dolist (type '(:error :warning :note))
+    (let ((existing (copy-tree
+                     (alist-get type flymake-diagnostic-types-alist nil nil #'eq))))
+      (setq existing
+            (cl-remove-if
+             (lambda (property)
+               (memq (car-safe property)
+                     '(mouse-face pointer keymap local-map help-echo)))
+             existing))
+      (setf (alist-get type flymake-diagnostic-types-alist nil nil #'eq)
+            (append existing
+                    neo--haskell-eglot-quickfix-overlay-props)))))
 
 (defun neo/haskell-switch-to-repl ()
   "Switch to the Haskell interactive shell for the current session.

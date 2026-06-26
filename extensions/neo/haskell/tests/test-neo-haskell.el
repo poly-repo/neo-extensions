@@ -257,7 +257,66 @@
                   (neo--haskell-standalone-repl-switch-back)))
               (expect calls :to-equal (list source-buffer)))
           (kill-buffer source-buffer)
-          (kill-buffer repl-buffer))))))
+          (kill-buffer repl-buffer)))))
+
+  (describe "neo--haskell-run-eglot-quickfix"
+    (it "uses the Flymake diagnostic span when offering HLS quick fixes"
+      (let ((calls nil))
+        (with-temp-buffer
+          (setq-local eglot--managed-mode t)
+          (insert "abcdefghij")
+          (goto-char 7)
+          (cl-letf (((symbol-function 'flymake-diagnostics)
+                     (lambda (position &optional _end)
+                       (expect position :to-equal 7)
+                       '(diag-a diag-b)))
+                    ((symbol-function 'flymake-diagnostic-beg)
+                     (lambda (diagnostic)
+                       (pcase diagnostic
+                         ('diag-a 5)
+                         (_ 6))))
+                    ((symbol-function 'flymake-diagnostic-end)
+                     (lambda (diagnostic)
+                       (pcase diagnostic
+                         ('diag-a 7)
+                         (_ 9))))
+                    ((symbol-function 'eglot-code-actions)
+                     (lambda (beg end kind &optional interactive)
+                       (push (list beg end kind interactive) calls)
+                       (unless interactive '(quickfix-action)))))
+            (expect (neo--haskell-run-eglot-quickfix)
+                    :to-equal
+                    '(quickfix-action))))
+        (expect (nreverse calls)
+                :to-equal
+                '((5 9 "quickfix" nil)
+                  (5 9 "quickfix" t))))))
+
+  (describe "neo--haskell-enable-eglot-ui"
+    (it "makes Eglot-backed HLS diagnostics clickable"
+      (let ((inlay-hints-enabled nil))
+        (with-temp-buffer
+          (setq-local eglot--managed-mode t)
+          (cl-letf (((symbol-function 'derived-mode-p)
+                     (lambda (&rest _modes) t))
+                    ((symbol-function 'eglot-inlay-hints-mode)
+                     (lambda (arg)
+                       (setq inlay-hints-enabled arg))))
+            (neo--haskell-enable-eglot-ui))
+          (let ((warning-props
+                 (alist-get :warning
+                            (buffer-local-value 'flymake-diagnostic-types-alist
+                                                (current-buffer))
+                            nil nil #'eq)))
+            (expect (local-variable-p 'flymake-diagnostic-types-alist)
+                    :to-be-truthy)
+            (expect inlay-hints-enabled :to-equal 1)
+            (expect (alist-get 'keymap warning-props)
+                    :to-equal neo--haskell-eglot-quickfix-map)
+            (expect (alist-get 'help-echo warning-props)
+                    :to-equal #'neo--haskell-eglot-diagnostic-help)
+            (expect (alist-get 'pointer warning-props)
+                    :to-equal 'hand)))))))
 
 (provide 'test-neo-haskell)
 ;;; test-neo-haskell.el ends here
