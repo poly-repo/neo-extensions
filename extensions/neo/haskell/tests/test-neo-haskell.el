@@ -320,20 +320,26 @@
 
   (describe "neo--haskell-eglot-inlay-hint-action"
     (it "keeps top-level text edits from HLS import hints"
-      (let ((edits '((:newText "import Data.List ( nub, sort )"))))
+      (let* ((hint '(:label "( nub, sort )"
+                     :textEdits ((:newText "import Data.List ( nub, sort )"))))
+             (edits (plist-get hint :textEdits)))
         (expect (neo--haskell-eglot-inlay-hint-action
-                 `(:label "( nub, sort )"
-                   :textEdits ,edits))
+                 hint)
                 :to-equal
-                (list :text-edits edits))))
+                (list :hint hint
+                      :text-edits edits))))
 
-    (it "prefers label-part commands when they are present"
-      (let ((command '(:title "Apply" :command "hls.applyOneHint")))
+    (it "prefers whole-hint text edits over label-part commands"
+      (let* ((command '(:title "Apply" :command "hls.applyOneHint"))
+             (hint '(:label ["nub" ", " "sort"]
+                     :textEdits ((:newText "import Data.List ( nub, sort )"))))
+             (edits (plist-get hint :textEdits)))
         (expect (neo--haskell-eglot-inlay-hint-action
-                 '(:label ["nub" ", " "sort"])
+                 hint
                  (list :value "nub" :command command))
                 :to-equal
-                (list :command command)))))
+                (list :hint hint
+                      :text-edits edits)))))
 
   (describe "neo--haskell-propertize-eglot-inlay-hint-text"
     (it "adds clickable properties when the hint carries an action"
@@ -348,9 +354,63 @@
                                 (get-text-property 0 'help-echo text))
                 :not :to-be nil))))
 
+  (describe "neo--haskell-eglot-inlay-hint-action-in-string"
+    (it "extracts the action from the clicked inlay-hint segment"
+      (let* ((action '(:text-edits ((:newText "import Data.List ( nub )"))))
+             (text (neo--haskell-propertize-eglot-inlay-hint-text
+                    "( nub )" nil action "Make this import explicit" nil)))
+        (expect (neo--haskell-eglot-inlay-hint-action-in-string text 2)
+                :to-equal action))))
+
+  (describe "neo--haskell-refresh-eglot-inlay-hints"
+    (it "clears and repaints visible Eglot inlay hints"
+      (let (removed updated)
+        (with-temp-buffer
+          (setq-local eglot--managed-mode t)
+          (setq-local eglot-inlay-hints-mode t)
+          (cl-letf (((symbol-function 'remove-overlays)
+                     (lambda (&rest args)
+                       (setq removed args)))
+                    ((symbol-function 'window-start)
+                     (lambda (&optional _window)
+                       11))
+                    ((symbol-function 'window-end)
+                     (lambda (&optional _window _update)
+                       29))
+                    ((symbol-function 'eglot--update-hints-1)
+                     (lambda (from to)
+                       (setq updated (list from to)))))
+            (neo--haskell-refresh-eglot-inlay-hints)))
+        (expect removed
+                :to-equal
+                '(nil nil eglot--inlay-hint t))
+        (expect updated
+                :to-equal
+                '(11 29)))))
+
+  (describe "neo--haskell-paint-eglot-inlay-hint"
+    (it "ignores hints outside the requested region without signaling"
+      (with-temp-buffer
+        (insert "import Data.List\n")
+        (cl-letf (((symbol-function 'eglot--lsp-position-to-point)
+                   (lambda (_position)
+                     (point-max))))
+          (expect (condition-case nil
+                      (progn
+                        (neo--haskell-paint-eglot-inlay-hint
+                         '(:label "( nub )"
+                           :position (:line 0 :character 0))
+                         1
+                         1)
+                        'ok)
+                    (error 'failed))
+                  :to-equal
+                  'ok)))))
+
   (describe "neo--haskell-apply-eglot-inlay-hint-at-point"
     (it "applies HLS import-hint text edits from inlay overlays"
-      (let ((applied nil))
+      (let ((applied nil)
+            (refreshed nil))
         (with-temp-buffer
           (insert "import Data.List\n")
           (goto-char (line-end-position))
@@ -361,11 +421,47 @@
                          '(:text-edits ((:newText "import Data.List ( nub, sort )"))))
             (cl-letf (((symbol-function 'eglot--apply-text-edits)
                        (lambda (edits &optional _version _silent)
-                         (setq applied edits))))
+                         (setq applied edits)))
+                      ((symbol-function 'neo--haskell-refresh-eglot-inlay-hints)
+                       (lambda ()
+                         (setq refreshed t))))
               (neo--haskell-apply-eglot-inlay-hint-at-point)))
           (expect applied
                   :to-equal
-                  '((:newText "import Data.List ( nub, sort )"))))))))
+                  '((:newText "import Data.List ( nub, sort )")))
+          (expect refreshed :to-be-truthy))))
+
+    (it "resolves HLS hints before falling back to raw commands"
+      (let ((applied nil)
+            (refreshed nil)
+            (executed nil)
+            (command '(:title "Apply" :command "hls.applyOneHint"))
+            (hint '(:label "nub")))
+        (cl-letf (((symbol-function 'eglot-server-capable)
+                   (lambda (&rest _args) t))
+                  ((symbol-function 'eglot--current-server-or-lose)
+                   (lambda () 'server))
+                  ((symbol-function 'jsonrpc-request)
+                   (lambda (_server method arg)
+                     (expect method :to-equal :inlayHint/resolve)
+                     (expect arg :to-equal hint)
+                     '(:textEdits ((:newText "import Data.List ( nub )")))))
+                  ((symbol-function 'eglot--apply-text-edits)
+                   (lambda (edits &optional _version _silent)
+                     (setq applied edits)))
+                  ((symbol-function 'neo--haskell-refresh-eglot-inlay-hints)
+                   (lambda ()
+                     (setq refreshed t)))
+                  ((symbol-function 'eglot-execute)
+                   (lambda (&rest args)
+                     (setq executed args))))
+          (neo--haskell-eglot-apply-inlay-hint-action
+           (list :hint hint :command command))
+          (expect applied
+                  :to-equal
+                  '((:newText "import Data.List ( nub )")))
+          (expect refreshed :to-be-truthy)
+          (expect executed :to-be nil))))))
 
 (provide 'test-neo-haskell)
 ;;; test-neo-haskell.el ends here

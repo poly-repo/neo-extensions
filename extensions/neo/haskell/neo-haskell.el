@@ -74,12 +74,15 @@ cleanly on machines that have not installed the grammar yet."
 (declare-function eglot--current-server-or-lose "eglot")
 (declare-function eglot--lsp-position-to-point "eglot")
 (declare-function eglot--pos-to-lsp-position "eglot")
+(declare-function eglot--update-hints-1 "eglot")
+(declare-function eglot-server-capable "eglot")
 (declare-function eglot-code-actions "eglot")
 (declare-function eglot-execute "eglot")
 (declare-function eglot-inlay-hints-mode "eglot")
 (declare-function flymake-diagnostic-oneliner "flymake")
 (declare-function flymake-diagnostics "flymake")
 (declare-function jsonrpc-async-request "jsonrpc")
+(declare-function jsonrpc-request "jsonrpc")
 
 (defvar neo/haskell-modes '(haskell-mode haskell-ts-mode haskell-literate-mode)
   "Major modes that count as Haskell source for shared configuration.")
@@ -297,7 +300,7 @@ for one-off lab files."
   (let ((map (make-sparse-keymap)))
     (define-key map [down-mouse-1] #'ignore)
     (define-key map [mouse-1] #'neo--haskell-apply-eglot-inlay-hint-at-mouse)
-    (define-key map (kbd "RET") #'neo--haskell-apply-eglot-inlay-hint-at-point)
+    (define-key map [mouse-2] #'neo--haskell-apply-eglot-inlay-hint-at-mouse)
     map)
   "Keymap used to activate clickable HLS inlay hints.")
 
@@ -430,17 +433,36 @@ kind of ambient type feedback users expect from HLS."
 (defun neo--haskell-eglot-inlay-hint-action (hint &optional label-part)
   "Return the interactive action carried by HINT or LABEL-PART.
 
-The action is represented as a plist with either `:text-edits' or
-`:command'. HLS import hints use top-level `:textEdits'."
+The action is represented as a plist with `:hint' and either
+`:text-edits' or `:command'. HLS explicit-import hints can expose
+label-part commands, but under Eglot the useful behavior is usually to
+accept the whole hint and apply its `:textEdits'."
   (cond
-   ((plist-get label-part :command)
-    (list :command (plist-get label-part :command)))
    ((plist-get hint :textEdits)
-    (list :text-edits (plist-get hint :textEdits)))
+    (list :hint hint
+          :text-edits (plist-get hint :textEdits)))
+   ((plist-get label-part :command)
+    (list :hint hint
+          :command (plist-get label-part :command)))
    ((plist-get hint :command)
-    (list :command (plist-get hint :command)))
+    (list :hint hint
+          :command (plist-get hint :command)))
    (t
     nil)))
+
+(defun neo--haskell-eglot-resolve-inlay-hint (hint)
+  "Resolve HINT when the server can enrich it with actionable edits."
+  (if (and hint
+           (null (plist-get hint :textEdits))
+           (fboundp 'eglot-server-capable)
+           (eglot-server-capable :inlayHintProvider :resolveProvider))
+      (condition-case nil
+          (jsonrpc-request (eglot--current-server-or-lose)
+                           :inlayHint/resolve
+                           hint)
+        (error
+         hint))
+    hint))
 
 (defun neo--haskell-eglot-inlay-hint-help (hint &optional label-part)
   "Return help text for clickable HLS inlay HINT or LABEL-PART."
@@ -453,7 +475,7 @@ The action is represented as a plist with either `:text-edits' or
      (delq nil
            (list tooltip
                  (when action
-                   "mouse-1: apply HLS hint\nRET: apply HLS hint at point")))
+                   "mouse-1: apply HLS hint")))
      "\n")))
 
 (defun neo--haskell-eglot-inlay-hint-face (kind)
@@ -490,15 +512,24 @@ does for before-string hints."
 
 (defun neo--haskell-eglot-apply-inlay-hint-action (action)
   "Apply an Eglot inlay hint ACTION for the current Haskell buffer."
-  (cond
-   ((plist-get action :text-edits)
-    (eglot--apply-text-edits (plist-get action :text-edits) nil t)
-    t)
-   ((plist-get action :command)
-    (eglot-execute (eglot--current-server-or-lose) (plist-get action :command))
-    t)
-   (t
-    nil)))
+  (let* ((hint (plist-get action :hint))
+         (resolved (and hint
+                        (neo--haskell-eglot-resolve-inlay-hint hint)))
+         (text-edits (or (plist-get action :text-edits)
+                         (plist-get resolved :textEdits)))
+         (command (or (plist-get action :command)
+                      (plist-get resolved :command))))
+    (cond
+     (text-edits
+      (eglot--apply-text-edits text-edits nil t)
+      (neo--haskell-refresh-eglot-inlay-hints)
+      t)
+     (command
+      (eglot-execute (eglot--current-server-or-lose) command)
+      (neo--haskell-refresh-eglot-inlay-hints)
+      t)
+     (t
+      nil))))
 
 (defun neo--haskell-eglot-inlay-hint-action-at-point ()
   "Return the clickable HLS inlay-hint action at point, or nil."
@@ -515,6 +546,24 @@ does for before-string hints."
    when action
    return action))
 
+(defun neo--haskell-eglot-inlay-hint-action-in-string (string &optional index)
+  "Return the clickable HLS inlay-hint action stored in STRING at INDEX."
+  (when (and (stringp string)
+             (> (length string) 0))
+    (get-text-property (min (or index 0) (1- (length string)))
+                       'neo--haskell-eglot-inlay-action
+                       string)))
+
+(defun neo--haskell-refresh-eglot-inlay-hints ()
+  "Refresh visible Eglot inlay hints for the current Haskell buffer."
+  (when (and (bound-and-true-p eglot--managed-mode)
+             (bound-and-true-p eglot-inlay-hints-mode))
+    (remove-overlays nil nil 'eglot--inlay-hint t)
+    (save-excursion
+      (save-restriction
+        (widen)
+        (eglot--update-hints-1 (window-start) (window-end nil t))))))
+
 (defun neo--haskell-apply-eglot-inlay-hint-at-point ()
   "Apply the clickable HLS inlay hint at point."
   (interactive)
@@ -526,8 +575,13 @@ does for before-string hints."
 (defun neo--haskell-apply-eglot-inlay-hint-at-mouse (event)
   "Apply the clickable HLS inlay hint clicked in EVENT."
   (interactive "e")
-  (mouse-set-point event)
-  (neo--haskell-apply-eglot-inlay-hint-at-point))
+  (if-let* ((pos-data (posn-string (event-start event)))
+            (action (neo--haskell-eglot-inlay-hint-action-in-string
+                     (car pos-data)
+                     (cdr pos-data))))
+      (neo--haskell-eglot-apply-inlay-hint-action action)
+    (mouse-set-point event)
+    (neo--haskell-apply-eglot-inlay-hint-at-point)))
 
 (defun neo--haskell-paint-eglot-inlay-hint (hint from to)
   "Render HLS inlay HINT between FROM and TO.
@@ -535,66 +589,65 @@ does for before-string hints."
 This is a compatibility copy of Eglot's inlay-hint painter that keeps
 clickable metadata such as HLS import-hint `textEdits'."
   (goto-char (eglot--lsp-position-to-point (plist-get hint :position)))
-  (when (or (> (point) to) (< (point) from))
-    (cl-return-from neo--haskell-paint-eglot-inlay-hint nil))
-  (let* ((kind (plist-get hint :kind))
-         (label (plist-get hint :label))
-         (padding-left (plist-get hint :paddingLeft))
-         (padding-right (plist-get hint :paddingRight))
-         (left-pad (and padding-left
-                        (not (eq padding-left :json-false))
-                        (not (memq (char-before) '(32 9)))
-                        " "))
-         (right-pad (and padding-right
-                         (not (eq padding-right :json-false))
-                         (not (memq (char-after) '(32 9)))
-                         " "))
-         (peg-after-p (eql kind 1))
-         (hint-action (neo--haskell-eglot-inlay-hint-action hint))
-         (hint-help (neo--haskell-eglot-inlay-hint-help hint)))
-    (cl-labels
-        ((make-ov ()
-           (if peg-after-p
-               (make-overlay (point) (1+ (point)) nil t)
-             (make-overlay (1- (point)) (point) nil nil nil)))
-         (do-it (segment lpad rpad index count action help)
-           (let* ((firstp (zerop index))
-                  (tweak-cursor-p (and firstp peg-after-p))
-                  (overlay (make-ov))
-                  (text (concat lpad segment rpad))
-                  (display
-                   (neo--haskell-propertize-eglot-inlay-hint-text
-                    text kind action help tweak-cursor-p)))
-             (overlay-put overlay (if peg-after-p 'before-string 'after-string)
-                          display)
-             (when action
-               (overlay-put overlay 'help-echo help)
-               (overlay-put overlay 'keymap neo--haskell-eglot-inlay-hint-map)
-               (overlay-put overlay 'local-map neo--haskell-eglot-inlay-hint-map)
-               (overlay-put overlay 'mouse-face 'highlight)
-               (overlay-put overlay 'pointer 'hand)
-               (overlay-put overlay 'neo--haskell-eglot-inlay-action action))
-             (overlay-put overlay 'priority (if peg-after-p index (- count index)))
-             (overlay-put overlay 'eglot--inlay-hint t)
-             (overlay-put overlay 'evaporate t)
-             (overlay-put overlay 'eglot--overlay t))))
-      (if (stringp label)
-          (do-it label left-pad right-pad 0 1 hint-action hint-help)
-        (cl-loop
-         for index from 0 below (length label)
-         for label-part = (aref label index)
-         for part-action = (or (neo--haskell-eglot-inlay-hint-action hint label-part)
-                               hint-action)
-         for part-help = (or (neo--haskell-eglot-inlay-hint-help hint label-part)
-                             hint-help)
-         do
-         (do-it (plist-get label-part :value)
-                (and (zerop index) left-pad)
-                (and (= index (1- (length label))) right-pad)
-                index
-                (length label)
-                part-action
-                part-help))))))
+  (when (<= from (point) to)
+    (let* ((kind (plist-get hint :kind))
+           (label (plist-get hint :label))
+           (padding-left (plist-get hint :paddingLeft))
+           (padding-right (plist-get hint :paddingRight))
+           (left-pad (and padding-left
+                          (not (eq padding-left :json-false))
+                          (not (memq (char-before) '(32 9)))
+                          " "))
+           (right-pad (and padding-right
+                           (not (eq padding-right :json-false))
+                           (not (memq (char-after) '(32 9)))
+                           " "))
+           (peg-after-p (eql kind 1))
+           (hint-action (neo--haskell-eglot-inlay-hint-action hint))
+           (hint-help (neo--haskell-eglot-inlay-hint-help hint)))
+      (cl-labels
+          ((make-ov ()
+             (if peg-after-p
+                 (make-overlay (point) (1+ (point)) nil t)
+               (make-overlay (1- (point)) (point) nil nil nil)))
+           (do-it (segment lpad rpad index count action help)
+             (let* ((firstp (zerop index))
+                    (tweak-cursor-p (and firstp peg-after-p))
+                    (overlay (make-ov))
+                    (text (concat lpad segment rpad))
+                    (display
+                     (neo--haskell-propertize-eglot-inlay-hint-text
+                      text kind action help tweak-cursor-p)))
+               (overlay-put overlay (if peg-after-p 'before-string 'after-string)
+                            display)
+               (when action
+                 (overlay-put overlay 'help-echo help)
+                 (overlay-put overlay 'keymap neo--haskell-eglot-inlay-hint-map)
+                 (overlay-put overlay 'local-map neo--haskell-eglot-inlay-hint-map)
+                 (overlay-put overlay 'mouse-face 'highlight)
+                 (overlay-put overlay 'pointer 'hand)
+                 (overlay-put overlay 'neo--haskell-eglot-inlay-action action))
+               (overlay-put overlay 'priority (if peg-after-p index (- count index)))
+               (overlay-put overlay 'eglot--inlay-hint t)
+               (overlay-put overlay 'evaporate t)
+               (overlay-put overlay 'eglot--overlay t))))
+        (if (stringp label)
+            (do-it label left-pad right-pad 0 1 hint-action hint-help)
+          (cl-loop
+           for index from 0 below (length label)
+           for label-part = (aref label index)
+           for part-action = (or (neo--haskell-eglot-inlay-hint-action hint label-part)
+                                 hint-action)
+           for part-help = (or (neo--haskell-eglot-inlay-hint-help hint label-part)
+                               hint-help)
+           do
+           (do-it (plist-get label-part :value)
+                  (and (zerop index) left-pad)
+                  (and (= index (1- (length label))) right-pad)
+                  index
+                  (length label)
+                  part-action
+                  part-help)))))))
 
 (defun neo--haskell-eglot-update-hints-1 (from to)
   "Render clickable HLS inlay hints between FROM and TO."
