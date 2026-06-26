@@ -1,8 +1,9 @@
-;;; neo-mlody-mode.el --- Major mode for editing mlody files -*- lexical-binding: t -*-
+;;; neo-mlody-starlark-mode.el --- Legacy Starlark mode for mlody files -*- lexical-binding: t -*-
 
 ;;; Commentary:
 
-;; Provides `neo-mlody-mode', a major mode for editing .mlody files.
+;; Provides `neo-mlody-starlark-mode', a major mode for editing legacy
+;; Python/Starlark-based .mlody files.
 ;; Derives from `neo-starlark-ts-mode', a treesit-based Starlark mode defined
 ;; here, to inherit syntax highlighting and indentation without depending on
 ;; the bazel package.
@@ -61,17 +62,14 @@
                   ()))
     (treesit-major-mode-setup)))
 
-(define-derived-mode neo-mlody-mode neo-starlark-ts-mode "MLody"
-  "Major mode for editing .mlody files.
+(define-derived-mode neo-mlody-starlark-mode neo-starlark-ts-mode "MLody-Starlark"
+  "Major mode for editing legacy Python/Starlark `.mlody' files.
 Derives from `neo-starlark-ts-mode' for treesit Starlark support
-and registers the mlody-lsp language server.")
-
-;;;###autoload
-(add-to-list 'auto-mode-alist '("\\.mlody\\'" . neo-mlody-mode))
+and registers the legacy `mlody-lsp' language server.")
 
 (if (fboundp 'neo/eglot-set-server)
-    (neo/eglot-set-server 'neo-mlody-mode '("mlody-lsp")))
+    (neo/eglot-set-server 'neo-mlody-starlark-mode '("mlody-lsp")))
 
-(provide 'neo-mlody-mode)
+(provide 'neo-mlody-starlark-mode)
 
-;;; neo-mlody-mode.el ends here
+;;; neo-mlody-starlark-mode.el ends here

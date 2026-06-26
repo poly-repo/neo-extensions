@@ -23,7 +23,7 @@
 	    "neo:python"
 	    "neo:haskell"
 	    "neo:latex"
-	    "neo:mlody"
+	    "neo:mlody-mode"
 	    "neo:ai-buddy"
 	    "neo:leetcode"
 	    "mav:cocktails"
