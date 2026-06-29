@@ -110,6 +110,49 @@
       (expect shown :to-equal buffer)
       (expect added :to-equal buffer)))
 
+  (it "records the displaced perspective when landing after restore"
+    (let ((switches nil)
+          (current "14421225"))
+      (setq neo/dashboard--origin-persp "main") ; stale origin from early call
+      (cl-letf (((symbol-function 'persp-current-name)
+                 (lambda () current))
+                ((symbol-function 'persp-switch)
+                 (lambda (name) (push name switches) (setq current name)))
+                ((symbol-function 'persp-add-buffer) (lambda (_buf) nil))
+                ((symbol-function 'dashboard-open)
+                 (lambda ()
+                   (get-buffer-create (neo/dashboard--buffer-name))))
+                ((symbol-function 'switch-to-buffer) (lambda (_buf) nil)))
+        (neo/dashboard-land-after-restore))
+      ;; The restored perspective, not the stale "main", is now the origin.
+      (expect neo/dashboard--origin-persp :to-equal "14421225")
+      (expect (member neo/dashboard-persp switches) :to-be-truthy)))
+
+  (it "returns to the displaced perspective on quit"
+    (let ((switches nil))
+      (setq neo/dashboard--origin-persp "14421225")
+      (cl-letf (((symbol-function 'persp-switch)
+                 (lambda (name) (push name switches))))
+        (neo/dashboard-quit))
+      (expect switches :to-equal '("14421225"))
+      (expect neo/dashboard--origin-persp :to-equal nil)))
+
+  (it "builds application entries with labels and commands"
+    (cl-letf (((symbol-function 'neo/applications)
+               (lambda ()
+                 (list (list :name "Calc" :binding "c" :command 'neo/app-calc)
+                       (list :name "Dashboard" :binding nil :command 'neo/app-dashboard))))
+              ((symbol-function 'neo/application-name)
+               (lambda (app) (plist-get app :name)))
+              ((symbol-function 'neo/application-binding)
+               (lambda (app) (plist-get app :binding)))
+              ((symbol-function 'neo/application-command)
+               (lambda (app) (plist-get app :command))))
+      (let ((entries (neo/dashboard--application-entries)))
+        (expect entries :to-equal
+                '(("Calc  (M-a c)" . neo/app-calc)
+                  ("Dashboard" . neo/app-dashboard))))))
+
   (it "renders environment debug lines from framework and registry state"
     (let* ((available (make-hash-table :test 'equal))
            (installed (make-hash-table :test 'equal))

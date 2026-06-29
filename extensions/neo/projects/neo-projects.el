@@ -139,6 +139,11 @@ low-priority buffers such as `*scratch*'."
         ("p" . neo/projectile-switch-project-by-name))
   )
 
+(defvar neo/after-perspective-restore-hook nil
+  "Hook run after `persp-state-load' restores perspectives at startup.
+Runs on the same idle timer as the restore, immediately after it, so
+consumers can decide which perspective should ultimately be selected.")
+
 (defun neo/persp-ensure-messages ()
   "Ensure *Messages* is part of the current perspective."
   (when (and (featurep 'perspective)
@@ -163,7 +168,8 @@ low-priority buffers such as `*scratch*'."
   ;; races I've not been able to solve.
   (run-with-idle-timer 1 nil (lambda ()
 			       (when (file-exists-p persp-state-default-file)
-				 (persp-state-load persp-state-default-file))))
+				 (persp-state-load persp-state-default-file))
+			       (run-hooks 'neo/after-perspective-restore-hook)))
   :hook
   ((persp-switch persp-created) . neo/persp-ensure-messages)
   :bind

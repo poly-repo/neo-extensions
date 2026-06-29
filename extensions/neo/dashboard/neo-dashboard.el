@@ -148,6 +148,34 @@
      `(lambda (&rest _))
      el)))
 
+(defun neo/dashboard--application-entries ()
+  "Return a list of (LABEL . COMMAND) for registered Neo applications."
+  (when (fboundp 'neo/applications)
+    (mapcar
+     (lambda (app)
+       (let* ((name (neo/application-name app))
+              (binding (neo/application-binding app))
+              (command (neo/application-command app))
+              (label (if (and (stringp binding) (> (length binding) 0))
+                         (format "%s  (M-a %s)" name binding)
+                       name)))
+         (cons label command)))
+     (neo/applications))))
+
+(defun neo/dashboard-insert-applications (list-size)
+  "Insert the registered Neo applications into the dashboard.
+LIST-SIZE bounds the number of applications shown."
+  (let ((entries (neo/dashboard--application-entries)))
+    (dashboard-insert-section
+     "Neo Applications:"
+     entries
+     (or list-size (length entries))
+     'neo-applications
+     nil
+     (lambda (&rest _)
+       (when (cdr el) (call-interactively (cdr el))))
+     (car el))))
+
 (defun neo/dashboard--perspective-available-p ()
   "Return non-nil when perspective support can be used."
   (and (require 'perspective nil t)
@@ -176,12 +204,13 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
     (neo/dashboard--add-buffer dashboard-buffer)))
 
 (defun neo/dashboard--show-buffer (buffer)
-  "Show BUFFER in the selected window and keep it in the current perspective."
+  "Show BUFFER as the sole window and keep it in the current perspective."
   (when (buffer-live-p buffer)
     (switch-to-buffer buffer)
     (neo/dashboard--ensure-current-buffer-added buffer)
     (when-let* ((window (get-buffer-window buffer t)))
-      (select-window window))))
+      (select-window window)
+      (delete-other-windows window))))
 
 (defun neo/dashboard--current-perspective-dashboard-p (current-persp)
   "Return non-nil when CURRENT-PERSP is a dashboard perspective."
@@ -230,13 +259,25 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
     (kill-buffer buffer))
   (neo/dashboard--leave))
 
+(defun neo/dashboard-land-after-restore ()
+  "Show the dashboard at startup, recording the displaced perspective.
+Run after `persp-state-load' has restored and selected a saved
+perspective.  The origin is cleared first so `neo/dashboard--enter'
+records that restored perspective, letting `neo/dashboard-quit' (\"q\")
+return to whatever was active before the dashboard took over."
+  (setq neo/dashboard--origin-persp nil)
+  (neo/dashboard))
+
 (neo/use-package dashboard
   :after dashboard-hackernews
   :config
   (neo--setup-banner)
   (add-to-list 'dashboard-item-generators
                '(neo-environment . neo/dashboard-insert-neo-environment))
-  (setq dashboard-items '((neo-environment . 9)
+  (add-to-list 'dashboard-item-generators
+               '(neo-applications . neo/dashboard-insert-applications))
+  (setq dashboard-items '((neo-applications . 20)
+                                  (neo-environment . 9)
                                   (recents . 5)
 				  (projects . 5)
 				  (agenda .5)
@@ -245,6 +286,9 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
   (dashboard-setup-startup-hook)
   (advice-add 'dashboard-open :after #'neo/dashboard--ensure-current-buffer-added)
   (advice-add 'dashboard-refresh-buffer :after #'neo/dashboard--ensure-current-buffer-added)
+  ;; Land on the Dashboard perspective last, after perspective state has been
+  ;; restored, so a restored project perspective does not win the startup race.
+  (add-hook 'neo/after-perspective-restore-hook #'neo/dashboard-land-after-restore)
   :custom
   (dashboard-hide-cursor t)
   ;; (dashboard-items
