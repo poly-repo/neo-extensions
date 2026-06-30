@@ -812,6 +812,139 @@ while completion and xref come from the wrong backend or not at all."
     (interactive-haskell-mode 1)
     'interactive)))
 
+;;; Haskell documentation comments (Haddock `-- |', `-- ^') are fontified
+;;; with `font-lock-doc-face', which is shared with Python/Elisp
+;;; docstrings.  The global comment font (`font-lock-comment-face') never
+;;; reaches them.  Remap the doc face to the comment font *buffer-locally*
+;;; so Haskell doc comments match other comments without touching
+;;; docstrings in other languages.  Everything below is gated by one
+;;; defcustom and uses a reversible buffer-local remap, so it is trivial
+;;; to turn off (set the toggle to nil) or remove.
+
+(defvar-local neo--haskell-doc-font-cookie nil
+  "Cookie for this buffer's `font-lock-doc-face' remap, or nil.")
+
+(defun neo--haskell-comment-font-family ()
+  "Return the comment font family to use for Haskell doc comments.
+Reuses `neo/config/comment-font-family' from the UI extension when it is
+set, falling back to \"Patrick Hand\".  Returns nil unless the family is
+actually installed on a graphic display, so a missing font is a no-op."
+  (let ((family (or (and (boundp 'neo/config/comment-font-family)
+                         neo/config/comment-font-family)
+                    "Patrick Hand")))
+    (and (stringp family)
+         (display-graphic-p)
+         (member family (font-family-list))
+         family)))
+
+(defun neo--haskell-apply-doc-comment-font ()
+  "Apply or clear the Haskell doc-comment font remap in this buffer.
+Buffer-local and idempotent: any previous remap is removed first, then a
+new one is installed only when `neo/haskell-remap-doc-comment-font' is on
+and the font is available."
+  (when neo--haskell-doc-font-cookie
+    (face-remap-remove-relative neo--haskell-doc-font-cookie)
+    (setq neo--haskell-doc-font-cookie nil))
+  (when-let* (((bound-and-true-p neo/haskell-remap-doc-comment-font))
+              (family (neo--haskell-comment-font-family)))
+    (setq neo--haskell-doc-font-cookie
+          (apply #'face-remap-add-relative 'font-lock-doc-face
+                 `(:family ,family :slant normal :weight normal
+                   ,@(when (and (boundp 'neo/haskell-doc-comment-font-height)
+                                (numberp neo/haskell-doc-comment-font-height))
+                       (list :height neo/haskell-doc-comment-font-height)))))))
+
+(defun neo--haskell-refresh-doc-comment-font (symbol value)
+  "Set SYMBOL to VALUE and re-apply the remap across live Haskell buffers.
+Lets toggling `neo/haskell-remap-doc-comment-font' take effect at once,
+so the feature can be reverted without reopening files."
+  (set-default symbol value)
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'haskell-mode 'haskell-ts-mode)
+        (neo--haskell-apply-doc-comment-font)))))
+
+(defcustom neo/haskell-remap-doc-comment-font t
+  "When non-nil, render Haskell documentation comments in the comment font.
+haskell-mode fontifies Haddock comments (`-- |', `-- ^') with
+`font-lock-doc-face', which is shared with Python and Elisp docstrings.
+This remaps that face to `neo/config/comment-font-family' (or
+\"Patrick Hand\") buffer-locally in Haskell buffers only, so Haskell doc
+comments match other comments while docstrings elsewhere stay untouched.
+Set to nil to leave the theme's doc face as-is."
+  :type 'boolean
+  :group 'neo
+  :set #'neo--haskell-refresh-doc-comment-font)
+
+(defcustom neo/haskell-doc-comment-font-height 0.9
+  "Height scale for the Haskell doc-comment font, or nil for no scaling.
+A float multiplies the inherited height; values below 1.0 render doc
+comments slightly smaller than the code font, which reads well with the
+proportional comment face.  Only takes effect when
+`neo/haskell-remap-doc-comment-font' is non-nil."
+  :type '(choice (const :tag "No scaling" nil) number)
+  :group 'neo
+  :set #'neo--haskell-refresh-doc-comment-font)
+
+(defun neo--haskell-refresh-fill-column (symbol value)
+  "Set SYMBOL to VALUE and apply it to live Haskell buffers.
+Lets `neo/haskell-fill-column' take effect immediately, without
+reopening files."
+  (set-default symbol value)
+  (when (integerp value)
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (derived-mode-p 'haskell-mode 'haskell-ts-mode)
+          (setq-local fill-column value))))))
+
+(defcustom neo/haskell-fill-column 100
+  "Fill column for Haskell buffers, or nil to leave it unchanged.
+Both code and Haddock comments read better with a wider wrap than the
+Emacs default of 70.  Applied buffer-locally, so it governs
+`fill-paragraph' (\\[fill-paragraph]) and fill indicators in Haskell
+buffers without changing the global default."
+  :type '(choice (const :tag "Leave unchanged" nil) integer)
+  :group 'neo
+  :set #'neo--haskell-refresh-fill-column)
+
+(defconst neo--haskell-comment-line-rx "^[[:space:]]*--[[:space:]]+[^[:space:]]"
+  "Matches a `--' comment line that carries text (not a bare `--').")
+
+(defun neo--haskell-prose-comment-line-p ()
+  "Non-nil when point's line starts a fillable prose `--' comment.
+Allows the Haddock doc markers `|' and `^', but excludes block markup —
+code blocks (`> '/`@'), lists (`*'), headings (`='), definition lists
+(`['), anchors (`#') — which must not be reflowed."
+  (when (looking-at "^[[:space:]]*--[[:space:]]+\\(?:[|^][[:space:]]+\\)?")
+    (let ((c (char-after (match-end 0))))
+      (and c (not (memq c '(?> ?@ ?* ?= ?# ?\[)))))))
+
+(defun neo/haskell-reflow-comments ()
+  "Re-fill prose `--' comment paragraphs in the buffer to `fill-column'.
+Each comment paragraph is filled on its own, so blank `--' separators and
+Haddock markers (`-- |', `-- ^') are preserved and code lines are left
+untouched.  Haddock block markup (code blocks, lists, headings) is
+skipped so it is never mangled.  Useful after widening
+`neo/haskell-fill-column': existing comments keep their old hard wraps
+until they are reflowed."
+  (interactive)
+  (save-excursion
+    (goto-char (point-min))
+    (while (not (eobp))
+      (beginning-of-line)
+      (cond
+       ;; A prose comment paragraph: fill it, then step past its lines.
+       ((neo--haskell-prose-comment-line-p)
+        (fill-paragraph)
+        (beginning-of-line)
+        (forward-line 1)
+        (while (and (not (eobp)) (looking-at neo--haskell-comment-line-rx))
+          (forward-line 1)))
+       ;; Markup comment lines (code blocks etc.): leave as-is, step over.
+       ((looking-at neo--haskell-comment-line-rx)
+        (forward-line 1))
+       (t (forward-line 1))))))
+
 (defun neo/haskell-mode-setup ()
   "Wire up LSP, stylish-haskell autoformat, and Unicode prettification.
 
@@ -845,7 +978,12 @@ format-on-save behavior they had.
     (haskell-collapse-mode 1))
   (setq-local prettify-symbols-alist neo/haskell-prettify-symbols)
   (setq-local prettify-symbols-unprettify-at-point 'right-edge)
-  (prettify-symbols-mode 1))
+  (prettify-symbols-mode 1)
+  ;; Match Haddock doc comments to the comment font (reversible, Haskell-only).
+  (neo--haskell-apply-doc-comment-font)
+  ;; Wider wrap than Emacs' default 70 for code and Haddock comments alike.
+  (when (integerp neo/haskell-fill-column)
+    (setq-local fill-column neo/haskell-fill-column)))
 
 (defun neo/haskell-format-imports ()
   "Sort and align the import block from anywhere in the source file."
