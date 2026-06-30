@@ -7,17 +7,17 @@
 ;;; (via `beads-client'), stacks are beads epics, and branches/worktrees are
 ;;; read live from git. No SQLite, no GitHub.
 ;;;
-;;; Planned modules (ported/rewritten from neo/workflow as each phase lands):
-;;;   neo-workflow-models.el    ;; cl-structs + beads/git loaders (no sqlite)
-;;;   neo-workflow-db.el        ;; old API names, beads/git/in-memory bodies
-;;;   neo-workflow-git.el       ;; git worktrees/branches (copied)
-;;;   neo-workflow-status.el    ;; the board UI (copied, re-sourced)
-;;;   neo-workflow-ui.el        ;; views (copied)
+;;; Modules:
+;;;   neo-workflow-slug.el      ;; branch-slug helpers (copied from workflow/)
+;;;   neo-workflow-git.el       ;; git worktrees / branch state
+;;;   neo-workflow-models.el    ;; cl-structs + beads/git loaders
+;;;   neo-workflow-db.el        ;; public API names, in-memory/beads bodies
+;;;   neo-workflow-context.el   ;; workspace strategy via git state (no magit)
+;;;   neo-workflow-async.el     ;; refresh hook infrastructure
+;;;   neo-workflow-project.el   ;; project discovery from beads workspace
 ;;;   neo-workflow-issues.el    ;; create/update/close via beads-client
-;;;   neo-workflow-context.el   ;; contexts via perspective.el (in-memory)
-;;;   neo-workflow-project.el   ;; projects from the BEADS_DIR workspace(s)
-;;;   neo-workflow-slug.el      ;; helpers (copied)
-;;;   neo-workflow-async.el     ;; helpers (copied)
+;;;   neo-workflow-ui.el        ;; tabulated-list stack summary view
+;;;   neo-workflow-status.el    ;; the vtable board + app registration
 
 (require 'neo-utils)
 
@@ -26,9 +26,20 @@
 ;; extension loads inside NEO.
 (require 'beads-client)
 
-;; Phase 1 scaffold only: modules above are added as they are ported (see the
-;; neo-workflow epic). full-monty is intentionally NOT flipped to this
-;; extension until the read path works, so the existing `workflow' board keeps
-;; working in the meantime.
+;; Phase 2: full read path loaded.
+;; full-monty is intentionally NOT flipped to this extension until the
+;; read path is confirmed working — the existing `workflow' board continues
+;; to run in the meantime.
+
+(require 'neo-workflow-slug)
+(require 'neo-workflow-git)
+(require 'neo-workflow-models)
+(require 'neo-workflow-db)
+(require 'neo-workflow-context)
+(require 'neo-workflow-async)
+(require 'neo-workflow-project)
+(require 'neo-workflow-issues)
+(require 'neo-workflow-ui)
+(require 'neo-workflow-status)
 
 ;;; Note, no (provide 'neo-workflow) here, extensions are loaded not required.
