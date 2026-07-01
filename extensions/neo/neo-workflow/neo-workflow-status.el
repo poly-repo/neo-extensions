@@ -469,18 +469,33 @@ Each workspace section is one vtable, so this jumps to the next workspace."
   "Update TABLE replacing OLD object with NEW."
   (vtable-update-object table new old))
 
+(defconst neo--workflow-detail-buffer-name "*Neo Workflow Detail*"
+  "Buffer name for the single reusable bead-detail page on the workflow board.
+Using one fixed buffer keeps the workflow perspective to at most one detail
+window: repeat selections re-render it in place, and \\`q' removes it.")
+
 (defun neo--select-thing (object)
-  "Open a detail window for OBJECT showing the full bead.
+  "Open (or reuse) the detail page for OBJECT showing the full bead.
 OBJECT is the `neo-issue' (a task) or `neo-stack' (an epic) at point.  The
 board structs only carry summary fields, so this fetches the complete beads
-issue — including its full description — with `beads-client-show' and displays
-it via `beads-detail-open' in a window below the board."
+issue — including its full description — with `beads-client-show' and renders
+it via `beads-detail-open' into a single reusable window below the board.  The
+workflow perspective therefore holds either the board alone or the board plus
+exactly one detail page; press \\`q' in the page to remove it."
   (interactive)
   (let ((id (cond ((neo-issue-p object) (neo-issue-id object))
                   ((neo-stack-p object) (neo-stack-id object)))))
     (if id
         (condition-case err
-            (beads-detail-open (beads-client-show id))
+            ;; Reuse the existing detail window when one is showing the shared
+            ;; buffer; otherwise open a new one below the board.  Keeping the
+            ;; same buffer preserves its `quit-restore', so `q' deletes the
+            ;; window back to a board-only perspective.
+            (let ((display-buffer-overriding-action
+                   '((display-buffer-reuse-window display-buffer-below-selected)
+                     (window-height . 0.4))))
+              (beads-detail-open (beads-client-show id)
+                                 neo--workflow-detail-buffer-name))
           (beads-client-error
            (user-error "Failed to load bead %s: %s" id (cadr err))))
       (user-error "No bead at point"))))

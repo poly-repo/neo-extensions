@@ -179,11 +179,13 @@ Derives from `vui-mode' and inherits keybindings from `beads-detail-mode'.
   (evil-set-initial-state 'beads-detail-vui-mode 'normal)
   (evil-make-overriding-map beads-detail-vui-mode-map 'normal))
 
-(defun beads-detail-open (issue)
+(defun beads-detail-open (issue &optional buffer-name)
   "Open ISSUE in a dedicated detail buffer in bottom window.
-Creates a unique buffer per issue and focuses it."
+Creates a unique buffer per issue and focuses it.  With optional BUFFER-NAME,
+render into that buffer instead of the per-issue default, letting a caller
+keep a single reusable detail page."
   (let* ((id (alist-get 'id issue))
-         (buffer-name (format "*Beads Detail: %s*" id))
+         (buffer-name (or buffer-name (format "*Beads Detail: %s*" id)))
          (buffer (get-buffer-create buffer-name)))
     (with-current-buffer buffer
       (setq beads-detail--current-issue-id id)

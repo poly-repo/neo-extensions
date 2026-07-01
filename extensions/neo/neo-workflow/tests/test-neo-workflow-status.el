@@ -34,7 +34,7 @@
 
 ;; Mock beads-detail so the RET-to-detail path loads without the sibling ext.
 (unless (featurep 'beads-detail)
-  (defun beads-detail-open (_issue) nil)
+  (defun beads-detail-open (_issue &optional _buffer-name) nil)
   (provide 'beads-detail))
 
 ;; Mock neo-workflow-context.
@@ -389,7 +389,7 @@
 ;; ============================================================
 
 (describe "neo--select-thing"
-  (it "fetches the full bead for an issue and opens the detail window"
+  (it "fetches the full bead for an issue and renders it in the shared page"
     (let ((issue (make-neo-issue
                   :id "omega-7" :number 7 :title "Detail me"
                   :type "task" :labels nil :state 'open :draft 0
@@ -400,9 +400,12 @@
       (spy-on 'beads-detail-open)
       (neo--select-thing issue)
       (expect 'beads-client-show :to-have-been-called-with "omega-7")
-      (expect 'beads-detail-open :to-have-been-called-with full)))
+      ;; Always the single reusable detail buffer, so the perspective keeps at
+      ;; most one detail page.
+      (expect 'beads-detail-open :to-have-been-called-with
+              full neo--workflow-detail-buffer-name)))
 
-  (it "opens the detail window for an epic (a stack) using its beads id"
+  (it "opens the detail page for an epic (a stack) using its beads id"
     (let ((stack (make-neo-stack :id "omega-e" :name "e-epic" :title "Epic"
                                  :prefix nil :issue-id "omega-e" :branch nil
                                  :children-stacks nil)))
@@ -410,7 +413,8 @@
       (spy-on 'beads-detail-open)
       (neo--select-thing stack)
       (expect 'beads-client-show :to-have-been-called-with "omega-e")
-      (expect 'beads-detail-open :to-have-been-called)))
+      (expect 'beads-detail-open :to-have-been-called-with
+              '((id . "omega-e")) neo--workflow-detail-buffer-name)))
 
   (it "errors when there is no bead at point"
     (spy-on 'beads-detail-open)
