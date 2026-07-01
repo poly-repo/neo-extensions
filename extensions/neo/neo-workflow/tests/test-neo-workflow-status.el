@@ -32,6 +32,11 @@
   (defun vtable-end-of-table () nil)
   (provide 'vtable))
 
+;; Mock beads-detail so the RET-to-detail path loads without the sibling ext.
+(unless (featurep 'beads-detail)
+  (defun beads-detail-open (_issue) nil)
+  (provide 'beads-detail))
+
 ;; Mock neo-workflow-context.
 (unless (featurep 'neo-workflow-context)
   (provide 'neo-workflow-context))
@@ -378,6 +383,39 @@
       (spy-on 'beads-client-close)
       (neo--close-issue-at-point)
       (expect 'beads-client-close :not :to-have-been-called))))
+
+;; ============================================================
+;; RET: open bead detail window
+;; ============================================================
+
+(describe "neo--select-thing"
+  (it "fetches the full bead for an issue and opens the detail window"
+    (let ((issue (make-neo-issue
+                  :id "omega-7" :number 7 :title "Detail me"
+                  :type "task" :labels nil :state 'open :draft 0
+                  :created-at nil :updated-at nil :closed-at nil
+                  :merged-at nil :repository-id "r" :stack nil :ui-state nil))
+          (full '((id . "omega-7") (description . "Full text"))))
+      (spy-on 'beads-client-show :and-return-value full)
+      (spy-on 'beads-detail-open)
+      (neo--select-thing issue)
+      (expect 'beads-client-show :to-have-been-called-with "omega-7")
+      (expect 'beads-detail-open :to-have-been-called-with full)))
+
+  (it "opens the detail window for an epic (a stack) using its beads id"
+    (let ((stack (make-neo-stack :id "omega-e" :name "e-epic" :title "Epic"
+                                 :prefix nil :issue-id "omega-e" :branch nil
+                                 :children-stacks nil)))
+      (spy-on 'beads-client-show :and-return-value '((id . "omega-e")))
+      (spy-on 'beads-detail-open)
+      (neo--select-thing stack)
+      (expect 'beads-client-show :to-have-been-called-with "omega-e")
+      (expect 'beads-detail-open :to-have-been-called)))
+
+  (it "errors when there is no bead at point"
+    (spy-on 'beads-detail-open)
+    (expect (neo--select-thing nil) :to-throw 'user-error)
+    (expect 'beads-detail-open :not :to-have-been-called)))
 
 ;; ============================================================
 ;; Phase 5: in-memory context store

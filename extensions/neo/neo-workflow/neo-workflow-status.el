@@ -10,6 +10,7 @@
 (require 'neo-workflow-db)
 (require 'neo-workflow-git)
 (require 'neo-workflow-context)
+(require 'beads-detail)
 (require 'vtable)
 
 (defgroup neo-workflow-status nil
@@ -468,9 +469,21 @@ Each workspace section is one vtable, so this jumps to the next workspace."
   "Update TABLE replacing OLD object with NEW."
   (vtable-update-object table new old))
 
-(defun neo--select-thing (_object)
-  "Select OBJECT (interactive stub)."
-  (interactive))
+(defun neo--select-thing (object)
+  "Open a detail window for OBJECT showing the full bead.
+OBJECT is the `neo-issue' (a task) or `neo-stack' (an epic) at point.  The
+board structs only carry summary fields, so this fetches the complete beads
+issue — including its full description — with `beads-client-show' and displays
+it via `beads-detail-open' in a window below the board."
+  (interactive)
+  (let ((id (cond ((neo-issue-p object) (neo-issue-id object))
+                  ((neo-stack-p object) (neo-stack-id object)))))
+    (if id
+        (condition-case err
+            (beads-detail-open (beads-client-show id))
+          (beads-client-error
+           (user-error "Failed to load bead %s: %s" id (cadr err))))
+      (user-error "No bead at point"))))
 
 (defun neo--toggle-object-visibility (object)
   "Toggle the expanded/collapsed state of OBJECT.
