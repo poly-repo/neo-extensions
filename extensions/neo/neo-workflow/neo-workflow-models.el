@@ -70,6 +70,8 @@
 (cl-defstruct neo-issue
   id                ;; string (beads issue id)
   number            ;; integer (beads sequence number, converted from id)
+  short-id          ;; string (beads id minus workspace prefix, e.g. "11sv")
+  priority          ;; integer 0-4 (beads priority) or nil
   title             ;; string or nil
   type              ;; string (beads issue type)
   labels            ;; list of neo-label
@@ -80,7 +82,8 @@
   closed-at         ;; string or nil
   merged-at         ;; string or nil (unused)
   repository-id     ;; string (workspace path)
-  stack             ;; neo-stack or nil (set when issue has an active branch)
+  stack             ;; neo-stack or nil (parent epic when this issue has one)
+  prefix            ;; string tree-indent prefix (set during board rendering)
   ui-state)         ;; string ("expanded" or "collapsed")
 
 (cl-defstruct neo-context
@@ -132,6 +135,20 @@ Returns 0 if the ID cannot be parsed."
   (let ((parent (or (alist-get 'parent alist) (cdr (assoc "parent" alist)))))
     (and (stringp parent) (not (string-empty-p parent)) parent)))
 
+(defun neo--beads-issue-priority (alist)
+  "Return the integer priority (0-4) from a beads ALIST, or nil when absent."
+  (let ((p (or (alist-get 'priority alist) (cdr (assoc "priority" alist)))))
+    (cond ((integerp p) p)
+          ((and (stringp p) (string-match-p "\\`[0-9]+\\'" p)) (string-to-number p))
+          (t nil))))
+
+(defun neo--beads-short-id (id)
+  "Return ID without its workspace prefix, e.g. \"omega-11sv\" -> \"11sv\".
+Falls back to ID itself when there is no prefix."
+  (if (and id (string-match "-\\([^-]+\\)\\'" id))
+      (match-string 1 id)
+    (or id "")))
+
 (defun neo--beads-labels-to-neo-labels (labels-data repository-id)
   "Convert LABELS-DATA (list of strings or alists) to a list of `neo-label' structs.
 REPOSITORY-ID is the workspace path used as the label's repository key."
@@ -179,6 +196,8 @@ REPOSITORY-ID is the workspace path (used as the stable project key)."
     (make-neo-issue
      :id id
      :number (neo--beads-issue-number id)
+     :short-id (neo--beads-short-id id)
+     :priority (neo--beads-issue-priority alist)
      :title (or title "")
      :type (format "%s" issue-type)
      :labels (neo--beads-labels-to-neo-labels labels-raw repository-id)
@@ -190,6 +209,7 @@ REPOSITORY-ID is the workspace path (used as the stable project key)."
      :merged-at nil
      :repository-id repository-id
      :stack nil
+     :prefix nil
      :ui-state nil)))
 
 ;; ============================================================

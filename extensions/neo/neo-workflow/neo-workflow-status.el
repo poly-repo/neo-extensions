@@ -144,50 +144,35 @@
 ;; Priority logic
 ;; ============================================================
 
+;; Priority is a first-class beads field (integer 0-4), not a label.
+(defconst neo--priority-min 0 "Highest beads priority (P0, most important).")
+(defconst neo--priority-max 4 "Lowest beads priority (P4, backlog).")
+
 (defconst neo--priority-labels
   '("low" "mid" "high" "critical")
-  "Label names mapped to icons in their own column.")
+  "Legacy priority label names, still filtered out of the Labels column.")
 
-(defvar neo--priority-icons
-  '(("critical" . "🔥")
-    ("high"     . "P1")
-    ("mid"      . "P2")
-    ("low"      . "P3"))
-  "Alist mapping priority names to display icons.")
+(defconst neo--priority-field-display
+  '((0 . ("🔥" . neo-workflow-priority-icon-critical-face))
+    (1 . ("P1" . neo-workflow-priority-icon-high-face))
+    (2 . ("P2" . neo-workflow-priority-icon-mid-face))
+    (3 . ("P3" . neo-workflow-priority-icon-low-face))
+    (4 . ("P4" . neo-workflow-priority-icon-low-face)))
+  "Map a beads priority integer to its (ICON . FACE) for the Pri column.")
 
-(defun neo--get-priority-from-labels (labels)
-  "Extract priority from LABELS list of `neo-label' structs.
-Returns a symbol ('critical, 'high, 'medium, 'low) or nil."
-  (let* ((label-names (mapcar #'neo-label-name labels))
-         (found-priority nil))
-    (dolist (p neo--priority-labels)
-      (when (cl-member p label-names :test #'string-equal)
-        (setq found-priority p)))
-    (when found-priority (intern found-priority))))
-
-(defun neo--get-priority-face (priority)
-  "Return face for a given PRIORITY symbol."
-  (pcase priority
-    ('critical 'neo-workflow-priority-critical-face)
-    ('high 'neo-workflow-priority-high-face)
-    ('medium 'neo-workflow-priority-medium-face)
-    ('low 'neo-workflow-priority-low-face)
-    (_ nil)))
-
-(defun neo--priority (issue)
-  "Return the priority label string for ISSUE, or \"\" if none."
-  (let* ((labels (mapcar #'neo-label-name (neo-issue-labels issue)))
-         (found-priority nil))
-    (dolist (p neo--priority-labels)
-      (when (cl-member p labels :test #'string-equal)
-        (setq found-priority p)))
-    (or found-priority "")))
+(defun neo--priority-icon (issue)
+  "Return a propertized priority icon for ISSUE from its beads priority field.
+Returns an empty string when the issue has no priority."
+  (let* ((priority (neo-issue-priority issue))
+         (entry (and priority (cdr (assq priority neo--priority-field-display)))))
+    (if entry
+        (propertize (car entry) 'face (cdr entry))
+      "")))
 
 (defun neo--get-issue-priority-score (issue)
-  "Return a numeric score for ISSUE priority.  Lower is higher priority."
-  (let ((priority-name (neo--priority issue)))
-    (or (cl-position priority-name '("critical" "high" "mid" "low") :test #'string-equal)
-        99)))
+  "Return ISSUE's priority as a sort score (lower = higher priority).
+Issues with no priority sort last."
+  (or (neo-issue-priority issue) 99))
 
 (defun neo--sort-issues (issues)
   "Sort ISSUES by priority if `neo/workflow-sort-by-priority' is non-nil."
@@ -198,35 +183,13 @@ Returns a symbol ('critical, 'high, 'medium, 'low) or nil."
                  (neo--get-issue-priority-score b))))
     issues))
 
-(defun neo--get-priority-icon-face (priority-name)
-  "Return face for a given PRIORITY-NAME string."
-  (pcase priority-name
-    ("critical" 'neo-workflow-priority-icon-critical-face)
-    ("high" 'neo-workflow-priority-icon-high-face)
-    ("mid" 'neo-workflow-priority-icon-mid-face)
-    ("low" 'neo-workflow-priority-icon-low-face)
-    (_ nil)))
-
-(defun neo--priority-icon (issue)
-  "Return a propertized priority icon string for ISSUE."
-  (let ((priority-name (neo--priority issue)))
-    (if (string-empty-p priority-name)
-        ""
-      (let* ((icon (alist-get priority-name neo--priority-icons "" nil #'string-equal))
-             (face (neo--get-priority-icon-face priority-name)))
-        (propertize icon 'face face)))))
-
 (defun neo--new-priority (issue direction)
-  "Return the new priority for ISSUE given DIRECTION (1 up, -1 down)."
-  (let* ((current (neo--priority issue))
-         (idx (if (string-empty-p current)
-                  -1
-                (cl-position current neo--priority-labels :test #'string-equal)))
-         (new-idx (max -1 (min (1- (length neo--priority-labels))
-                               (+ idx direction)))))
-    (if (= new-idx -1)
-        ""
-      (nth new-idx neo--priority-labels))))
+  "Return ISSUE's new priority integer after stepping DIRECTION.
+DIRECTION 1 raises priority (toward P0); -1 lowers it (toward P4).  Issues
+with no priority start at P4 (backlog)."
+  (let* ((current (or (neo-issue-priority issue) neo--priority-max))
+         (stepped (- current direction)))
+    (max neo--priority-min (min neo--priority-max stepped))))
 
 ;; ============================================================
 ;; Label rendering
@@ -303,11 +266,13 @@ excluding priority labels."
       branch-name)))
 
 (defun neo--propertize-issue-title (issue)
-  "Return a propertized title string for ISSUE."
+  "Return a propertized title string for ISSUE, including its tree indent."
   (let ((branch-name (neo--get-branch-name issue)))
-    (propertize (neo-issue-title issue)
-                'face (neo--final-issue-title-face issue)
-                'help-echo (when branch-name (format "branch: %s" branch-name)))))
+    (concat
+     (or (neo-issue-prefix issue) "")
+     (propertize (neo-issue-title issue)
+                 'face (neo--final-issue-title-face issue)
+                 'help-echo (when branch-name (format "branch: %s" branch-name))))))
 
 (defun neo--propertize-stack-title (stack)
   "Return a propertized title string for STACK."
@@ -342,89 +307,52 @@ excluding priority labels."
         (push issue inactive)))
     (cons (nreverse active) (nreverse inactive))))
 
-(defun neo--build-stack-index (issues stacks)
-  "Build indices needed for stack expansion.
-
-Returns a plist:
-  :stacks-by-name   hash-table stack-name -> stack
-  :issues-by-stack  hash-table stack-name -> list of issues
-  :parent-issue     hash-table stack-name -> parent issue (or nil)"
-  (let ((stacks-by-name (make-hash-table :test #'equal))
-        (issues-by-stack (make-hash-table :test #'equal))
-        (parent-issue (make-hash-table :test #'equal)))
-
-    (dolist (stack stacks)
-      (puthash (neo-stack-name stack) stack stacks-by-name))
-
-    (dolist (issue issues)
-      (let ((stack (neo-issue-stack issue)))
-        (when stack
-          (push issue (gethash (neo-stack-name stack) issues-by-stack)))))
-
-    (maphash
-     (lambda (stack-name _)
-       (when (string-match "^\\([0-9]+\\)-" stack-name)
-         (let* ((num (string-to-number (match-string 1 stack-name)))
-                (parent (seq-find
-                         (lambda (i) (= (neo-issue-number i) num))
-                         issues)))
-           (puthash stack-name parent parent-issue))))
-     stacks-by-name)
-
-    (list
-     :stacks-by-name stacks-by-name
-     :issues-by-stack issues-by-stack
-     :parent-issue parent-issue)))
-
-(defun neo--expand-stack (stack)
-  "Expand a STACK into a flat list, computing tree prefixes."
-  (cl-labels ((compute-prefixes (s prefix is-last)
-                (let ((connector (if prefix (if is-last "└─ " "├─ ") "")))
-                  (setf (neo-stack-prefix s) (concat prefix connector)))
-                (let* ((children (neo-stack-children-stacks s))
-                       (child-prefix (if prefix (concat prefix (if is-last "   " "│  ")) "")))
-                  (dotimes (i (length children))
-                    (let ((child (nth i children))
-                          (lastp (= i (1- (length children)))))
-                      (compute-prefixes child child-prefix lastp)))))
-              (flatten (s)
-                (cons s (mapcan #'flatten (neo-stack-children-stacks s)))))
-    (compute-prefixes stack nil nil)
-    (flatten stack)))
-
-(defun neo--expand-issue (issue _index processed)
-  "Expand ISSUE into a flat list according to stack state.
-
-_INDEX is the stack index plist (currently unused).
-PROCESSED is a list of already-expanded parent issues."
-  (let* ((stack (neo-issue-stack issue))
-         (state (neo-issue-ui-state issue)))
-    (cond
-     ((null stack)
-      (list issue))
-     ((member issue processed)
-      '())
-     ((string= state "expanded")
-      (append (list issue) (neo--expand-stack (neo-issue-stack issue))))
-     (t
-      (list issue)))))
+(defun neo--stack-collapsed-p (stack)
+  "Return non-nil when STACK (an epic) is collapsed on the board.
+Collapse state is stored in the shared UI-state table keyed by the epic id;
+stacks default to expanded so their child issues are visible."
+  (string= (or (neo-db-get-issue-ui-state (neo-stack-id stack)) "expanded")
+           "collapsed"))
 
 (defun neo--get-sorted-issues-for-repo (repo)
-  "Return issues and stacks for REPO in UI display order."
+  "Return the ordered board objects for REPO.
+Each epic renders as a header row (a `neo-stack') with its child issues
+nested beneath it (indented, sorted by priority); nested child epics recurse
+one level deeper.  Issues with no epic are listed last.  A collapsed epic
+hides its children."
   (let* ((repo-id (neo-repository-id repo))
          (repo-name (neo-repository-full-name repo))
-         (all-issues (neo-db-get-issues-for-repo repo-id))
-         (issues (neo--issue-filter all-issues repo-name))
+         (issues (neo--issue-filter (neo-db-get-issues-for-repo repo-id) repo-name))
          (stacks (neo-db-get-stacks-for-repo repo-id))
-         (parts (neo--partition-issues issues))
-         (active (sort (car parts) #'neo--compare-issues))
-         (inactive (sort (cdr parts) #'neo--compare-issues))
-         (index (neo--build-stack-index active stacks))
-         (expanded-active
-          (mapcan (lambda (issue)
-                    (neo--expand-issue issue index '()))
-                  active)))
-    (append expanded-active inactive)))
+         (issues-by-stack (make-hash-table :test #'equal))
+         (orphans '())
+         (result '()))
+    (dolist (issue issues)
+      (let ((stack (neo-issue-stack issue)))
+        (if stack
+            (push issue (gethash (neo-stack-id stack) issues-by-stack))
+          (push issue orphans))))
+    (cl-labels
+        ((emit-stack (stack depth)
+           (let ((indent (make-string (* 2 depth) ?\s))
+                 (collapsed (neo--stack-collapsed-p stack)))
+             (setf (neo-stack-prefix stack)
+                   (concat indent (if collapsed "▸ " "▾ ")))
+             (push stack result)
+             (unless collapsed
+               (let ((child-indent (make-string (* 2 (1+ depth)) ?\s)))
+                 (dolist (child (sort (gethash (neo-stack-id stack) issues-by-stack)
+                                      #'neo--compare-issues))
+                   (setf (neo-issue-prefix child) child-indent)
+                   (push child result)))
+               (dolist (child-stack (neo-stack-children-stacks stack))
+                 (emit-stack child-stack (1+ depth)))))))
+      (dolist (stack stacks)
+        (emit-stack stack 0)))
+    (dolist (issue (sort orphans #'neo--compare-issues))
+      (setf (neo-issue-prefix issue) "")
+      (push issue result))
+    (nreverse result)))
 
 ;; ============================================================
 ;; Filtering
@@ -512,6 +440,17 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
       (goto-char pos)
       (recenter-top-bottom 0))))
 
+(defun neo-workflow-next-table ()
+  "Move point to the next workspace table (bound to TAB outside a table).
+Each workspace section is one vtable, so this jumps to the next workspace."
+  (interactive)
+  (neo--repo-next))
+
+(defun neo-workflow-prev-table ()
+  "Move point to the previous workspace table (bound to \\`backtab')."
+  (interactive)
+  (neo--repo-prev))
+
 ;; ============================================================
 ;; UI state
 ;; ============================================================
@@ -534,16 +473,18 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
   (interactive))
 
 (defun neo--toggle-object-visibility (object)
-  "Toggle expanded/collapsed state of OBJECT."
+  "Toggle the expanded/collapsed state of OBJECT.
+For an epic (a `neo-stack') this shows or hides its nested child issues."
   (interactive)
-  (when (neo-issue-p object)
-    (let* ((current-state (or (neo-issue-ui-state object) "collapsed"))
-           (new-state (if (string= current-state "expanded") "collapsed" "expanded"))
-           (issue-id (neo-issue-id object))
-           (repo-id (neo-issue-repository-id object))
-           (repo-name (neo--workflow-get-repo-full-name-by-id repo-id)))
-      (neo-db-set-issue-ui-state issue-id new-state)
-      (neo/workflow-refresh repo-name issue-id))))
+  (let ((id (cond ((neo-stack-p object) (neo-stack-id object))
+                  ((neo-issue-p object) (neo-issue-id object))))
+        (repo-id (cond ((neo-issue-p object) (neo-issue-repository-id object))
+                       (t (neo--workflow-current-repository-id)))))
+    (when id
+      (let* ((current-state (or (neo-db-get-issue-ui-state id) "expanded"))
+             (new-state (if (string= current-state "expanded") "collapsed" "expanded")))
+        (neo-db-set-issue-ui-state id new-state)
+        (neo/workflow-refresh (neo--workflow-get-repo-full-name-by-id repo-id) id)))))
 
 (defun neo--objects-match-p (a b)
   "Return non-nil if A and B represent the same object."
@@ -599,19 +540,13 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
     (user-error "No issue found at point")))
 
 (defun neo--priority-change (object direction)
-  "Change the priority of OBJECT (a neo-issue) by DIRECTION."
+  "Change the beads priority of OBJECT (a neo-issue) by DIRECTION."
   (when (and object (neo-issue-p object))
-    (let* ((new-priority (neo--new-priority object direction))
-           (current-labels (mapcar #'neo-label-name (neo-issue-labels object)))
-           (other-labels (cl-remove-if (lambda (l) (member l neo--priority-labels)) current-labels))
-           (new-labels (if (string-empty-p new-priority)
-                           other-labels
-                         (cons new-priority other-labels)))
-           (issue-id (neo-issue-id object)))
+    (let ((new-priority (neo--new-priority object direction))
+          (issue-id (neo-issue-id object)))
       (condition-case err
           (progn
-            (apply #'beads-client-update issue-id
-                   (list :set-labels (string-join new-labels ",")))
+            (beads-client-update issue-id :priority new-priority)
             (neo/workflow-refresh (neo--workflow-get-repo-full-name-by-id
                                    (neo-issue-repository-id object))
                                   issue-id))
@@ -934,10 +869,10 @@ perspective, and records the choice in the in-memory context store."
    :use-header-line nil
    :separator-width 1
    :insert t
-   :columns `((:name "ID" :width 5 :align 'right
+   :columns `((:name "ID" :width 6 :align 'right
                      :getter ,(lambda (object _)
                                 (if (neo-issue-p object)
-                                    (propertize (format "%d" (neo-issue-number object))
+                                    (propertize (or (neo-issue-short-id object) "")
                                                 'face (neo--final-issue-id-face object))
                                   "")))
               (:name "Pri" :width 3 :align 'right

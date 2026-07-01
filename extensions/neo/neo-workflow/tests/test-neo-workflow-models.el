@@ -177,6 +177,29 @@
 ;; neo--project-to-repository
 ;; ============================================================
 
+(describe "neo--beads-short-id"
+  (it "strips the workspace prefix"
+    (expect (neo--beads-short-id "omega-11sv") :to-equal "11sv")
+    (expect (neo--beads-short-id "omega-123") :to-equal "123"))
+  (it "falls back to the id when there is no prefix"
+    (expect (neo--beads-short-id "solo") :to-equal "solo")))
+
+(describe "neo--beads-issue-priority"
+  (it "reads an integer priority"
+    (expect (neo--beads-issue-priority '((priority . 2))) :to-equal 2))
+  (it "coerces a numeric string"
+    (expect (neo--beads-issue-priority '((priority . "1"))) :to-equal 1))
+  (it "returns nil when absent"
+    (expect (neo--beads-issue-priority '((id . "x"))) :to-be nil)))
+
+(describe "neo--beads-alist-to-neo-issue (phase-3 fields)"
+  (it "populates short-id and priority from the beads alist"
+    (let ((issue (neo--beads-alist-to-neo-issue
+                  '((id . "omega-11sv") (title . "T") (priority . 1) (status . "open"))
+                  "wksp")))
+      (expect (neo-issue-short-id issue) :to-equal "11sv")
+      (expect (neo-issue-priority issue) :to-equal 1))))
+
 (describe "neo--project-to-repository"
   (it "converts a neo-project to a neo-repository"
     (let* ((project (make-neo-project

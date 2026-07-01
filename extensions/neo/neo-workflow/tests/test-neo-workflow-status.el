@@ -84,85 +84,69 @@
 ;; Priority extraction
 ;; ============================================================
 
-(describe "neo--get-priority-from-labels"
-  (it "returns the most-recently-listed priority label (highest wins)"
-    (let ((labels1 (list (neo--make-mock-label "bug") (neo--make-mock-label "high")))
-          (labels4 (list (neo--make-mock-label "low") (neo--make-mock-label "critical"))))
-      (expect (neo--get-priority-from-labels labels1) :to-equal 'high)
-      (expect (neo--get-priority-from-labels labels4) :to-equal 'critical)))
+(defun neo--mock-issue-pri (priority)
+  "Return a minimal neo-issue with beads PRIORITY (integer or nil)."
+  (make-neo-issue
+   :id "omega-1" :number 1 :short-id "1" :priority priority
+   :title "Mock" :type "task" :labels nil :state 'open :draft 0
+   :created-at nil :updated-at nil :closed-at nil :merged-at nil
+   :repository-id "test" :stack nil :prefix nil :ui-state nil))
 
-  (it "returns nil when no priority label is present"
-    (expect (neo--get-priority-from-labels (list (neo--make-mock-label "feature"))) :to-equal nil)
-    (expect (neo--get-priority-from-labels nil) :to-equal nil)))
+(describe "neo--priority-icon"
+  (it "renders the beads priority as a Pn / fire icon"
+    (expect (substring-no-properties (neo--priority-icon (neo--mock-issue-pri 0))) :to-equal "🔥")
+    (expect (substring-no-properties (neo--priority-icon (neo--mock-issue-pri 1))) :to-equal "P1")
+    (expect (substring-no-properties (neo--priority-icon (neo--mock-issue-pri 2))) :to-equal "P2")
+    (expect (substring-no-properties (neo--priority-icon (neo--mock-issue-pri 3))) :to-equal "P3")
+    (expect (substring-no-properties (neo--priority-icon (neo--mock-issue-pri 4))) :to-equal "P4"))
 
-(describe "neo--get-priority-face"
-  (it "maps priority symbols to faces"
-    (expect (neo--get-priority-face 'critical) :to-equal 'neo-workflow-priority-critical-face)
-    (expect (neo--get-priority-face 'high) :to-equal 'neo-workflow-priority-high-face)
-    (expect (neo--get-priority-face 'medium) :to-equal 'neo-workflow-priority-medium-face)
-    (expect (neo--get-priority-face 'low) :to-equal 'neo-workflow-priority-low-face)
-    (expect (neo--get-priority-face 'other) :to-equal nil)))
-
-(describe "neo--priority"
-  (it "returns the priority label name from an issue"
-    (expect (neo--priority (neo--make-mock-issue "bug" "high")) :to-equal "high")
-    (expect (neo--priority (neo--make-mock-issue "bug")) :to-equal "")
-    (expect (neo--priority (neo--make-mock-issue)) :to-equal ""))
-
-  (it "returns the last matched priority when multiple are present"
-    ;; neo--priority-labels order: ("low" "mid" "high" "critical")
-    ;; The loop takes the last matching member; "critical" is after "low".
-    (expect (neo--priority (neo--make-mock-issue "low" "critical")) :to-equal "critical")))
+  (it "returns an empty string when the issue has no priority"
+    (expect (neo--priority-icon (neo--mock-issue-pri nil)) :to-equal "")))
 
 (describe "neo--get-issue-priority-score"
-  (it "returns numeric score for known priorities"
-    (expect (neo--get-issue-priority-score (neo--make-mock-issue "critical")) :to-equal 0)
-    (expect (neo--get-issue-priority-score (neo--make-mock-issue "high")) :to-equal 1)
-    (expect (neo--get-issue-priority-score (neo--make-mock-issue "mid")) :to-equal 2)
-    (expect (neo--get-issue-priority-score (neo--make-mock-issue "low")) :to-equal 3))
+  (it "returns the priority integer"
+    (expect (neo--get-issue-priority-score (neo--mock-issue-pri 0)) :to-equal 0)
+    (expect (neo--get-issue-priority-score (neo--mock-issue-pri 3)) :to-equal 3))
 
-  (it "returns 99 for issues with no priority label"
-    (expect (neo--get-issue-priority-score (neo--make-mock-issue "bug")) :to-equal 99)))
+  (it "returns 99 for issues with no priority"
+    (expect (neo--get-issue-priority-score (neo--mock-issue-pri nil)) :to-equal 99)))
 
 (describe "neo--sort-issues"
-  (it "sorts by priority when neo/workflow-sort-by-priority is non-nil"
-    (let* ((issue-low  (neo--make-mock-issue "low"))
-           (issue-crit (neo--make-mock-issue "critical"))
-           (issue-high (neo--make-mock-issue "high"))
-           (issue-none (neo--make-mock-issue "bug"))
+  (it "sorts by priority ascending when neo/workflow-sort-by-priority is non-nil"
+    (let* ((p0 (neo--mock-issue-pri 0))
+           (p1 (neo--mock-issue-pri 1))
+           (p2 (neo--mock-issue-pri 2))
+           (pn (neo--mock-issue-pri nil))
            (neo/workflow-sort-by-priority t))
-      (expect (neo--sort-issues (list issue-low issue-crit issue-none issue-high))
-              :to-equal (list issue-crit issue-high issue-low issue-none))))
+      (expect (neo--sort-issues (list p2 p0 pn p1))
+              :to-equal (list p0 p1 p2 pn))))
 
   (it "preserves order when neo/workflow-sort-by-priority is nil"
-    (let* ((unsorted (list (neo--make-mock-issue "low")
-                           (neo--make-mock-issue "critical")))
+    (let* ((unsorted (list (neo--mock-issue-pri 3) (neo--mock-issue-pri 0)))
            (neo/workflow-sort-by-priority nil))
       (expect (neo--sort-issues unsorted) :to-equal unsorted))))
 
 ;; ============================================================
-;; Priority step navigation
+;; Priority step navigation (numeric beads priority)
 ;; ============================================================
 
 (describe "neo--new-priority"
-  (it "steps up from a known priority"
-    (expect (neo--new-priority (neo--make-mock-issue "low") 1) :to-equal "mid")
-    (expect (neo--new-priority (neo--make-mock-issue "mid") 1) :to-equal "high")
-    (expect (neo--new-priority (neo--make-mock-issue "high") 1) :to-equal "critical"))
+  (it "raises priority toward P0 when stepping up (direction 1)"
+    (expect (neo--new-priority (neo--mock-issue-pri 3) 1) :to-equal 2)
+    (expect (neo--new-priority (neo--mock-issue-pri 1) 1) :to-equal 0))
 
-  (it "saturates at critical when stepping up"
-    (expect (neo--new-priority (neo--make-mock-issue "critical") 1) :to-equal "critical"))
+  (it "saturates at P0 when raising"
+    (expect (neo--new-priority (neo--mock-issue-pri 0) 1) :to-equal 0))
 
-  (it "steps down from a known priority"
-    (expect (neo--new-priority (neo--make-mock-issue "critical") -1) :to-equal "high")
-    (expect (neo--new-priority (neo--make-mock-issue "high") -1) :to-equal "mid")
-    (expect (neo--new-priority (neo--make-mock-issue "mid") -1) :to-equal "low"))
+  (it "lowers priority toward P4 when stepping down (direction -1)"
+    (expect (neo--new-priority (neo--mock-issue-pri 0) -1) :to-equal 1)
+    (expect (neo--new-priority (neo--mock-issue-pri 2) -1) :to-equal 3))
 
-  (it "returns empty string when stepping below low"
-    (expect (neo--new-priority (neo--make-mock-issue "low") -1) :to-equal ""))
+  (it "saturates at P4 when lowering"
+    (expect (neo--new-priority (neo--mock-issue-pri 4) -1) :to-equal 4))
 
-  (it "starts from low when stepping up from no priority"
-    (expect (neo--new-priority (neo--make-mock-issue "bug") 1) :to-equal "low")))
+  (it "defaults to P4 (backlog) when the issue has no priority"
+    (expect (neo--new-priority (neo--mock-issue-pri nil) 1) :to-equal 3)))
 
 ;; ============================================================
 ;; Color helpers
@@ -446,3 +430,55 @@
   (it "errors when there are no stacks"
     (spy-on 'neo-db-get-all-stacks :and-return-value nil)
     (expect (neo/workflow-switch-context) :to-throw 'user-error)))
+
+;; ============================================================
+;; Board ordering: epics as headers with nested child issues
+;; ============================================================
+
+(defun neo--mock-board-issue (id priority stack)
+  "Return a mock open issue with ID, PRIORITY, and parent STACK."
+  (make-neo-issue
+   :id id :number 0 :short-id id :priority priority :title id :type "task"
+   :labels nil :state 'open :draft 0 :created-at nil :updated-at nil
+   :closed-at nil :merged-at nil :repository-id "r" :stack stack
+   :prefix nil :ui-state nil))
+
+(defun neo--mock-board-repo ()
+  "Return a mock neo-repository for board tests."
+  (make-neo-repository
+   :id "r" :full-name "r" :fork 0 :created-at nil :pushed-at nil
+   :updated-at nil :visibility "private" :forks 0 :default-branch "main"))
+
+(describe "neo--get-sorted-issues-for-repo (epic nesting)"
+  (before-each
+    (clrhash neo--workflow-issue-ui-states)
+    ;; Bypass the open/closed filter for these ordering tests.
+    (spy-on 'neo--issue-filter :and-call-fake (lambda (issues _repo) issues)))
+
+  (it "puts the epic first, its children (priority-sorted) next, orphans last"
+    (let* ((stack (make-neo-stack :id "omega-e" :name "e" :title "Epic" :prefix nil
+                                  :issue-id "omega-e" :branch nil :children-stacks nil))
+           (child-hi (neo--mock-board-issue "c-hi" 0 stack))
+           (child-lo (neo--mock-board-issue "c-lo" 3 stack))
+           (orphan   (neo--mock-board-issue "orphan" 2 nil)))
+      (spy-on 'neo-db-get-issues-for-repo :and-return-value (list child-lo orphan child-hi))
+      (spy-on 'neo-db-get-stacks-for-repo :and-return-value (list stack))
+      (let ((result (neo--get-sorted-issues-for-repo (neo--mock-board-repo))))
+        (expect (nth 0 result) :to-be stack)
+        (expect (neo-issue-id (nth 1 result)) :to-equal "c-hi")
+        (expect (neo-issue-id (nth 2 result)) :to-equal "c-lo")
+        (expect (neo-issue-id (nth 3 result)) :to-equal "orphan")
+        ;; children are indented; the orphan is not
+        (expect (> (length (neo-issue-prefix (nth 1 result))) 0) :to-be t)
+        (expect (neo-issue-prefix (nth 3 result)) :to-equal ""))))
+
+  (it "hides child issues when the epic is collapsed"
+    (let* ((stack (make-neo-stack :id "omega-e" :name "e" :title "Epic" :prefix nil
+                                  :issue-id "omega-e" :branch nil :children-stacks nil))
+           (child (neo--mock-board-issue "c" 1 stack)))
+      (neo-db-set-issue-ui-state "omega-e" "collapsed")
+      (spy-on 'neo-db-get-issues-for-repo :and-return-value (list child))
+      (spy-on 'neo-db-get-stacks-for-repo :and-return-value (list stack))
+      (let ((result (neo--get-sorted-issues-for-repo (neo--mock-board-repo))))
+        (expect (length result) :to-equal 1)
+        (expect (nth 0 result) :to-be stack)))))
