@@ -1,6 +1,11 @@
-;;; -*- lexical-binding: t -*-
+;;; neo-neo-workflow.el --- neo-workflow extension entry point -*- lexical-binding: t -*-
 
 ;;; This is neo-workflow, a NEO extension.
+;;;
+;;; NOTE: the file name is `neo-neo-workflow.el' on purpose.  The extension is
+;;; named "neo-workflow" and the NEO loader loads each extension's
+;;; `neo-<name>.el' entry file (see `neo--load-extension'), i.e.
+;;; `neo-neo-workflow.el' here.
 ;;;
 ;;; A beads + git backed reimplementation of the `workflow' board: the same
 ;;; projects -> stacks -> branches -> issues board, but issues come from beads
@@ -25,11 +30,6 @@
 ;; which this extension `:requires', so it is on the load-path by the time the
 ;; extension loads inside NEO.
 (require 'beads-client)
-
-;; Phase 2: full read path loaded.
-;; full-monty is intentionally NOT flipped to this extension until the
-;; read path is confirmed working — the existing `workflow' board continues
-;; to run in the meantime.
 
 (require 'neo-workflow-slug)
 (require 'neo-workflow-git)
