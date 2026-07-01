@@ -197,45 +197,26 @@ All args are ignored."
 ;; ============================================================
 
 (defun neo-db-get-labels-for-repo (_repo-id)
-  "Return empty list — label management is not separately tracked in Phase 2.
-Labels flow through `beads-client-list' attached to issues."
+  "Return empty list — labels are not tracked separately.
+They flow through `beads-client-list' attached to each issue."
   nil)
 
 (defun neo-db-get-labels-for-issue (_issue-id)
   "Return empty list — labels are inlined in the issue alist from beads."
   nil)
 
-;; ============================================================
-;; Sync-metadata and PR helpers — no-ops (no GitHub in Phase 2)
-;; ============================================================
-
-(defun neo-db-get-sync-metadata (_user _repository _endpoint)
-  "Return empty metadata — no GitHub sync in Phase 2."
-  (list :etag nil :last-sync-timestamp nil))
-
-(defun neo-db-update-sync-metadata (_user _repository _endpoint _etag)
-  "No-op — no GitHub sync in Phase 2."
-  nil)
-
-(defun neo-db-get-open-prs-for-repo (_repo-id)
-  "Return empty list — no GitHub PRs in Phase 2."
-  nil)
-
-(defun neo-db-get-pr (_branch-name)
-  "Return nil — no GitHub PRs in Phase 2."
-  nil)
-
 (defun neo-db-get-issue (_branch-name)
-  "Return nil — branch-to-issue mapping is Phase 4."
+  "Return nil — there is no persisted branch-to-issue mapping."
   nil)
 
 (defun neo-db-get-repository-id (_full-name)
-  "Return nil — repository lookup uses beads workspace in Phase 2."
+  "Return nil — repository lookup goes through the beads workspace."
   nil)
 
 (defun neo-stack-summary (_stack-id)
-  "Return empty summary — stacks-as-epics is Phase 3.
-STACK-ID is ignored."
+  "Return an empty per-stack summary plist.
+Aggregate branch/PR/CI counts are not computed (no GitHub); the summary UI
+in `neo-workflow-ui' renders zeros.  STACK-ID is ignored."
   (list :branches 0 :open-prs 0 :merged 0 :ci-passed 0 :ci-failed 0 :ci-skipped 0))
 
 (provide 'neo-workflow-db)

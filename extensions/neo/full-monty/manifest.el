@@ -18,7 +18,7 @@
 	    "neo:terminal"
 	    "neo:projects"
 	    "neo:programming-foundation"
-	    "neo:workflow"
+	    "neo:neo-workflow"
 	    "neo:build"
 	    "neo:python"
 	    "neo:haskell"

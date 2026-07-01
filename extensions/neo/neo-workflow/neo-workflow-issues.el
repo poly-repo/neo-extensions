@@ -16,6 +16,27 @@
 (neo/use-package tempel)
 
 ;; ============================================================
+;; Buffer-local state for the issue editing buffer
+;; ============================================================
+
+(defvar-local neo-issue-repo-full-name nil
+  "Workspace/repository name for the issue being edited.")
+(defvar-local neo-issue-number nil
+  "Beads issue id string for the issue being edited, or nil when creating.")
+(defvar-local neo-issue-original-title nil
+  "Original title of the issue being edited.")
+(defvar-local neo-issue-original-body nil
+  "Original description (Org) of the issue being edited.")
+(defvar-local neo-issue-state nil
+  "State string (\"open\"/\"closed\") of the issue being edited.")
+(defvar-local neo-issue-milestone nil
+  "Milestone of the issue being edited (unused; kept for template compat).")
+(defvar-local neo-issue-labels nil
+  "Comma-separated labels string for the issue being edited.")
+(defvar-local neo-issue-comments-formatted nil
+  "Formatted comments block for the issue being edited.")
+
+;; ============================================================
 ;; Org template for issues
 ;; ============================================================
 

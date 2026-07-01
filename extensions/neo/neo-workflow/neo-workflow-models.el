@@ -14,20 +14,6 @@
 ;; Core CL structs (shape-compatible with old workflow/)
 ;; ============================================================
 
-(cl-defstruct neo-pr
-  number
-  title
-  author
-  base
-  head
-  mergeable
-  status
-  ci
-  created-at
-  updated-at
-  url
-  issue-id)
-
 (cl-defstruct neo-branch
   name              ;; string
   pr-number         ;; integer or nil

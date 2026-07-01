@@ -392,10 +392,10 @@ Returns a plist:
     (compute-prefixes stack nil nil)
     (flatten stack)))
 
-(defun neo--expand-issue (issue index processed)
+(defun neo--expand-issue (issue _index processed)
   "Expand ISSUE into a flat list according to stack state.
 
-INDEX is the stack index plist.
+_INDEX is the stack index plist (currently unused).
 PROCESSED is a list of already-expanded parent issues."
   (let* ((stack (neo-issue-stack issue))
          (state (neo-issue-ui-state issue)))
