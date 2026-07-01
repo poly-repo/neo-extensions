@@ -7,7 +7,10 @@
  :categories (neo) ; not sure what the intention for this was
  :keywords (programming project)
 
- :requires (neo:project neo:better-git neo:programming-foundation)
+ ;; NOTE: requires MUST be strings — `neo--normalize-requires' keeps a list
+ ;; as-is and the topo-sort matches these against the string slug keys, so
+ ;; symbol requires silently create no dependency edge (wrong load order).
+ :requires ("neo:projects" "neo:better-git" "neo:programming-foundation")
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"
