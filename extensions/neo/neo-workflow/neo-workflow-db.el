@@ -151,31 +151,36 @@ REPOSITORY-ID is accepted for signature compat but ignored."
   nil)
 
 ;; ============================================================
-;; Issue write-path stubs (Phase 4)
+;; Write-path compat no-ops
+;;
+;; There is no local database: writes go straight to beads
+;; (`beads-client-create/update/close', see `neo-workflow-issues' and the
+;; stack commands in `neo-workflow-status') and to git (branches/worktrees).
+;; The board re-reads from beads + git on every refresh, so these legacy
+;; persistence hooks intentionally do nothing.
 ;; ============================================================
 
 (defun neo-db-upsert-issue (_issue)
-  "No-op stub — issue writes via beads are Phase 4.
-ISSUE is ignored; the board always re-reads from beads on refresh."
+  "No-op — issue writes go directly to beads; the board re-reads on refresh.
+ISSUE is ignored."
   nil)
 
 (defun neo-db-insert-branch (_name _repository-id &rest _args)
-  "No-op stub — branch writes are Phase 4.
-All args are ignored."
+  "No-op — branches live in git and are read live.  All args are ignored."
   nil)
 
 (defun neo-db-insert-stack (_name _branch-name _issue-id _repository-id &rest _args)
-  "No-op stub — stack writes (beads epic creation) are Phase 4.
+  "No-op — stacks are beads epics created via `beads-client-create'.
 All args are ignored."
   nil)
 
 (defun neo-db-insert-project (_id _repo _type &rest _args)
-  "No-op stub — projects are discovered from the beads workspace in Phase 2.
+  "No-op — projects are discovered from the beads workspace.
 All args are ignored."
   nil)
 
 (defun neo-db-insert-project-stack (_project _stack)
-  "No-op stub — project/stack association is Phase 4."
+  "No-op — project/stack association is derived from beads, not persisted."
   nil)
 
 ;; ============================================================

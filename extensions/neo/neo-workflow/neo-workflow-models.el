@@ -251,16 +251,22 @@ Returns a `neo-branch' struct, or nil if the branch does not exist."
 ;; stack on their `stack' slot (set in `neo-db-get-issues-for-repo').
 ;; ============================================================
 
+(defun neo--workflow-slug-prefix (id)
+  "Return the stack/branch-name prefix for a beads ID.
+Uses the numeric sequence number when ID has a numeric suffix (e.g.
+\"omega-123\" -> 123); otherwise falls back to the full ID (e.g. hash-style
+\"omega-11sv\"), so every stack name stays unique and stable."
+  (let ((number (neo--beads-issue-number id)))
+    (if (> number 0) number id)))
+
+(defun neo--workflow-stack-name (id title)
+  "Return the \"<prefix>-<slug>\" stack/branch name for beads ID and TITLE."
+  (neo-issue-title-to-slug (neo--workflow-slug-prefix id) (or title "")))
+
 (defun neo--workflow-epic-stack-name (epic-alist)
-  "Return the \"<prefix>-<slug>\" stack/branch name for EPIC-ALIST.
-The prefix is the epic's numeric sequence number when its beads ID has a
-numeric suffix (e.g. \"omega-123\" -> 123); otherwise it falls back to the
-full beads ID (e.g. hash-style \"omega-11sv\"), so every stack name stays
-unique and stable."
-  (let* ((id (neo--beads-issue-id epic-alist))
-         (number (neo--beads-issue-number id))
-         (prefix (if (> number 0) number id)))
-    (neo-issue-title-to-slug prefix (or (neo--beads-issue-title epic-alist) ""))))
+  "Return the \"<prefix>-<slug>\" stack/branch name for EPIC-ALIST."
+  (neo--workflow-stack-name (neo--beads-issue-id epic-alist)
+                            (neo--beads-issue-title epic-alist)))
 
 (defun neo--workflow-epic-to-stack (epic-alist children-by-parent repository-id)
   "Build a `neo-stack' from EPIC-ALIST.

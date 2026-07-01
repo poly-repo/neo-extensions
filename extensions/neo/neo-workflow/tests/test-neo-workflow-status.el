@@ -318,3 +318,79 @@
       ;; Default filter (nil global filter → per-repo defaults to open)
       (expect (neo--issue-filter (list open-issue closed-issue) "test-repo")
               :to-equal (list open-issue)))))
+
+;; ============================================================
+;; Phase 4: write path (stack create / issue close)
+;; ============================================================
+
+(describe "neo--append (stack creation)"
+  (before-each
+    ;; Never touch git or the real refresh during unit tests.
+    (spy-on 'neo--workflow-create-stack-branch :and-return-value "branch")
+    (spy-on 'neo/workflow-refresh))
+
+  (it "promotes an issue without a stack into a beads epic"
+    (spy-on 'beads-client-update)
+    (let ((issue (make-neo-issue
+                  :id "omega-42" :number 42 :title "Do the thing"
+                  :type "task" :labels nil :state 'open :draft 0
+                  :created-at nil :updated-at nil :closed-at nil
+                  :merged-at nil :repository-id "r" :stack nil :ui-state nil)))
+      (neo--append issue)
+      (expect 'beads-client-update :to-have-been-called-with
+              "omega-42" :issue-type "epic")
+      (expect 'neo--workflow-create-stack-branch :to-have-been-called-with
+              "42-do-the-thing")))
+
+  (it "creates a child epic under an existing stack, parented to it"
+    (spy-on 'beads-client-create :and-return-value '((id . "omega-child")))
+    (spy-on 'read-string :and-return-value "Sub effort")
+    (let ((stack (make-neo-stack :id "omega-100" :name "100-parent"
+                                 :title "Parent" :prefix nil
+                                 :issue-id "omega-100" :branch nil
+                                 :children-stacks nil)))
+      (neo--append stack)
+      (expect 'beads-client-create :to-have-been-called-with
+              "Sub effort" :issue-type "epic" :parent "omega-100")
+      (expect 'neo--workflow-create-stack-branch :to-have-been-called-with
+              "omega-child-sub-effort")))
+
+  (it "does nothing when the child stack title is empty"
+    (spy-on 'beads-client-create)
+    (spy-on 'read-string :and-return-value "")
+    (let ((stack (make-neo-stack :id "omega-100" :name "100-parent"
+                                 :title "Parent" :prefix nil
+                                 :issue-id "omega-100" :branch nil
+                                 :children-stacks nil)))
+      (neo--append stack)
+      (expect 'beads-client-create :not :to-have-been-called))))
+
+(describe "neo--close-issue-at-point"
+  (before-each
+    (spy-on 'neo/workflow-refresh))
+
+  (it "closes the issue at point after confirmation"
+    (let ((issue (make-neo-issue
+                  :id "omega-9" :number 9 :title "Close me"
+                  :type "task" :labels nil :state 'open :draft 0
+                  :created-at nil :updated-at nil :closed-at nil
+                  :merged-at nil :repository-id "r" :stack nil :ui-state nil)))
+      (spy-on 'vtable-current-table :and-return-value t)
+      (spy-on 'vtable-current-object :and-return-value issue)
+      (spy-on 'yes-or-no-p :and-return-value t)
+      (spy-on 'beads-client-close)
+      (neo--close-issue-at-point)
+      (expect 'beads-client-close :to-have-been-called-with "omega-9")))
+
+  (it "does not close when the user declines"
+    (let ((issue (make-neo-issue
+                  :id "omega-9" :number 9 :title "Close me"
+                  :type "task" :labels nil :state 'open :draft 0
+                  :created-at nil :updated-at nil :closed-at nil
+                  :merged-at nil :repository-id "r" :stack nil :ui-state nil)))
+      (spy-on 'vtable-current-table :and-return-value t)
+      (spy-on 'vtable-current-object :and-return-value issue)
+      (spy-on 'yes-or-no-p :and-return-value nil)
+      (spy-on 'beads-client-close)
+      (neo--close-issue-at-point)
+      (expect 'beads-client-close :not :to-have-been-called))))

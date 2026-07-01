@@ -578,6 +578,26 @@ FILTER-TYPE must be one of 'open, 'closed, 'active, or 'all."
       (neo-workflow-issue-open-template repo-name)
     (user-error "No workspace found at point")))
 
+(defun neo--close-issue-at-point ()
+  "Close the beads issue at point after confirmation."
+  (interactive)
+  (if-let* ((object (and (vtable-current-table) (vtable-current-object)))
+            (_ (neo-issue-p object))
+            (issue-id (neo-issue-id object)))
+      (when (yes-or-no-p (format "Close issue %s (%s)? "
+                                 issue-id (neo-issue-title object)))
+        (condition-case err
+            (progn
+              (beads-client-close issue-id)
+              (message "Closed issue %s." issue-id)
+              (neo/workflow-refresh
+               (neo--workflow-get-repo-full-name-by-id
+                (neo-issue-repository-id object))
+               issue-id))
+          (beads-client-error
+           (user-error "Failed to close issue %s: %s" issue-id (cadr err)))))
+    (user-error "No issue found at point")))
+
 (defun neo--priority-change (object direction)
   "Change the priority of OBJECT (a neo-issue) by DIRECTION."
   (when (and object (neo-issue-p object))
@@ -684,21 +704,77 @@ Phase 4 note: write-path (branch creation, beads-client-update) is stubbed."
                   (neo--workflow-git-run "worktree" "add" worktree-path branch-name)))
               (message "Switched to worktree: %s" worktree-path)))
 
-          ;; NOTE: beads issue update (linking branch) is Phase 4
-          (message "Activated issue %s on branch %s (beads link is Phase 4)"
+          ;; Claim the issue in beads (mark it in progress) now that work started.
+          (condition-case err
+              (beads-client-update (neo-issue-id issue) :status "in_progress")
+            (beads-client-error
+             (message "neo-workflow: could not claim issue %s: %s"
+                      (neo-issue-id issue) (cadr err))))
+          (message "Activated issue %s on branch %s"
                    (neo-issue-id issue) branch-name)
           (neo/workflow-refresh (neo--workflow-get-repo-full-name-by-id repo-id)
                                 (neo-issue-id issue)))
       (message "Cannot activate: project root not found"))))
 
+(defun neo--workflow-create-stack-branch (name)
+  "Create a git branch NAME off HEAD in the current project, if it doesn't exist.
+Creates the branch without checking it out; activation/checkout is `neo--hack'.
+Returns NAME."
+  (let* ((project (neo--workflow-beads-workspace-as-project))
+         (repo-path (and project (neo-project-worktree-path project))))
+    (when repo-path
+      (let ((default-directory repo-path))
+        (unless (neo/workflow-git-branch-exists name)
+          (neo/workflow-git-create-branch name "HEAD")))))
+  name)
+
+(defun neo--workflow-promote-issue-to-stack (issue)
+  "Promote ISSUE to a stack by converting its beads issue to an epic.
+Also creates the stack's git branch.  The board re-reads from beads on
+refresh, so the promoted issue then renders as a stack."
+  (let* ((id (neo-issue-id issue))
+         (name (neo--workflow-stack-name id (neo-issue-title issue))))
+    (condition-case err
+        (progn
+          (beads-client-update id :issue-type "epic")
+          (neo--workflow-create-stack-branch name)
+          (message "Promoted issue %s to stack '%s'." id name))
+      (beads-client-error
+       (user-error "Failed to promote issue %s to a stack: %s" id (cadr err))))))
+
+(defun neo--workflow-create-child-stack (parent-stack)
+  "Create a child stack (beads epic) under PARENT-STACK, with a git branch."
+  (let ((title (read-string "New child stack title: ")))
+    (unless (string-empty-p title)
+      (condition-case err
+          (let* ((epic (beads-client-create
+                        title
+                        :issue-type "epic"
+                        :parent (neo-stack-id parent-stack)))
+                 (id (or (alist-get 'id epic) (cdr (assoc "id" epic))))
+                 (name (neo--workflow-stack-name id title)))
+            (neo--workflow-create-stack-branch name)
+            (message "Created child stack '%s' under %s."
+                     name (neo-stack-name parent-stack)))
+        (beads-client-error
+         (user-error "Failed to create child stack: %s" (cadr err)))))))
+
 (defun neo--append (object)
-  "Create a child stack for OBJECT (Phase 4 stub)."
+  "Create a stack for OBJECT (a beads epic) and its git branch.
+An issue without a stack is promoted to a stack; an object that already has
+a stack gets a new child stack nested under it."
   (interactive)
-  (message "Stack creation (beads epic) is Phase 4. Object: %s"
-           (cond
-            ((neo-issue-p object) (format "issue #%d" (neo-issue-number object)))
-            ((neo-stack-p object) (format "stack %s" (neo-stack-name object)))
-            (t "?")))
+  (let ((parent-stack (cond
+                       ((neo-stack-p object) object)
+                       ((and (neo-issue-p object) (neo-issue-stack object))
+                        (neo-issue-stack object)))))
+    (cond
+     ((and (neo-issue-p object) (not (neo-issue-stack object)))
+      (neo--workflow-promote-issue-to-stack object))
+     (parent-stack
+      (neo--workflow-create-child-stack parent-stack))
+     (t
+      (user-error "Cannot create a stack for this object"))))
   (neo/workflow-refresh))
 
 (defun neo/workflow-switch-context ()
@@ -827,7 +903,8 @@ Phase 4 note: write-path (branch creation, beads-client-update) is stubbed."
     "F a" #'neo--filter-global-active
     "F o" #'neo--filter-global-open
     "+"   #'neo--new-issue-for-repo
-    "e"   #'neo--edit-issue-at-point)
+    "e"   #'neo--edit-issue-at-point
+    "c"   #'neo--close-issue-at-point)
   "Keymap for actions over the entire vtable.")
 
 (defun neo/workflow-make-vtable (objects-fn)

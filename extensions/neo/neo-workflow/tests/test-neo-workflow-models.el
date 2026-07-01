@@ -215,6 +215,20 @@
   (it "defaults the type to task"
     (expect (neo--beads-issue-type-string '((id . "x"))) :to-equal "task")))
 
+(describe "neo--workflow-slug-prefix"
+  (it "uses the numeric sequence number for a numeric beads id"
+    (expect (neo--workflow-slug-prefix "omega-100") :to-equal 100))
+  (it "falls back to the full id for a hash-style beads id"
+    (expect (neo--workflow-slug-prefix "omega-11sv") :to-equal "omega-11sv")))
+
+(describe "neo--workflow-stack-name"
+  (it "builds a numeric-prefixed name"
+    (expect (neo--workflow-stack-name "omega-100" "Build the thing")
+            :to-equal "100-build-the-thing"))
+  (it "builds an id-prefixed name for hash-style ids"
+    (expect (neo--workflow-stack-name "omega-11sv" "Sub effort")
+            :to-equal "omega-11sv-sub-effort")))
+
 (describe "neo--workflow-epic-stack-name"
   (it "builds a <number>-<slug> name for a numeric beads id"
     (expect (neo--workflow-epic-stack-name
