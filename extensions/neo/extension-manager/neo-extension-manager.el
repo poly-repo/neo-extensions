@@ -63,5 +63,13 @@
     (with-current-buffer buf
       (setq-local neo/manager-quit-function quit-fn))))
 
+(neo/application "Neo Extensions"
+  :setup (neo/manager-show)
+  :bind "n"
+  ;; `neo/manager-show' runs its own `neo/with-ui-session' and binds "q"
+  ;; to `neo/manager-quit-function' in `neo/manager-mode-map'; leave it
+  ;; untouched rather than overriding with the default quit keys.
+  :quit-keys nil)
+
 
 ;;; Note, no (provide 'neo-neo-manager) here, extensions are loaded not required.
