@@ -23,6 +23,11 @@
 (defvar neo--workflow-issue-ui-states (make-hash-table :test 'equal)
   "Hash table: issue-id -> STATE string (\"expanded\" or \"collapsed\").")
 
+(defvar neo--workflow-contexts (make-hash-table :test 'equal)
+  "In-memory workflow contexts (replaces the SQLite `contexts' table).
+Keys are (REPO-ID . STACK-ID) -> perspective name string; a per-repo
+(REPO-ID . :current) -> STACK-ID entry records the repo's active stack.")
+
 ;; ============================================================
 ;; UI-state API (replaces the SQLite-backed equivalents)
 ;; ============================================================
@@ -118,11 +123,8 @@ Flattens nested child stacks; consumed by the summary UI in
 
 (defun neo-db-get-branch-for-stack (stack-id)
   "Return the live `neo-branch' for STACK-ID's epic, or nil when none exists."
-  (when-let* ((stack (seq-find
-                      (lambda (s) (equal (neo-stack-id s) stack-id))
-                      (neo--workflow-flatten-stacks
-                       (neo--workflow-all-stacks
-                        (neo--workflow-current-repository-id))))))
+  (when-let* ((stack (neo-load-stack-by-id
+                      stack-id (neo--workflow-current-repository-id))))
     (neo-stack-branch stack)))
 
 ;; ============================================================
@@ -135,20 +137,27 @@ REPOSITORY-ID is accepted for signature compat but ignored."
   (neo-load-branch-from-git name))
 
 ;; ============================================================
-;; Context API (in-memory stubs for Phase 2)
+;; Context API (in-memory; not persisted across restarts)
 ;; ============================================================
 
-(defun neo/workflow-db-upsert-context (_repo-id _stack-id _perspective)
-  "No-op — in-memory context persistence is Phase 5."
-  nil)
+(defun neo/workflow-db-upsert-context (repo-id stack-id perspective)
+  "Record PERSPECTIVE for REPO-ID/STACK-ID and mark it the repo's current stack.
+Returns PERSPECTIVE."
+  (puthash (cons repo-id stack-id) perspective neo--workflow-contexts)
+  (puthash (cons repo-id :current) stack-id neo--workflow-contexts)
+  perspective)
 
-(defun neo/workflow-db-get-context (_repo-id)
-  "Return nil — in-memory context persistence is Phase 5."
-  nil)
+(defun neo/workflow-db-get-context (repo-id)
+  "Return the current context plist for REPO-ID, or nil.
+Plist shape: (:repository-id ID :stack-id ID :perspective NAME)."
+  (let ((stack-id (gethash (cons repo-id :current) neo--workflow-contexts)))
+    (when-let* ((perspective (gethash (cons repo-id stack-id) neo--workflow-contexts)))
+      (list :repository-id repo-id :stack-id stack-id :perspective perspective))))
 
-(defun neo/workflow-db-get-context-by-stack (_repo-id _stack-id)
-  "Return nil — in-memory context persistence is Phase 5."
-  nil)
+(defun neo/workflow-db-get-context-by-stack (repo-id stack-id)
+  "Return the context plist for REPO-ID/STACK-ID, or nil."
+  (when-let* ((perspective (gethash (cons repo-id stack-id) neo--workflow-contexts)))
+    (list :repository-id repo-id :stack-id stack-id :perspective perspective)))
 
 ;; ============================================================
 ;; Write-path compat no-ops

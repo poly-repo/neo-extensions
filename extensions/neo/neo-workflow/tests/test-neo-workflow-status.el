@@ -394,3 +394,55 @@
       (spy-on 'beads-client-close)
       (neo--close-issue-at-point)
       (expect 'beads-client-close :not :to-have-been-called))))
+
+;; ============================================================
+;; Phase 5: in-memory context store
+;; ============================================================
+
+(describe "neo-db context store"
+  (before-each
+    (clrhash neo--workflow-contexts))
+
+  (it "returns nil for a repo with no context"
+    (expect (neo/workflow-db-get-context "repo-x") :to-be nil))
+
+  (it "stores and retrieves the current context for a repo"
+    (neo/workflow-db-upsert-context "repo-x" "omega-100" "100-persp")
+    (let ((ctx (neo/workflow-db-get-context "repo-x")))
+      (expect (plist-get ctx :repository-id) :to-equal "repo-x")
+      (expect (plist-get ctx :stack-id) :to-equal "omega-100")
+      (expect (plist-get ctx :perspective) :to-equal "100-persp")))
+
+  (it "retrieves a context by stack independent of the current one"
+    (neo/workflow-db-upsert-context "repo-x" "omega-100" "p100")
+    (neo/workflow-db-upsert-context "repo-x" "omega-200" "p200")
+    ;; Current is now omega-200, but the omega-100 mapping is still queryable.
+    (expect (plist-get (neo/workflow-db-get-context "repo-x") :stack-id)
+            :to-equal "omega-200")
+    (expect (plist-get (neo/workflow-db-get-context-by-stack "repo-x" "omega-100")
+                       :perspective)
+            :to-equal "p100"))
+
+  (it "updates the perspective for an existing stack"
+    (neo/workflow-db-upsert-context "repo-x" "omega-100" "old")
+    (neo/workflow-db-upsert-context "repo-x" "omega-100" "new")
+    (expect (plist-get (neo/workflow-db-get-context-by-stack "repo-x" "omega-100")
+                       :perspective)
+            :to-equal "new")))
+
+(describe "neo/workflow-switch-context"
+  (before-each
+    (clrhash neo--workflow-contexts))
+
+  (it "records the chosen stack's context (no perspective library in batch)"
+    (spy-on 'neo-db-get-all-stacks :and-return-value
+            '((:id "omega-100" :name "100-parent" :repository-id "repo-x" :title "Parent")))
+    (spy-on 'completing-read :and-return-value "Parent (100-parent)")
+    (neo/workflow-switch-context)
+    (let ((ctx (neo/workflow-db-get-context "repo-x")))
+      (expect (plist-get ctx :stack-id) :to-equal "omega-100")
+      (expect (plist-get ctx :perspective) :to-equal "100-parent")))
+
+  (it "errors when there are no stacks"
+    (spy-on 'neo-db-get-all-stacks :and-return-value nil)
+    (expect (neo/workflow-switch-context) :to-throw 'user-error)))

@@ -20,6 +20,10 @@
   (provide 'neo-workflow-git))
 
 (require 'neo-workflow-models)
+;; The in-memory context store (`neo--workflow-contexts' and the
+;; `neo/workflow-db-*-context' accessors) lives in neo-workflow-db, which the
+;; context loaders in neo-workflow-models call into.
+(require 'neo-workflow-db)
 
 ;; ============================================================
 ;; Test helpers
@@ -304,3 +308,59 @@
 
   (it "returns nil for an unknown stack name"
     (expect (neo-load-stack "999-nope" "wksp") :to-be nil)))
+
+(describe "neo-load-stack-by-id"
+  (before-each
+    (spy-on 'beads-client-list :and-return-value neo--test-board-issues)
+    (spy-on 'neo-load-branch-from-git :and-return-value nil))
+
+  (it "loads a top-level stack by id"
+    (expect (neo-stack-id (neo-load-stack-by-id "omega-100" "wksp"))
+            :to-equal "omega-100"))
+
+  (it "finds a nested child stack by id"
+    (expect (neo-stack-id (neo-load-stack-by-id "omega-101" "wksp"))
+            :to-equal "omega-101"))
+
+  (it "returns nil for an unknown id"
+    (expect (neo-load-stack-by-id "omega-nope" "wksp") :to-be nil)))
+
+;; ============================================================
+;; Phase 5: in-memory context loaders
+;; ============================================================
+
+(describe "neo/workflow context loaders"
+  (before-each
+    (clrhash neo--workflow-contexts)
+    (spy-on 'beads-client-list :and-return-value neo--test-board-issues)
+    (spy-on 'neo-load-branch-from-git :and-return-value nil)
+    (spy-on 'neo-load-repository :and-return-value
+            (make-neo-repository :id "wksp" :full-name "wksp" :fork 0
+                                 :created-at nil :pushed-at nil :updated-at nil
+                                 :visibility "private" :forks 0 :default-branch "main")))
+
+  (it "returns nil when no context is recorded"
+    (expect (neo/workflow-load-context "wksp") :to-be nil))
+
+  (it "builds a neo-context from the stored perspective and stack"
+    (neo/workflow-db-upsert-context "wksp" "omega-100" "100-persp")
+    (let ((ctx (neo/workflow-load-context "wksp")))
+      (expect (neo-context-perspective ctx) :to-equal "100-persp")
+      (expect (neo-stack-id (neo-context-stack ctx)) :to-equal "omega-100")
+      (expect (neo-repository-id (neo-context-repository ctx)) :to-equal "wksp")))
+
+  (it "round-trips a context through save and load"
+    (let* ((repo (make-neo-repository :id "wksp" :full-name "wksp" :fork 0
+                                      :created-at nil :pushed-at nil :updated-at nil
+                                      :visibility "private" :forks 0
+                                      :default-branch "main"))
+           (stack (make-neo-stack :id "omega-101" :name "101-sub-effort"
+                                  :title "Sub effort" :prefix nil
+                                  :issue-id "omega-101" :branch nil
+                                  :children-stacks nil))
+           (ctx (make-neo-context :repository repo :stack stack
+                                  :perspective "101-sub-effort")))
+      (neo/workflow-save-context ctx)
+      (let ((loaded (neo/workflow-load-context-for-stack "wksp" "omega-101")))
+        (expect (neo-context-perspective loaded) :to-equal "101-sub-effort")
+        (expect (neo-stack-id (neo-context-stack loaded)) :to-equal "omega-101")))))

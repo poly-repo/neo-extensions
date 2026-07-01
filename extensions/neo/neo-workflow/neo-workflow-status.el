@@ -778,9 +778,30 @@ a stack gets a new child stack nested under it."
   (neo/workflow-refresh))
 
 (defun neo/workflow-switch-context ()
-  "Switch to an existing workflow context (Phase 5 stub)."
+  "Switch to an existing workflow context: a stack and its perspective.
+Prompts for one of the known stacks, switches to its `perspective.el'
+perspective, and records the choice in the in-memory context store."
   (interactive)
-  (message "Context switching (in-memory) is Phase 5."))
+  (let* ((stacks (neo-db-get-all-stacks))
+         (candidates (mapcar (lambda (s)
+                               (cons (format "%s (%s)"
+                                             (or (plist-get s :title) (plist-get s :name))
+                                             (plist-get s :name))
+                                     s))
+                             stacks)))
+    (if (null candidates)
+        (user-error "No stacks to switch to")
+      (let* ((selection (completing-read "Switch to context: " candidates nil t))
+             (stack-info (cdr (assoc selection candidates))))
+        (when stack-info
+          (let ((perspective (plist-get stack-info :name))
+                (repo-id (plist-get stack-info :repository-id))
+                (stack-id (plist-get stack-info :id)))
+            (when (featurep 'perspective)
+              (persp-switch perspective)
+              (neo--ensure-stack-scratch perspective))
+            (neo/workflow-db-upsert-context repo-id stack-id perspective)
+            (message "Switched to context: %s" perspective)))))))
 
 ;; ============================================================
 ;; Repo header rendering

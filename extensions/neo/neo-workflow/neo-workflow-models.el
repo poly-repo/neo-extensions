@@ -338,6 +338,14 @@ stacks.  Child stacks are searched too, not just top-level ones."
               (neo--workflow-flatten-stacks
                (neo--workflow-all-stacks repository-id)))))
 
+(defun neo-load-stack-by-id (stack-id repository-id)
+  "Load the stack whose id is STACK-ID for REPOSITORY-ID, or nil.
+Searches nested child stacks as well as top-level ones."
+  (when stack-id
+    (seq-find (lambda (stack) (equal (neo-stack-id stack) stack-id))
+              (neo--workflow-flatten-stacks
+               (neo--workflow-all-stacks repository-id)))))
+
 ;; ============================================================
 ;; Project discovery from BEADS_DIR workspace
 ;; ============================================================
@@ -442,19 +450,29 @@ Returns a `neo-issue' struct or nil."
 ;; Context loading (in-memory for Phase 2)
 ;; ============================================================
 
-(defun neo/workflow-load-context (_repository-id)
-  "Return nil — in-memory context persistence is Phase 5.
-REPOSITORY-ID is ignored."
-  nil)
+(defun neo/workflow-load-context (repository-id)
+  "Return the current `neo-context' for REPOSITORY-ID from the in-memory store.
+Returns nil when no context has been recorded for the repo."
+  (when-let* ((data (neo/workflow-db-get-context repository-id)))
+    (make-neo-context
+     :repository (neo-load-repository repository-id)
+     :stack (neo-load-stack-by-id (plist-get data :stack-id) repository-id)
+     :perspective (plist-get data :perspective))))
 
-(defun neo/workflow-load-context-for-stack (_repository-id _stack-id)
-  "Return nil — in-memory context persistence is Phase 5."
-  nil)
+(defun neo/workflow-load-context-for-stack (repository-id stack-id)
+  "Return the `neo-context' for REPOSITORY-ID and STACK-ID, or nil."
+  (when-let* ((data (neo/workflow-db-get-context-by-stack repository-id stack-id)))
+    (make-neo-context
+     :repository (neo-load-repository repository-id)
+     :stack (neo-load-stack-by-id stack-id repository-id)
+     :perspective (plist-get data :perspective))))
 
-(defun neo/workflow-save-context (_context)
-  "No-op — in-memory context persistence is Phase 5.
-CONTEXT is ignored."
-  nil)
+(defun neo/workflow-save-context (context)
+  "Persist CONTEXT in the in-memory context store."
+  (neo/workflow-db-upsert-context
+   (neo-repository-id (neo-context-repository context))
+   (when (neo-context-stack context) (neo-stack-id (neo-context-stack context)))
+   (neo-context-perspective context)))
 
 (provide 'neo-workflow-models)
 ;;; neo-workflow-models.el ends here
