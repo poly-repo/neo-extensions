@@ -188,3 +188,105 @@
       (expect (neo-repository-fork repo) :to-equal 0)
       (expect (neo-repository-visibility repo) :to-equal "private")
       (expect (neo-repository-default-branch repo) :to-equal "main"))))
+
+;; ============================================================
+;; Phase 3: stacks are beads epics
+;; ============================================================
+
+;; A small board fixture: one top-level epic with a child epic and a child
+;; task, plus an orphan task with no parent.
+(defvar neo--test-board-issues
+  '(((id . "omega-100") (title . "Build the thing") (issue_type . "epic") (status . "open"))
+    ((id . "omega-101") (title . "Sub effort") (issue_type . "epic") (status . "open") (parent . "omega-100"))
+    ((id . "omega-102") (title . "Do a task") (issue_type . "task") (status . "open") (parent . "omega-100"))
+    ((id . "omega-103") (title . "Orphan task") (issue_type . "task") (status . "open")))
+  "Fixture issue list mimicking `beads-client-list' output.")
+
+(describe "neo--beads-issue-parent / -epic-p / -type-string"
+  (it "returns the parent id when present"
+    (expect (neo--beads-issue-parent '((id . "x") (parent . "omega-100")))
+            :to-equal "omega-100"))
+  (it "returns nil for a missing or empty parent"
+    (expect (neo--beads-issue-parent '((id . "x"))) :to-be nil)
+    (expect (neo--beads-issue-parent '((id . "x") (parent . ""))) :to-be nil))
+  (it "recognises epics"
+    (expect (neo--beads-issue-epic-p '((issue_type . "epic"))) :to-be-truthy)
+    (expect (neo--beads-issue-epic-p '((issue_type . "task"))) :to-be nil))
+  (it "defaults the type to task"
+    (expect (neo--beads-issue-type-string '((id . "x"))) :to-equal "task")))
+
+(describe "neo--workflow-epic-stack-name"
+  (it "builds a <number>-<slug> name for a numeric beads id"
+    (expect (neo--workflow-epic-stack-name
+             '((id . "omega-100") (title . "Build the thing")))
+            :to-equal "100-build-the-thing"))
+  (it "falls back to the full id for a hash-style beads id"
+    (expect (neo--workflow-epic-stack-name
+             '((id . "omega-11sv") (title . "Sub effort")))
+            :to-equal "omega-11sv-sub-effort")))
+
+(describe "neo--workflow-stacks-from-issues"
+  (before-each
+    ;; No git branches in the unit environment; branch loading degrades to nil.
+    (spy-on 'neo-load-branch-from-git :and-return-value nil))
+
+  (it "returns one top-level stack per top-level epic"
+    (let ((stacks (neo--workflow-stacks-from-issues neo--test-board-issues "wksp")))
+      (expect (length stacks) :to-equal 1)
+      (expect (neo-stack-id (car stacks)) :to-equal "omega-100")
+      (expect (neo-stack-name (car stacks)) :to-equal "100-build-the-thing")
+      (expect (neo-stack-title (car stacks)) :to-equal "Build the thing")
+      (expect (neo-stack-issue-id (car stacks)) :to-equal "omega-100")))
+
+  (it "nests a child epic under its parent stack, not at top level"
+    (let* ((stacks (neo--workflow-stacks-from-issues neo--test-board-issues "wksp"))
+           (children (neo-stack-children-stacks (car stacks))))
+      (expect (length children) :to-equal 1)
+      (expect (neo-stack-id (car children)) :to-equal "omega-101")
+      (expect (neo-stack-name (car children)) :to-equal "101-sub-effort")))
+
+  (it "ignores non-epic issues when building stacks"
+    (let ((stacks (neo--workflow-stacks-from-issues neo--test-board-issues "wksp")))
+      (expect (neo--workflow-flatten-stacks stacks) :to-have-same-items-as
+              (neo--workflow-flatten-stacks stacks))
+      (expect (length (neo--workflow-flatten-stacks stacks)) :to-equal 2)))
+
+  (it "returns nil when there are no epics"
+    (expect (neo--workflow-stacks-from-issues
+             '(((id . "omega-1") (issue_type . "task"))) "wksp")
+            :to-be nil)))
+
+(describe "neo-db-get-issues-for-repo (stack attachment)"
+  (before-each
+    (spy-on 'beads-client-list :and-return-value neo--test-board-issues)
+    (spy-on 'neo-load-branch-from-git :and-return-value nil))
+
+  (it "excludes epics and returns the remaining issues"
+    (let ((issues (neo-db-get-issues-for-repo "wksp")))
+      (expect (length issues) :to-equal 2)
+      (expect (mapcar #'neo-issue-id issues) :to-have-same-items-as
+              '("omega-102" "omega-103"))))
+
+  (it "attaches the parent epic's stack to a child issue"
+    (let* ((issues (neo-db-get-issues-for-repo "wksp"))
+           (child (seq-find (lambda (i) (equal (neo-issue-id i) "omega-102")) issues))
+           (orphan (seq-find (lambda (i) (equal (neo-issue-id i) "omega-103")) issues)))
+      (expect (neo-issue-stack child) :not :to-be nil)
+      (expect (neo-stack-id (neo-issue-stack child)) :to-equal "omega-100")
+      (expect (neo-issue-stack orphan) :to-be nil))))
+
+(describe "neo-load-stack"
+  (before-each
+    (spy-on 'beads-client-list :and-return-value neo--test-board-issues)
+    (spy-on 'neo-load-branch-from-git :and-return-value nil))
+
+  (it "loads a top-level stack by name"
+    (let ((stack (neo-load-stack "100-build-the-thing" "wksp")))
+      (expect (neo-stack-id stack) :to-equal "omega-100")))
+
+  (it "finds a nested child stack by name"
+    (let ((stack (neo-load-stack "101-sub-effort" "wksp")))
+      (expect (neo-stack-id stack) :to-equal "omega-101")))
+
+  (it "returns nil for an unknown stack name"
+    (expect (neo-load-stack "999-nope" "wksp") :to-be nil)))

@@ -8,6 +8,7 @@
 (require 'seq)
 (require 'beads-client)
 (require 'neo-workflow-git)
+(require 'neo-workflow-slug)
 
 ;; ============================================================
 ;; Core CL structs (shape-compatible with old workflow/)
@@ -120,6 +121,31 @@ Returns 0 if the ID cannot be parsed."
       (string-to-number (match-string 1 id))
     0))
 
+(defun neo--beads-issue-id (alist)
+  "Return the issue ID string from a beads issue ALIST, or nil."
+  (or (alist-get 'id alist) (cdr (assoc "id" alist))))
+
+(defun neo--beads-issue-title (alist)
+  "Return the title string from a beads issue ALIST, or nil."
+  (or (alist-get 'title alist) (cdr (assoc "title" alist))))
+
+(defun neo--beads-issue-type-string (alist)
+  "Return the issue type of a beads ALIST as a string (default \"task\")."
+  (format "%s" (or (alist-get 'issue_type alist)
+                   (alist-get 'type alist)
+                   (cdr (assoc "issue_type" alist))
+                   (cdr (assoc "type" alist))
+                   "task")))
+
+(defun neo--beads-issue-epic-p (alist)
+  "Return non-nil when the beads issue ALIST is an epic."
+  (string= (neo--beads-issue-type-string alist) "epic"))
+
+(defun neo--beads-issue-parent (alist)
+  "Return the parent issue ID from a beads ALIST, or nil when there is none."
+  (let ((parent (or (alist-get 'parent alist) (cdr (assoc "parent" alist)))))
+    (and (stringp parent) (not (string-empty-p parent)) parent)))
+
 (defun neo--beads-labels-to-neo-labels (labels-data repository-id)
   "Convert LABELS-DATA (list of strings or alists) to a list of `neo-label' structs.
 REPOSITORY-ID is the workspace path used as the label's repository key."
@@ -215,19 +241,96 @@ Returns a `neo-branch' struct, or nil if the branch does not exist."
           (neo--workflow-git-branch-to-neo-branch found))))))
 
 ;; ============================================================
-;; Stack loading (Phase 2: flat — stacks-as-epics is Phase 3)
+;; Stack loading (Phase 3: stacks ARE beads epics)
+;;
+;; A stack maps to a beads epic.  Its name/branch follow the
+;; "<epic-number>-<slug>" convention (`neo-issue-title-to-slug'), so the
+;; status board can match a stack to its parent issue by number and to its
+;; live git branch by name.  An epic whose `parent' is another epic becomes a
+;; nested child stack; non-epic children are ordinary issues that carry the
+;; stack on their `stack' slot (set in `neo-db-get-issues-for-repo').
 ;; ============================================================
 
-(defun neo-load-stack (_name _repository-id)
-  "Return nil — stack-loading from beads epics is implemented in Phase 3.
-This stub preserves the function signature expected by the UI."
-  ;; Phase 3 will map beads epics to neo-stack here.
-  nil)
+(defun neo--workflow-epic-stack-name (epic-alist)
+  "Return the \"<prefix>-<slug>\" stack/branch name for EPIC-ALIST.
+The prefix is the epic's numeric sequence number when its beads ID has a
+numeric suffix (e.g. \"omega-123\" -> 123); otherwise it falls back to the
+full beads ID (e.g. hash-style \"omega-11sv\"), so every stack name stays
+unique and stable."
+  (let* ((id (neo--beads-issue-id epic-alist))
+         (number (neo--beads-issue-number id))
+         (prefix (if (> number 0) number id)))
+    (neo-issue-title-to-slug prefix (or (neo--beads-issue-title epic-alist) ""))))
 
-(defun neo-db-get-stacks-for-repo (_repo-id)
-  "Return nil — stacks-as-epics is Phase 3.
-REPO-ID is ignored."
-  nil)
+(defun neo--workflow-epic-to-stack (epic-alist children-by-parent repository-id)
+  "Build a `neo-stack' from EPIC-ALIST.
+CHILDREN-BY-PARENT maps an epic ID to the list of its child-epic alists.
+REPOSITORY-ID is the workspace key.  The branch is read live from git (nil
+when no matching branch exists); child epics become nested stacks."
+  (let* ((id (neo--beads-issue-id epic-alist))
+         (name (neo--workflow-epic-stack-name epic-alist))
+         (stack (make-neo-stack
+                 :id id
+                 :name name
+                 :title (neo--beads-issue-title epic-alist)
+                 :prefix nil
+                 :issue-id id
+                 :branch (neo-load-branch-from-git name)
+                 :children-stacks nil)))
+    (setf (neo-stack-children-stacks stack)
+          (mapcar (lambda (child)
+                    (neo--workflow-epic-to-stack child children-by-parent repository-id))
+                  (reverse (gethash id children-by-parent))))
+    stack))
+
+(defun neo--workflow-stacks-from-issues (raw repository-id)
+  "Build the list of top-level `neo-stack' structs from RAW beads issues.
+RAW is the list of issue alists returned by `beads-client-list'.  Epics
+become stacks; an epic whose `parent' is another epic in RAW becomes a
+nested child stack instead of a top-level entry."
+  (let* ((epics (seq-filter #'neo--beads-issue-epic-p raw))
+         (epic-ids (mapcar #'neo--beads-issue-id epics))
+         (children-by-parent (make-hash-table :test #'equal)))
+    (dolist (epic epics)
+      (let ((parent (neo--beads-issue-parent epic)))
+        (when (and parent (member parent epic-ids))
+          (push epic (gethash parent children-by-parent)))))
+    (let ((top-level (seq-remove
+                      (lambda (epic)
+                        (let ((parent (neo--beads-issue-parent epic)))
+                          (and parent (member parent epic-ids))))
+                      epics)))
+      (mapcar (lambda (epic)
+                (neo--workflow-epic-to-stack epic children-by-parent repository-id))
+              top-level))))
+
+(defun neo--workflow-flatten-stacks (stacks)
+  "Return STACKS together with all of their descendant child stacks, flattened."
+  (mapcan (lambda (stack)
+            (cons stack (neo--workflow-flatten-stacks
+                         (neo-stack-children-stacks stack))))
+          stacks))
+
+(defun neo--workflow-all-stacks (repository-id)
+  "Return the top-level `neo-stack' tree for REPOSITORY-ID from beads.
+Performs a single `beads-client-list' and assembles the epic tree
+client-side.  Returns nil on error."
+  (condition-case err
+      (neo--workflow-stacks-from-issues
+       (append (beads-client-list) nil) repository-id)
+    (error
+     (message "neo-workflow: stack fetch failed: %s" (error-message-string err))
+     nil)))
+
+(defun neo-load-stack (name repository-id)
+  "Load the stack named NAME for REPOSITORY-ID, or nil when none matches.
+A stack is a beads epic and NAME is its \"<number>-<slug>\" branch name.
+The returned `neo-stack' includes its live git branch and nested child
+stacks.  Child stacks are searched too, not just top-level ones."
+  (when name
+    (seq-find (lambda (stack) (string= (neo-stack-name stack) name))
+              (neo--workflow-flatten-stacks
+               (neo--workflow-all-stacks repository-id)))))
 
 ;; ============================================================
 ;; Project discovery from BEADS_DIR workspace
@@ -276,24 +379,39 @@ Looks in the current beads workspace."
     (when (string= (neo-project-repo project) repo-name)
       project)))
 
+(defun neo--workflow-current-repository-id ()
+  "Return the repository id (workspace path) for the current beads workspace.
+Returns an empty string when no workspace can be resolved."
+  (or (when-let* ((project (neo--workflow-beads-workspace-as-project)))
+        (neo-project-id project))
+      ""))
+
 ;; ============================================================
 ;; Issue loading from beads
 ;; ============================================================
 
 (defun neo-db-get-issues-for-repo (repository-id)
-  "Return issues for REPOSITORY-ID as `neo-issue' structs.
-Fetches all non-epic issues from beads in one call."
+  "Return non-epic issues for REPOSITORY-ID as `neo-issue' structs.
+Performs a single `beads-client-list'.  Epics are surfaced as stacks (see
+`neo-db-get-stacks-for-repo') and excluded here.  Each issue whose beads
+`parent' is an epic gets that epic's `neo-stack' attached on its `stack'
+slot, so the board can nest issues under their stack."
   (condition-case err
-      (let ((raw (beads-client-list)))
-        (seq-keep (lambda (alist)
-                    (let* ((issue-type (or (alist-get 'issue_type alist)
-                                           (alist-get 'type alist)
-                                           "task"))
-                           (type-str (format "%s" issue-type)))
-                      ;; Epics become stacks (Phase 3); exclude them here.
-                      (unless (string= type-str "epic")
-                        (neo--beads-alist-to-neo-issue alist repository-id))))
-                  (append raw nil)))
+      (let* ((raw (append (beads-client-list) nil))
+             (stacks (neo--workflow-stacks-from-issues raw repository-id))
+             (stack-by-id (make-hash-table :test #'equal)))
+        (dolist (stack (neo--workflow-flatten-stacks stacks))
+          (puthash (neo-stack-id stack) stack stack-by-id))
+        (seq-keep
+         (lambda (alist)
+           ;; Epics become stacks (above); exclude them from the issue list.
+           (unless (neo--beads-issue-epic-p alist)
+             (let ((issue (neo--beads-alist-to-neo-issue alist repository-id))
+                   (parent (neo--beads-issue-parent alist)))
+               (when parent
+                 (setf (neo-issue-stack issue) (gethash parent stack-by-id)))
+               issue)))
+         raw))
     (error
      (message "neo-workflow: beads fetch failed: %s" (error-message-string err))
      nil)))
@@ -303,11 +421,8 @@ Fetches all non-epic issues from beads in one call."
 Returns a `neo-issue' struct or nil."
   (when id
     (condition-case err
-        (let* ((alist (beads-client-show id))
-               (repo-id (or (when-let* ((project (neo--workflow-beads-workspace-as-project)))
-                              (neo-project-id project))
-                            "")))
-          (neo--beads-alist-to-neo-issue alist repo-id))
+        (let ((alist (beads-client-show id)))
+          (neo--beads-alist-to-neo-issue alist (neo--workflow-current-repository-id)))
       (error
        (message "neo-workflow: beads show %s failed: %s" id (error-message-string err))
        nil))))

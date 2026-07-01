@@ -93,20 +93,37 @@ Matches against the beads workspace name."
     (neo-repository-full-name repo)))
 
 ;; ============================================================
-;; Stack API (Phase 3 stubs — epics-as-stacks not yet wired)
+;; Stack API (Phase 3 — stacks ARE beads epics)
+;;
+;; Compat boundary: the real epic->stack mapping lives in
+;; `neo-workflow-models' (`neo--workflow-all-stacks' & friends).  These
+;; public `neo-db-*' names are what the board/summary UIs call.
 ;; ============================================================
 
 (defun neo-db-get-all-stacks ()
-  "Return empty list — stacks-as-epics is Phase 3."
-  nil)
+  "Return every stack as a plist (:id :name :repository-id :title).
+Flattens nested child stacks; consumed by the summary UI in
+`neo-workflow-ui'.  See `neo-db-get-stacks-for-repo' for the struct view."
+  (let ((repo-id (neo--workflow-current-repository-id)))
+    (mapcar (lambda (stack)
+              (list :id (neo-stack-id stack)
+                    :name (neo-stack-name stack)
+                    :repository-id repo-id
+                    :title (neo-stack-title stack)))
+            (neo--workflow-flatten-stacks (neo--workflow-all-stacks repo-id)))))
 
-(defun neo-db-get-stacks-for-repo (_repo-id)
-  "Return empty list — stacks-as-epics is Phase 3."
-  nil)
+(defun neo-db-get-stacks-for-repo (repo-id)
+  "Return the top-level `neo-stack' tree for REPO-ID (beads epics)."
+  (neo--workflow-all-stacks repo-id))
 
-(defun neo-db-get-branch-for-stack (_stack-id)
-  "Return nil — stacks-as-epics is Phase 3."
-  nil)
+(defun neo-db-get-branch-for-stack (stack-id)
+  "Return the live `neo-branch' for STACK-ID's epic, or nil when none exists."
+  (when-let* ((stack (seq-find
+                      (lambda (s) (equal (neo-stack-id s) stack-id))
+                      (neo--workflow-flatten-stacks
+                       (neo--workflow-all-stacks
+                        (neo--workflow-current-repository-id))))))
+    (neo-stack-branch stack)))
 
 ;; ============================================================
 ;; Branch API (live git reads)
