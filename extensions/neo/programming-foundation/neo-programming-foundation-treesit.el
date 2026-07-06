@@ -1,53 +1,9 @@
 ;;; -*- lexical-binding: t -*-
-;; TODO unfortunately we do not have an ABI version we should patch
-;; sources to define a variable that incluses it.  As a workaround we
-;; keep grammars segregated by emacs versions. A bit wasteful but at
-;; least correct.
-(defconst neo/treesit-grammar-dir
-  (neo/cache-file-path
-   (format "tree-sitter/emacs-%d.%d/"
-           emacs-major-version
-           emacs-minor-version)))
-
-(setq treesit-extra-load-path (list neo/treesit-grammar-dir))
-
-(defconst neo/treesit-required-languages
-  '(bash
-    c
-    cpp
-    css
-    go
-    python
-    toml
-    yaml)
-  "Tree-sitter languages required by NEO.")
-
-(setq treesit-language-source-alist
-      '((bash "https://github.com/tree-sitter/tree-sitter-bash")
-        (c "https://github.com/tree-sitter/tree-sitter-c")
-        (cpp "https://github.com/tree-sitter/tree-sitter-cpp")
-        (css "https://github.com/tree-sitter/tree-sitter-css")
-        (elisp "https://github.com/Wilfred/tree-sitter-elisp")
-        (go "https://github.com/tree-sitter/tree-sitter-go")
-        (html "https://github.com/tree-sitter/tree-sitter-html")
-        (javascript "https://github.com/tree-sitter/tree-sitter-javascript" "master" "src")
-        (json "https://github.com/tree-sitter/tree-sitter-json")
-        (markdown "https://github.com/ikatyang/tree-sitter-markdown")
-        (python "https://github.com/tree-sitter/tree-sitter-python")
-        (rust "https://github.com/tree-sitter/tree-sitter-rust")
-        (toml "https://github.com/tree-sitter/tree-sitter-toml")
-        (yaml "https://github.com/ikatyang/tree-sitter-yaml")))
-
-(defun neo/treesit-install-grammars (&optional languages)
-  "Install Tree-sitter grammars into neo cache directory."
-  (let* ((langs (or languages (mapcar #'car treesit-language-source-alist)))
-         (treesit--install-directory neo/treesit-grammar-dir))
-    (unless (file-directory-p treesit--install-directory)
-      (make-directory treesit--install-directory t))
-    (dolist (lang langs)
-      (unless (treesit-language-available-p lang)
-        (message "[neo] Installing tree-sitter grammar for %s…" lang)
-        (treesit-install-language-grammar lang neo/treesit-grammar-dir)))))
+;; Grammar sources are declared in this extension's manifest.el as
+;; `:tree-sitter-grammars'; collection across all installed extensions
+;; and the actual grammar builds are handled centrally by
+;; core/neo-treesit.el. This file only keeps the UI-level treesit
+;; configuration (font-lock level, folding).
 
 (neo/use-package treesit
   :ensure nil				; built-in

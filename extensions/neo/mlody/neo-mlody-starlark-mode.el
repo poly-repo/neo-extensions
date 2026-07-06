@@ -13,8 +13,9 @@
 (require 'treesit)
 (require 'python)
 
-(add-to-list 'treesit-language-source-alist
-             '(starlark "https://github.com/tree-sitter-grammars/tree-sitter-starlark"))
+;; Grammar source is declared in this extension's manifest.el as
+;; `:tree-sitter-grammars' and collected/built centrally by
+;; core/neo-treesit.el.
 
 (defvar neo--starlark-ts-font-lock-settings
   (treesit-font-lock-rules

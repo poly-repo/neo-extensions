@@ -3,11 +3,9 @@
 ;; TODO requires
 ;; python -m pip install pyflakes
 
-;; NOTE: this will end up in neo:programming-foundation. In
-;; preparation, we call it neo-programming-foundation-treesit because
-;; we're lazy this way. TODO: actually do this once the
-;; neo:programming-foundation is done. Move the file and the (require
-;; ...) there.
+;; Pulls in neo:programming-foundation's treesit setup (font-lock
+;; level, folding); python's own grammar is declared separately via
+;; :tree-sitter-grammars in this extension's manifest.el.
 (require 'neo-programming-foundation-treesit)
 
 ;; not really needed .git should be good enough

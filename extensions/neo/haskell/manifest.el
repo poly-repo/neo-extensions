@@ -7,6 +7,12 @@
  :categories (neo)
  :keywords (programming haskell)
  :requires ("neo:programming-foundation")
+ ;; Pinned to v0.23.1: the grammar's master branch renames nodes that
+ ;; haskell-ts-mode's font-lock queries reference, which otherwise
+ ;; fails with `treesit-query-error' the moment a Haskell buffer is
+ ;; fontified. See `neo/haskell-use-tree-sitter' in neo-haskell.el.
+ :tree-sitter-grammars
+ ((haskell "https://github.com/tree-sitter/tree-sitter-haskell" "v0.23.1"))
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"

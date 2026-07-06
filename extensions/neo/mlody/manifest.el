@@ -7,6 +7,8 @@
  :categories (neo)
  :keywords (ai llm programming)
  :requires ()
+ :tree-sitter-grammars
+ ((starlark "https://github.com/tree-sitter-grammars/tree-sitter-starlark"))
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"

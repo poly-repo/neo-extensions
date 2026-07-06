@@ -1073,20 +1073,10 @@ to haskell-mode's web lookup against hoogle.haskell.org."
                  (regexp . "\\(\\s-+\\)\\(<-\\|←\\)\\s-+")
                  (modes . neo/haskell-modes))))
 
-;; Tree-sitter. Register the grammar source with NEO's tree-sitter
-;; machinery (from neo:programming-foundation) so that
-;; `M-x neo/treesit-install-grammars' builds it into the
-;; version-segregated cache on `treesit-extra-load-path'. Plain
-;; `treesit-install-language-grammar' installs to a directory NEO does
-;; not search, so haskell-ts-mode would then fail to find the grammar.
-;; Pin the grammar to the revision haskell-ts-mode targets (per its
-;; README). The grammar's master branch renames nodes that the mode's
-;; font-lock queries reference, which otherwise fails with
-;; `treesit-query-error' the moment a Haskell buffer is fontified.
-(with-eval-after-load 'neo-programming-foundation-treesit
-  (add-to-list 'treesit-language-source-alist
-               '(haskell "https://github.com/tree-sitter/tree-sitter-haskell"
-                         "v0.23.1")))
+;; Tree-sitter grammar source is declared in this extension's
+;; manifest.el as `:tree-sitter-grammars' (pinned to v0.23.1 — see the
+;; comment there for why), and collected/built centrally by
+;; core/neo-treesit.el.
 
 (neo/use-package haskell-ts-mode
   :defer t)
