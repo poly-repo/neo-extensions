@@ -167,8 +167,24 @@ consumers can decide which perspective should ultimately be selected.")
   ;; NOTE we give time for magit/projectile/etc... to settle. There're
   ;; races I've not been able to solve.
   (run-with-idle-timer 1 nil (lambda ()
+			       ;; Make sure the frame is big enough to hold the
+			       ;; saved layout before restoring it, and never let
+			       ;; a too-small-frame error abort the restore.
+			       ;; Only guarantee the frame is big enough for the
+			       ;; layout here — do NOT re-apply the saved size, or
+			       ;; a frame the user/treemacs resized would snap back
+			       ;; (a late, intermittent flash).
+			       (when (fboundp 'neo/ensure-frame-onscreen-and-usable)
+				 (neo/ensure-frame-onscreen-and-usable))
 			       (when (file-exists-p persp-state-default-file)
-				 (persp-state-load persp-state-default-file))
+				 (condition-case err
+				     (persp-state-load persp-state-default-file)
+				   (error
+				    (if (fboundp 'neo/log-warn)
+					(neo/log-warn 'projects "perspective restore skipped: %s"
+						      (error-message-string err))
+				      (message "neo: perspective restore skipped: %s"
+					       (error-message-string err))))))
 			       (run-hooks 'neo/after-perspective-restore-hook)))
   :hook
   ((persp-switch persp-created) . neo/persp-ensure-messages)

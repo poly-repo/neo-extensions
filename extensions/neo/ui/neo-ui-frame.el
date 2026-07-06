@@ -54,17 +54,21 @@ Optional FONT-NAME can be used to compute based on a specific font family."
 ;; TODO maybe we could do something interesting for terminals with window-system-default-frame-alist.
 (defun neo--frame-geometry-alist (frame)
   "Return an alist describing FRAME's position and size for restoration.
-Position is saved via `left'/`top' and size in pixels via `text-pixels',
-so restoration is independent of the font in effect at startup.  When
-FRAME is maximized or fullscreen, that state is saved instead of an
-explicit geometry, so the window manager restores it faithfully."
+Size is saved in CHARACTER columns/rows (honored by `default-frame-alist' at
+frame creation on this build).  Position is saved for reference only and is
+not restored (the window manager places the frame).  When FRAME is maximized
+or fullscreen, that state is saved instead of an explicit geometry."
   (let ((fullscreen (frame-parameter frame 'fullscreen)))
     (if fullscreen
         (list (cons 'fullscreen fullscreen))
-      (list (cons 'left (frame-parameter frame 'left))
-            (cons 'top (frame-parameter frame 'top))
-            (cons 'width (cons 'text-pixels (frame-text-width frame)))
-            (cons 'height (cons 'text-pixels (frame-text-height frame)))))))
+      ;; Save SIZE ONLY, in CHARACTER columns/rows (honored by
+      ;; `default-frame-alist' at frame creation on this build).  Position is
+      ;; deliberately NOT persisted or restored: on a reparenting window manager
+      ;; the set/report position round-trip drifts by a constant, so restoring
+      ;; it makes the frame "walk" across launches.  We let the window manager
+      ;; place the frame instead.
+      (list (cons 'width (frame-width frame))
+            (cons 'height (frame-height frame))))))
 
 (defun neo--frame-alist-string (var alist)
   "Return Elisp setting VAR to the quoted ALIST, one entry per line."
@@ -72,17 +76,43 @@ explicit geometry, so the window manager restores it faithfully."
           (mapconcat (lambda (cell) (format "%S" cell)) alist "\n        ")
           "))\n"))
 
+(defun neo--frame-suitable-for-save-p (frame)
+  "Return non-nil when FRAME's geometry is worth persisting.
+Excludes non-graphic frames, tooltips, child/pop-up frames (posframe,
+corfu, …), and frames too small to be usefully split — any of which would
+otherwise clobber the saved geometry with an unusable size."
+  (and (frame-live-p frame)
+       (display-graphic-p frame)
+       (frame-visible-p frame)
+       (not (frame-parameter frame 'parent-frame))   ; not a child frame
+       (not (frame-parameter frame 'tooltip))
+       (>= (frame-text-width frame) neo/minimum-frame-pixel-width)
+       (>= (frame-text-height frame) neo/minimum-frame-pixel-height)))
+
+(defun neo--frame-to-save ()
+  "Return the frame whose geometry should be persisted, or nil if none.
+Prefer the selected frame; otherwise fall back to the largest suitable
+frame.  Returning nil means \"do not overwrite the saved geometry\", so a
+session with only unsuitable frames leaves the last good geometry intact."
+  (if (neo--frame-suitable-for-save-p (selected-frame))
+      (selected-frame)
+    (car (sort (seq-filter #'neo--frame-suitable-for-save-p (frame-list))
+               (lambda (a b)
+                 (> (* (frame-text-width a) (frame-text-height a))
+                    (* (frame-text-width b) (frame-text-height b))))))))
+
 (defun neo/save-initial-frame-properties ()
-  "Save the current frame geometry, font, and default face colors.
+  "Save a suitable frame's geometry, font, and default face colors.
 The result is written to `initial-frame-properties.el' in the current
 profile so early-init.el restores the frame on the next launch.  Both
 position and size (in pixels) are preserved, along with any maximized or
-fullscreen state.  This runs on `kill-emacs-hook' and only acts in a
-graphic environment."
+fullscreen state.  This runs on `kill-emacs-hook'.  Only a real, visible,
+top-level graphic frame that is large enough is saved (see
+`neo--frame-suitable-for-save-p'); if none exists the previous saved
+geometry is left untouched rather than overwritten with a bogus size."
   (interactive)
-  (when (display-graphic-p)
-    (let* ((frame (selected-frame))
-           (font (frame-parameter frame 'font))
+  (when-let* ((frame (neo--frame-to-save)))
+    (let* ((font (frame-parameter frame 'font))
            (look `((font . ,font)
                    (internal-border-width . 0)
                    (undecorated . nil)))
@@ -107,6 +137,90 @@ graphic environment."
                         bg fg family font-height))))))
 
 (add-hook 'kill-emacs-hook #'neo/save-initial-frame-properties)
+
+(defun neo/ensure-frame-onscreen-and-usable (&optional frame)
+  "Force FRAME (default selected) to a usable size and on-screen position.
+Safety net for a frame that ends up too small to split into windows — e.g.
+restored geometry the toolkit did not honor, or a window-manager clamp.
+Sizes the frame up to at least the NEO default, never beyond the monitor
+work area, and nudges it fully on-screen.  Child/pop-up frames (posframe,
+corfu, …) are left untouched.  Idempotent: a frame already large enough and
+on-screen is not touched."
+  (setq frame (or frame (selected-frame)))
+  (when (and (frame-live-p frame)
+             (display-graphic-p frame)
+             (not (frame-parameter frame 'parent-frame)))
+    (let* ((wa (frame-monitor-workarea frame))
+           (wx (nth 0 wa)) (wy (nth 1 wa)) (ww (nth 2 wa)) (wh (nth 3 wa))
+           (cw (max 1 (frame-char-width frame)))
+           (chh (max 1 (frame-char-height frame)))
+           (max-cols (max neo/minimum-frame-cols (/ ww cw)))
+           (max-rows (max neo/minimum-frame-rows (/ wh chh)))
+           (cols (frame-width frame))
+           (rows (frame-height frame))
+           (want-cols (min max-cols (max cols neo/default-frame-width)))
+           (want-rows (min max-rows (max rows neo/default-frame-height))))
+      (when (or (/= want-cols cols) (/= want-rows rows))
+        (set-frame-size frame want-cols want-rows))
+      ;; Reposition ONLY when the frame is off-screen by more than a small
+      ;; margin.  Nudging an already-visible frame every launch is what makes
+      ;; the position "jump around", so leave a visible frame exactly where the
+      ;; window manager put it.
+      (let* ((pos (frame-position frame))
+             (fx (car pos)) (fy (cdr pos))
+             (pw (frame-pixel-width frame))
+             (ph (frame-pixel-height frame))
+             (margin 16)
+             (nx (cond ((< fx (- wx margin)) wx)
+                       ((> (+ fx pw) (+ wx ww margin)) (max wx (- (+ wx ww) pw)))
+                       (t fx)))
+             (ny (cond ((< fy (- wy margin)) wy)
+                       ((> (+ fy ph) (+ wy wh margin)) (max wy (- (+ wy wh) ph)))
+                       (t fy))))
+        (when (or (/= nx fx) (/= ny fy))
+          (set-frame-position frame nx ny))))))
+
+(defun neo--repair-collapsed-frame (&optional frame)
+  "Resize FRAME back to its intended size if the toolkit created it collapsed.
+About 1 launch in 4, this Emacs build creates the initial frame at ~200x200px
+(roughly 20x11 chars) instead of the requested size, and it never
+self-corrects (see ~/repro for the analysis).  ONLY when the frame is that far
+too small do we force the restored size back — the character size, the legacy
+`(text-pixels . N)' size, or the NEO default when nothing was saved.  This
+NEVER repositions the frame, so running it on retry timers cannot make the
+frame walk."
+  (setq frame (or frame (selected-frame)))
+  (when (and (frame-live-p frame)
+             (display-graphic-p frame)
+             (not (frame-parameter frame 'parent-frame))
+             (or (< (frame-width frame) neo/minimum-frame-cols)
+                 (< (frame-height frame) neo/minimum-frame-rows)))
+    (let* ((geom (bound-and-true-p neo--restored-frame-geometry))
+           (w (cdr (assq 'width geom)))
+           (h (cdr (assq 'height geom))))
+      (cond
+       ((and (consp w) (eq (car w) 'text-pixels)
+             (consp h) (eq (car h) 'text-pixels))
+        (set-frame-size frame (cdr w) (cdr h) t))
+       ((and (integerp w) (integerp h))
+        (set-frame-size frame w h))
+       (t (set-frame-size frame neo/default-frame-width neo/default-frame-height))))))
+
+(defun neo/apply-restored-frame-geometry (&optional frame)
+  "Repair a collapsed FRAME then apply the on-screen clamp and usable floor.
+Repositioning happens only here (once at startup / per new frame), never on
+the retry timers."
+  (neo--repair-collapsed-frame frame)
+  (neo/ensure-frame-onscreen-and-usable frame))
+
+;; Repair a collapsed frame at startup AND on a few short retry timers (the
+;; collapse can appear late and never self-corrects).  The retries call the
+;; resize-ONLY repair — they never reposition — so they cannot make the frame
+;; walk.  The on-screen clamp/floor runs once at startup and for each new frame.
+(add-hook 'emacs-startup-hook #'neo/apply-restored-frame-geometry)
+(dolist (neo--frame-fix-delay '(0.2 0.6 1.2 2.5))
+  (run-with-timer neo--frame-fix-delay nil #'neo--repair-collapsed-frame))
+(add-hook 'after-make-frame-functions #'neo/ensure-frame-onscreen-and-usable)
 
 (defun neo--nearest-ratio (ratio)
   "Return the nearest canonical ratio described as (W H NAME)."
