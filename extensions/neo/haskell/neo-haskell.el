@@ -944,7 +944,7 @@ near the imports)."
     (treesit-search-subtree
      root (lambda (n) (string= (treesit-node-type n) "imports")))))
 
-(defcustom neo/haskell-fold-imports-on-open nil
+(defcustom neo/haskell-fold-imports-on-open t
   "When non-nil, fold the `imports' block when a Haskell buffer is opened.
 Only takes effect in `haskell-ts-mode' buffers, since folding relies on
 `treesit-fold' and the tree-sitter `imports' node. Toggle folding at
