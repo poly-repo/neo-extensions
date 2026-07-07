@@ -11,34 +11,18 @@
                              (file-name-directory (or load-file-name buffer-file-name))))
 
 (describe "neo-haskell"
-  (describe "neo--haskell-prefer-ts-mode"
-    (before-each
-      (setq major-mode-remap-alist nil))
-
-    (after-each
-      (setq major-mode-remap-alist nil))
-
-    (it "remaps haskell-mode to haskell-ts-mode when tree-sitter is ready"
-      (cl-letf (((symbol-function 'locate-library)
-                 (lambda (library &optional _path _nosuffix)
-                   (when (equal library "haskell-ts-mode")
-                     "/tmp/haskell-ts-mode.el")))
-                ((symbol-function 'treesit-ready-p)
-                 (lambda (language &optional _quiet)
-                   (eq language 'haskell))))
-        (neo--haskell-prefer-ts-mode)
-        (expect (alist-get 'haskell-mode major-mode-remap-alist)
-                :to-equal 'haskell-ts-mode)))
-
-    (it "removes the remap when the grammar is unavailable"
-      (setq major-mode-remap-alist '((haskell-mode . haskell-ts-mode)))
-      (cl-letf (((symbol-function 'locate-library)
-                 (lambda (&rest _args) nil))
-                ((symbol-function 'treesit-ready-p)
-                 (lambda (&rest _args) nil)))
-        (neo--haskell-prefer-ts-mode)
-        (expect (alist-get 'haskell-mode major-mode-remap-alist)
-                :to-equal nil))))
+  (describe "neo--haskell-setup-keymap"
+    (it "binds the shared C-c h command set on the given keymap"
+      (let ((map (make-sparse-keymap)))
+        (neo--haskell-setup-keymap map)
+        (expect (lookup-key map (kbd "C-c h h")) :to-equal #'neo/haskell-hoogle)
+        (expect (lookup-key map (kbd "C-c h i")) :to-equal #'haskell-navigate-imports)
+        (expect (lookup-key map (kbd "C-c h I")) :to-equal #'neo/haskell-format-imports)
+        (expect (lookup-key map (kbd "C-c h m")) :to-equal #'haskell-auto-insert-module-template)
+        (expect (lookup-key map (kbd "C-c h z")) :to-equal #'haskell-interactive-switch)
+        (expect (lookup-key map (kbd "C-c h l")) :to-equal #'haskell-process-load-file)
+        (expect (lookup-key map (kbd "C-c h b")) :to-equal #'haskell-process-cabal-build)
+        (expect (lookup-key map (kbd "C-c h c")) :to-equal #'haskell-compile))))
 
   (describe "neo/haskell-switch-to-repl"
     (it "saves, loads, and switches to the REPL"

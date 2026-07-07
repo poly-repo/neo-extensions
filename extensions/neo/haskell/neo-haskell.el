@@ -4,23 +4,6 @@
 ;;;
 ;;; Lazy by default, eager about types.
 
-(defun neo--haskell-ts-mode-preferred-p ()
-  "Return non-nil when `haskell-ts-mode' should replace `haskell-mode'.
-
-Only prefer the tree-sitter frontend when the package is installed and
-the Haskell grammar is ready to use. This keeps `.hs' files opening
-cleanly on machines that have not installed the grammar yet."
-  (and (locate-library "haskell-ts-mode")
-       (fboundp 'treesit-ready-p)
-       (treesit-ready-p 'haskell t)))
-
-(defun neo--haskell-prefer-ts-mode ()
-  "Prefer `haskell-ts-mode' for Haskell buffers when tree-sitter is ready."
-  (if (neo--haskell-ts-mode-preferred-p)
-      (setf (alist-get 'haskell-mode major-mode-remap-alist) 'haskell-ts-mode)
-    (setq major-mode-remap-alist
-          (assq-delete-all 'haskell-mode major-mode-remap-alist))))
-
 ;; haskell-mode supplies the major mode, REPL integration, and the
 ;; `haskell-mode-stylish-buffer' command. We point that command at an
 ;; absolute stylish-haskell path below because GUI Emacs often misses
@@ -46,10 +29,11 @@ cleanly on machines that have not installed the grammar yet."
 
 ;; Tree-sitter Haskell lives in a separate package from the classic
 ;; `haskell-mode' frontend, but we want the same editor behavior in
-;; both worlds whenever the user opts into `haskell-ts-mode'.
+;; both worlds. Whether `haskell-ts-mode' actually replaces
+;; `haskell-mode' is decided centrally by core/neo-treesit.el, driven
+;; by this extension's manifest.el `:tree-sitter-modes' declaration.
 (neo/use-package haskell-ts-mode
-  :init
-  (neo--haskell-prefer-ts-mode)
+  :defer t
   :hook
   (haskell-ts-mode . neo/haskell-mode-setup))
 ;; Hoogle commands resolve lazily; declaring them keeps a clean compile.
@@ -1024,20 +1008,32 @@ to haskell-mode's web lookup against hoogle.haskell.org."
    (t
     (user-error "neo-haskell: no Hoogle backend available"))))
 
-(with-eval-after-load 'haskell-mode
+(defun neo--haskell-setup-keymap (map)
+  "Bind the shared `C-c h' Haskell command set on MAP.
+Shared between `haskell-mode-map' and `haskell-ts-mode-map' so
+Hoogle/import/REPL/build commands work the same regardless of which
+major mode `major-mode-remap-alist' lands a buffer in — see
+`:tree-sitter-modes' in this extension's manifest.el and
+`neo/treesit-apply-mode-preferences' in core/neo-treesit.el."
   ;; All commands live under the `C-c h' prefix so they don't collide
   ;; with haskell-mode's own `C-c C-*' REPL bindings.
-  (define-key haskell-mode-map (kbd "C-c h h") #'neo/haskell-hoogle)
-  (define-key haskell-mode-map (kbd "C-c h i") #'haskell-navigate-imports)
-  (define-key haskell-mode-map (kbd "C-c h I") #'neo/haskell-format-imports)
-  (define-key haskell-mode-map (kbd "C-c h m") #'haskell-auto-insert-module-template)
+  (define-key map (kbd "C-c h h") #'neo/haskell-hoogle)
+  (define-key map (kbd "C-c h i") #'haskell-navigate-imports)
+  (define-key map (kbd "C-c h I") #'neo/haskell-format-imports)
+  (define-key map (kbd "C-c h m") #'haskell-auto-insert-module-template)
   ;; REPL / build.  These start a GHCi session on demand without
   ;; enabling `interactive-haskell-mode', which would otherwise take
   ;; over completion and xref from Eglot.
-  (define-key haskell-mode-map (kbd "C-c h z") #'haskell-interactive-switch)
-  (define-key haskell-mode-map (kbd "C-c h l") #'haskell-process-load-file)
-  (define-key haskell-mode-map (kbd "C-c h b") #'haskell-process-cabal-build)
-  (define-key haskell-mode-map (kbd "C-c h c") #'haskell-compile))
+  (define-key map (kbd "C-c h z") #'haskell-interactive-switch)
+  (define-key map (kbd "C-c h l") #'haskell-process-load-file)
+  (define-key map (kbd "C-c h b") #'haskell-process-cabal-build)
+  (define-key map (kbd "C-c h c") #'haskell-compile))
+
+(with-eval-after-load 'haskell-mode
+  (neo--haskell-setup-keymap haskell-mode-map))
+
+(with-eval-after-load 'haskell-ts-mode
+  (neo--haskell-setup-keymap haskell-ts-mode-map))
 
 (defun neo--haskell-disable-electric-indent ()
   "Disable `electric-indent-mode' locally; it fights cabal's layout."
@@ -1073,41 +1069,12 @@ to haskell-mode's web lookup against hoogle.haskell.org."
                  (regexp . "\\(\\s-+\\)\\(<-\\|←\\)\\s-+")
                  (modes . neo/haskell-modes))))
 
-;; Tree-sitter grammar source is declared in this extension's
-;; manifest.el as `:tree-sitter-grammars' (pinned to v0.23.1 — see the
-;; comment there for why), and collected/built centrally by
-;; core/neo-treesit.el.
-
-(neo/use-package haskell-ts-mode
-  :defer t)
-
-(add-hook 'haskell-ts-mode-hook #'neo/haskell-mode-setup)
-
-(defcustom neo/haskell-use-tree-sitter nil
-  "When non-nil, edit Haskell with `haskell-ts-mode' instead of `haskell-mode'.
-
-Tree-sitter highlighting depends on the installed `tree-sitter-haskell'
-grammar matching the node names `haskell-ts-mode' queries.  When they
-drift, font-lock raises `treesit-query-error' on every redisplay — and
-because Eglot hover docs fontify `haskell' code blocks the same way, a
-mismatch also breaks documentation popups.  `haskell-mode' has no such
-coupling, so it is the default.
-
-To opt in: install the pinned grammar with
-`M-x neo/treesit-install-grammars' (NOT the vanilla
-`treesit-install-language-grammar'), set this to t, and restart Emacs.
-Confirm first with
-\\='(treesit-query-validate \\='haskell \"(comment)\")\\=' returning nil."
-  :type 'boolean
-  :group 'neo)
-
-;; Remap to haskell-ts-mode only when the user opts in AND the grammar is
-;; installed and loadable. Otherwise stay on haskell-mode so highlighting
-;; and Eglot hover keep working regardless of grammar/mode drift.
-(when (and neo/haskell-use-tree-sitter
-           (fboundp 'treesit-ready-p)
-           (treesit-ready-p 'haskell t))
-  (add-to-list 'major-mode-remap-alist '(haskell-mode . haskell-ts-mode)))
+;; Tree-sitter grammar source and the haskell-mode -> haskell-ts-mode
+;; preference are both declared in this extension's manifest.el
+;; (`:tree-sitter-grammars', pinned to v0.23.1 — see the comment there
+;; for why — and `:tree-sitter-modes'), collected/built/activated
+;; centrally by core/neo-treesit.el. See the `haskell-ts-mode'
+;; `neo/use-package' block above for its package declaration/hook.
 
 ;; Snippets. NEO has no global yasnippet, so enable it buffer-locally in
 ;; Haskell buffers and load haskell-snippets' templates alongside it.
