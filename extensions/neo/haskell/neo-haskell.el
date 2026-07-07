@@ -43,8 +43,9 @@
 (declare-function haskell-navigate-imports "haskell-mode")
 (declare-function haskell-mode-format-imports "haskell-mode")
 (declare-function haskell-collapse-mode "haskell-collapse")
-(declare-function treesit-fold-range-haskell-function "treesit-fold")
 (declare-function treesit-fold-toggle "treesit-fold")
+(declare-function treesit-fold--eol "treesit-fold-util")
+(declare-function treesit-fold--cons-add "treesit-fold-util")
 (defvar treesit-fold-range-alist)
 (declare-function yas-minor-mode "yasnippet")
 (declare-function haskell-auto-insert-module-template "haskell-mode")
@@ -972,13 +973,30 @@ format-on-save behavior they had.
   (when (integerp neo/haskell-fill-column)
     (setq-local fill-column neo/haskell-fill-column)))
 
+(defun neo/treesit-fold-range-haskell-imports (node offset)
+  "Fold range for the `imports' NODE, keeping the first import visible.
+
+Unlike the stock `treesit-fold-range-haskell-function' (which this
+replaces for `imports'), anchor the end on the last child actually
+typed `import' rather than the node's last child outright: the
+grammar attaches a trailing Haddock comment documenting the next
+top-level declaration as a child of `imports', and blindly taking the
+last child would swallow that comment into the fold. See
+`treesit-fold-range-seq' for OFFSET."
+  (when-let* ((beg (treesit-fold--eol (treesit-node-start node)))
+              (end-node (car (last (seq-filter
+                                     (lambda (c) (string= (treesit-node-type c) "import"))
+                                     (treesit-node-children node)))))
+              (end (treesit-node-end end-node)))
+    (treesit-fold--cons-add (cons beg end) offset)))
+
 ;; treesit-fold's stock Haskell rule set (treesit-fold-parsers-haskell)
 ;; only knows how to fold `function'/`bind' nodes. The grammar also
-;; groups the whole import list under an `imports' node, so reuse the
-;; existing haskell range helper (keeps the first import visible,
-;; folds the rest) to let `treesit-fold-toggle' collapse it too.
+;; groups the whole import list under an `imports' node, so add a
+;; range function for it (see above) to let `treesit-fold-toggle'
+;; collapse it too.
 (with-eval-after-load 'treesit-fold
-  (push (cons 'imports #'treesit-fold-range-haskell-function)
+  (push (cons 'imports #'neo/treesit-fold-range-haskell-imports)
         (alist-get 'haskell-ts-mode treesit-fold-range-alist)))
 
 (defun neo/haskell-toggle-imports-fold ()
