@@ -78,7 +78,7 @@ that is the default."
   :group 'neo-ui
   :set #'neo/config--apply-default-font-family)
 
-(defcustom neo/config/comment-font-family "Patrick Hand"
+(defcustom neo/config/comment-font-family "Recursive Mono Casual"
   "Font family used for comments (text and delimiters).
 
 Applied to `font-lock-comment-face' and
