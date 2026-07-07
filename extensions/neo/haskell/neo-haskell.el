@@ -41,6 +41,16 @@
 (declare-function haskell-hoogle "haskell-mode")
 (declare-function haskell-hoogle-lookup-from-website "haskell-mode")
 (declare-function haskell-navigate-imports "haskell-mode")
+;; `haskell-navigate-imports' (and other haskell-mode internals it pulls
+;; in transitively, e.g. haskell-indent/haskell-doc) reference
+;; `haskell-literate'. haskell-mode.el only establishes it via a
+;; top-level `defvar-local', which is never evaluated unless that whole
+;; file gets loaded. `haskell-ts-mode' is a separate major-mode
+;; definition that never triggers that load, so the symbol stays void
+;; in `haskell-ts-mode' buffers until something else forces it -- mirror
+;; the same buffer-local default here so it always exists.
+(defvar-local haskell-literate nil
+  "Whether the current buffer is a literate Haskell script; see `haskell-mode'.")
 (declare-function haskell-mode-format-imports "haskell-mode")
 (declare-function haskell-collapse-mode "haskell-collapse")
 (declare-function treesit-fold-toggle "treesit-fold")
