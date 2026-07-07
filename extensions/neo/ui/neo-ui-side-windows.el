@@ -115,7 +115,13 @@
     (global-set-key (kbd (format "S-%s" key)) map-sym)
     
     (neo/bind-key-variants map key
-                           (lambda () (interactive) (neo/toggle-side-window side)))
+                           (if (eq side 'bottom)
+                               (lambda ()
+                                 (interactive)
+                                 (if (fboundp 'neo/toggle-eshell)
+                                     (neo/toggle-eshell)
+                                   (neo/toggle-side-window side)))
+                             (lambda () (interactive) (neo/toggle-side-window side))))
     (neo/bind-key-variants map "b"
                            (lambda () (interactive) (neo/bury-side-window-buffer side)))
     (neo/bind-key-variants map "k"
