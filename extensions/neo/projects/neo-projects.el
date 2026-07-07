@@ -236,14 +236,35 @@ consumers can decide which perspective should ultimately be selected.")
    (treemacs-get-local-window)))
 
 (defun neo/treemacs-show-only-project (root name)
-  (when (treemacs-current-workspace)
-    (let* ((ws (treemacs-current-workspace))
-           (projects (treemacs-workspace->projects ws)))
-
-      (dolist (proj projects)
-        (treemacs-do-remove-project-from-workspace proj t nil))
-
-      (treemacs-do-add-project-to-workspace root name))))
+  "Show ROOT (as NAME) as the workspace's only project.
+`treemacs-do-remove-project-from-workspace' only performs its actual
+removal inside `treemacs-run-in-every-buffer', which correctly
+reconciles buffer state when a treemacs buffer is live but is
+otherwise a silent no-op — e.g. when treemacs has never been opened
+this Emacs session — so stale projects would otherwise accumulate
+across every perspective switch. Use the normal per-project removal
+API first (the only path that keeps rendered buffer state correct),
+then fall back to clearing the project list directly when that left
+stale entries behind, which only happens when there's no live buffer
+to reconcile in the first place — so nothing further needs
+reconciling."
+  (when-let* ((workspace (treemacs-current-workspace)))
+    (dolist (proj (treemacs-workspace->projects workspace))
+      (treemacs-do-remove-project-from-workspace proj t nil))
+    ;; A literal `(setf (treemacs-workspace->projects ...))' or
+    ;; `cl-struct-slot-value' here would have its macroexpansion (and, for
+    ;; the latter, an eager `cl-typep' type check) permanently baked in at
+    ;; whatever moment *this file* gets macro/byte/native-compiled -- which
+    ;; can happen in isolation (e.g. async native-comp subprocesses) before
+    ;; `treemacs-workspaces.el' has defined the `treemacs-workspace' struct
+    ;; and registered its setf-expander, even though that struct is always
+    ;; defined by the time this function actually runs. Deferring through
+    ;; `eval' forces the setf to be (re)expanded at call time instead, in
+    ;; whatever environment is actually running -- by then treemacs is
+    ;; guaranteed loaded, since `workspace' is a live struct instance.
+    (when (treemacs-workspace->projects workspace)
+      (eval `(setf (treemacs-workspace->projects ,workspace) nil) t))
+    (treemacs-do-add-project-to-workspace root name)))
 
 (defun neo/projectile-update-treemacs ()
   "Update treemacs to show only the current project; switch perspective.
