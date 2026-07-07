@@ -44,6 +44,7 @@
 (declare-function haskell-mode-format-imports "haskell-mode")
 (declare-function haskell-collapse-mode "haskell-collapse")
 (declare-function treesit-fold-range-haskell-function "treesit-fold")
+(declare-function treesit-fold-toggle "treesit-fold")
 (defvar treesit-fold-range-alist)
 (declare-function yas-minor-mode "yasnippet")
 (declare-function haskell-auto-insert-module-template "haskell-mode")
@@ -980,6 +981,25 @@ format-on-save behavior they had.
   (push (cons 'imports #'treesit-fold-range-haskell-function)
         (alist-get 'haskell-ts-mode treesit-fold-range-alist)))
 
+(defun neo/haskell-toggle-imports-fold ()
+  "Toggle folding of the top-level `imports' block, regardless of point.
+
+`treesit-fold-toggle' only finds the enclosing foldable node starting
+from point, so folding the import list otherwise means navigating to
+it first. Search the parse tree for the `imports' node directly so
+this works from anywhere in the file."
+  (interactive)
+  (if-let* ((root (treesit-buffer-root-node))
+            (node (treesit-search-subtree
+                   root (lambda (n) (string= (treesit-node-type n) "imports")))))
+      (save-excursion
+        ;; `treesit-node-descendant-for-range' resolves the exact node-start
+        ;; boundary to the root rather than this node, so land one
+        ;; character inside it instead.
+        (goto-char (1+ (treesit-node-start node)))
+        (treesit-fold-toggle))
+    (user-error "No `imports' block found in this buffer")))
+
 (defun neo/haskell-format-imports ()
   "Sort and align the import block from anywhere in the source file."
   (interactive)
@@ -1031,6 +1051,7 @@ major mode `major-mode-remap-alist' lands a buffer in — see
   (define-key map (kbd "C-c h h") #'neo/haskell-hoogle)
   (define-key map (kbd "C-c h i") #'haskell-navigate-imports)
   (define-key map (kbd "C-c h I") #'neo/haskell-format-imports)
+  (define-key map (kbd "C-c h f") #'neo/haskell-toggle-imports-fold)
   (define-key map (kbd "C-c h m") #'haskell-auto-insert-module-template)
   ;; REPL / build.  These start a GHCi session on demand without
   ;; enabling `interactive-haskell-mode', which would otherwise take

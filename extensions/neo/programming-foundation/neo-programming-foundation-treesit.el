@@ -14,22 +14,20 @@
 (neo/use-package treesit-fold
   :custom
   (treesit-fold-line-count-format " <%d lines> ")
-  ;; `dape-breakpoint-global-mode' (neo:python) binds `<left-fringe>
-  ;; mouse-1' to breakpoint-toggle in every `prog-mode' buffer,
-  ;; Haskell included, and wins the minor-mode-map-alist race over
-  ;; `treesit-fold-indicators-mode-map' there. Put the fold control on
-  ;; the right fringe instead so both coexist rather than one
-  ;; silently shadowing the other.
-  (treesit-fold-indicators-fringe 'right-fringe)
   :config
   (global-treesit-fold-indicators-mode 1))
 
 (with-eval-after-load 'treesit-fold-indicators
-  ;; Belt-and-suspenders for the fringe-side split above: drop the
-  ;; left-fringe binding entirely so a future minor-mode-map-alist
-  ;; reordering can't make this map win the left fringe and swallow
-  ;; dape's breakpoint click with a silent no-op (the handler checks
-  ;; `treesit-fold-indicators-fringe' and does nothing on a mismatch).
+  ;; The indicator stays on the default left fringe, but
+  ;; `dape-breakpoint-global-mode' (neo:python) also binds `<left-fringe>
+  ;; mouse-1' there in every `prog-mode' buffer, Haskell included, and
+  ;; wins the minor-mode-map-alist race. Rather than let the two silently
+  ;; fight over the click, give it to dape unconditionally: drop this
+  ;; map's left-fringe binding so `key-binding' always falls through to
+  ;; dape's (verified: an explicit nil binding in a higher-precedence
+  ;; keymap does fall through to a real binding in a lower one, it
+  ;; doesn't just resolve to "unbound"). Folding is meant to be driven
+  ;; from the keyboard anyway -- see `neo/haskell-toggle-imports-fold'.
   (define-key treesit-fold-indicators-mode-map [left-fringe mouse-1] nil))
 
 (with-eval-after-load 'treesit-fold
