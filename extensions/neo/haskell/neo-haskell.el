@@ -43,6 +43,8 @@
 (declare-function haskell-navigate-imports "haskell-mode")
 (declare-function haskell-mode-format-imports "haskell-mode")
 (declare-function haskell-collapse-mode "haskell-collapse")
+(declare-function treesit-fold-range-haskell-function "treesit-fold")
+(defvar treesit-fold-range-alist)
 (declare-function yas-minor-mode "yasnippet")
 (declare-function haskell-auto-insert-module-template "haskell-mode")
 (declare-function haskell-interactive-switch "haskell-interactive-mode")
@@ -968,6 +970,15 @@ format-on-save behavior they had.
   ;; Wider wrap than Emacs' default 70 for code and Haddock comments alike.
   (when (integerp neo/haskell-fill-column)
     (setq-local fill-column neo/haskell-fill-column)))
+
+;; treesit-fold's stock Haskell rule set (treesit-fold-parsers-haskell)
+;; only knows how to fold `function'/`bind' nodes. The grammar also
+;; groups the whole import list under an `imports' node, so reuse the
+;; existing haskell range helper (keeps the first import visible,
+;; folds the rest) to let `treesit-fold-toggle' collapse it too.
+(with-eval-after-load 'treesit-fold
+  (push (cons 'imports #'treesit-fold-range-haskell-function)
+        (alist-get 'haskell-ts-mode treesit-fold-range-alist)))
 
 (defun neo/haskell-format-imports ()
   "Sort and align the import block from anywhere in the source file."
