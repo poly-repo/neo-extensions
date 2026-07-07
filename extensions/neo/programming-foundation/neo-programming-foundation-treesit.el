@@ -26,6 +26,58 @@ typed. This helps improve performance."
   (advice-add 'treesit-fold-indicators--enable
               :after #'neo/treesit-fold-disable-indicator-refresh-on-typing))
 
+(defun neo/treesit-fold--stretch-bitmap-rows (rows scale)
+  "Repeat each row integer in ROWS SCALE times, return as a fringe-bitmap vector."
+  (apply #'vector (apply #'append (mapcar (lambda (row) (make-list scale row)) rows))))
+
+(with-eval-after-load 'treesit-fold-indicators
+  ;; Upstream's +/- glyph is only 7px tall, so on a normal ~20px line
+  ;; it renders as a barely-visible speck centered in a lot of empty
+  ;; fringe. Redraw it (and the matching box baked into the head-line
+  ;; bitmap) at 2x so the toggle control is actually legible.
+  (let ((plus-rows '(#b1111111 #b1000001 #b1001001 #b1011101 #b1001001 #b1000001 #b1111111))
+        (scale 2))
+    (define-fringe-bitmap 'treesit-fold-indicators-fr-plus
+      (neo/treesit-fold--stretch-bitmap-rows plus-rows scale))
+    (define-fringe-bitmap 'treesit-fold-indicators-fr-minus-tail
+      (vconcat (make-list 10 #b00000000)
+               (neo/treesit-fold--stretch-bitmap-rows plus-rows scale)
+               (make-list 6 #b00011000))))
+
+  ;; Upstream also only wires up mouse-1 on the *head* line of a fold
+  ;; range (the `fr-plus'/`fr-minus-tail' bitmap). For a fold spanning
+  ;; many lines -- e.g. a large Haskell import block -- the head line
+  ;; is frequently scrolled out of view, so clicking anywhere else on
+  ;; the visible fold bar (`fr-center'/`fr-end-*') silently does
+  ;; nothing. `treesit-fold-toggle' walks up to the enclosing foldable
+  ;; node from point regardless of which line inside it we start from,
+  ;; so widen the click target to the whole bar.
+  (defun treesit-fold-indicators-click-fringe (event)
+    "EVENT click on fringe."
+    (interactive "e")
+    (let ((current-fringe (nth 1 (car (cdr event)))) ovs ov cur-ln)
+      (when (eq current-fringe treesit-fold-indicators-fringe)
+        (mouse-set-point event)
+        (beginning-of-line)
+        (setq cur-ln (line-number-at-pos (point)))
+        (setq ovs (seq-mapcat
+                   (lambda (type) (treesit-fold--overlays-in 'type type))
+                   '(treesit-fold-indicators-fr-plus
+                     treesit-fold-indicators-fr-minus-tail
+                     treesit-fold-indicators-fr-center
+                     treesit-fold-indicators-fr-end-left
+                     treesit-fold-indicators-fr-end-right)))
+        (when ovs
+          (setq ov (cl-some
+                    (lambda (ov) (= cur-ln (line-number-at-pos (overlay-start ov))))
+                    ovs))
+          (when ov
+            (or (save-excursion
+                  (end-of-line)
+                  (when (nth 4 (syntax-ppss)) (back-to-indentation))
+                  (treesit-fold-toggle))
+                (treesit-fold-toggle))))))))
+
 ;; (use-package treesit-auto
 ;;   :custom
 ;;   (setq treesit-auto-install nil)
