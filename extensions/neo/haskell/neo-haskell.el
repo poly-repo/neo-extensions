@@ -44,6 +44,8 @@
 (declare-function haskell-mode-format-imports "haskell-mode")
 (declare-function haskell-collapse-mode "haskell-collapse")
 (declare-function treesit-fold-toggle "treesit-fold")
+(declare-function treesit-fold-close "treesit-fold")
+(declare-function treesit-fold-ready-p "treesit-fold")
 (declare-function treesit-fold--eol "treesit-fold-util")
 (declare-function treesit-fold--cons-add "treesit-fold-util")
 (defvar treesit-fold-range-alist)
@@ -933,6 +935,33 @@ until they are reflowed."
         (forward-line 1))
        (t (forward-line 1))))))
 
+(defun neo--haskell-imports-node ()
+  "Return the top-level `imports' tree-sitter node, or nil.
+Search the parse tree directly rather than relying on point, so
+callers work from anywhere in the file (or before point is anywhere
+near the imports)."
+  (when-let* ((root (treesit-buffer-root-node)))
+    (treesit-search-subtree
+     root (lambda (n) (string= (treesit-node-type n) "imports")))))
+
+(defcustom neo/haskell-fold-imports-on-open nil
+  "When non-nil, fold the `imports' block when a Haskell buffer is opened.
+Only takes effect in `haskell-ts-mode' buffers, since folding relies on
+`treesit-fold' and the tree-sitter `imports' node. Toggle folding at
+any time regardless of this setting with
+`neo/haskell-toggle-imports-fold' (bound to \\`C-c h f')."
+  :type 'boolean
+  :group 'neo)
+
+(defun neo--haskell-fold-imports-on-open ()
+  "Fold the `imports' block on visit when `neo/haskell-fold-imports-on-open'."
+  (when (and neo/haskell-fold-imports-on-open
+             (derived-mode-p 'haskell-ts-mode)
+             (fboundp 'treesit-fold-ready-p)
+             (treesit-fold-ready-p))
+    (when-let* ((node (neo--haskell-imports-node)))
+      (treesit-fold-close node))))
+
 (defun neo/haskell-mode-setup ()
   "Wire up LSP, stylish-haskell autoformat, and Unicode prettification.
 
@@ -971,7 +1000,9 @@ format-on-save behavior they had.
   (neo--haskell-apply-doc-comment-font)
   ;; Wider wrap than Emacs' default 70 for code and Haddock comments alike.
   (when (integerp neo/haskell-fill-column)
-    (setq-local fill-column neo/haskell-fill-column)))
+    (setq-local fill-column neo/haskell-fill-column))
+  ;; Optionally start with the import list folded away.
+  (neo--haskell-fold-imports-on-open))
 
 (defun neo/treesit-fold-range-haskell-imports (node offset)
   "Fold range for the `imports' NODE, keeping the first import visible.
@@ -1004,12 +1035,9 @@ last child would swallow that comment into the fold. See
 
 `treesit-fold-toggle' only finds the enclosing foldable node starting
 from point, so folding the import list otherwise means navigating to
-it first. Search the parse tree for the `imports' node directly so
-this works from anywhere in the file."
+it first."
   (interactive)
-  (if-let* ((root (treesit-buffer-root-node))
-            (node (treesit-search-subtree
-                   root (lambda (n) (string= (treesit-node-type n) "imports")))))
+  (if-let* ((node (neo--haskell-imports-node)))
       (save-excursion
         ;; `treesit-node-descendant-for-range' resolves the exact node-start
         ;; boundary to the root rather than this node, so land one
