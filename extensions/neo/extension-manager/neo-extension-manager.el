@@ -48,28 +48,44 @@
 ;;             (neo/extensions-render))
 ;;           nil t)
 
+(defun neo/manager-render ()
+  "Render the NEO Extension Manager buffer into the selected window.
+
+Bare entry point with no perspective management of its own, so it can
+be used directly as a Neo application's `:setup' without nesting a
+second perspective inside the one `neo/application' already switched
+to. Standalone use goes through `neo/manager-show' instead, which
+wraps this in `neo/with-ui-session'."
+  (let ((buf (get-buffer-create "*NEO Extension Manager*")))
+    (switch-to-buffer buf)
+    (unless (derived-mode-p 'neo/manager-mode)
+      (neo/manager-mode))
+    buf))
+
 (defun neo/manager-show ()
   (interactive)
   (let* ((buf (get-buffer-create "*NEO Extension Manager*"))
          (quit-fn
           (neo/with-ui-session
            "NEO Extensions Manager"
-           (lambda ()
-             (switch-to-buffer buf)
-	     (unless (derived-mode-p 'neo/manager-mode)
-               (neo/manager-mode)))
+           (lambda () (neo/manager-render))
            (lambda ()
              (kill-buffer buf)))))
     (with-current-buffer buf
       (setq-local neo/manager-quit-function quit-fn))))
 
 (neo/application "Neo Extensions"
-  :setup (neo/manager-show)
-  :bind "n"
-  ;; `neo/manager-show' runs its own `neo/with-ui-session' and binds "q"
-  ;; to `neo/manager-quit-function' in `neo/manager-mode-map'; leave it
-  ;; untouched rather than overriding with the default quit keys.
-  :quit-keys nil)
+  :setup (neo/manager-render)
+  :teardown (when-let* ((buf (get-buffer "*NEO Extension Manager*")))
+              (kill-buffer buf))
+  ;; No :quit-keys override here (unlike the old `neo/manager-show'-based
+  ;; setup): `neo/manager-render' does no perspective switch of its own, so
+  ;; `neo/application''s single switch is the only one in play, and its
+  ;; default "q" -> `neo/leave-current-application' correctly restores it.
+  ;; That binding takes precedence over `neo/manager-mode-map's own "q"
+  ;; (via `minor-mode-overriding-map-alist'), which is only ever exercised
+  ;; by the standalone `neo/manager-show' path.
+  :bind "n")
 
 
 ;;; Note, no (provide 'neo-neo-manager) here, extensions are loaded not required.
