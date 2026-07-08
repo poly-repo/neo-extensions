@@ -52,6 +52,11 @@
 (defvar neo/dashboard--origin-persp nil
   "Perspective active before the dashboard was shown.")
 
+;; Set by `neo/application' (core/neo-application.el, loaded well before
+;; this extension) right before it switches to "App:Dashboard" -- see
+;; `neo/dashboard--enter'.
+(defvar neo--last-user-perspective)
+
 
 (defun neo/dashboard--buffer-name ()
   "Return the dashboard buffer name."
@@ -229,14 +234,30 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
 
 
 (defun neo/dashboard--enter ()
-  "Record originating perspective and switch to dashboard perspective."
+  "Record originating perspective and switch to dashboard perspective.
+
+When entered via the `neo/application' \"Dashboard\" wrapper (`M-a d'),
+that macro already switched to \"App:Dashboard\" before running this as
+its :setup, so `persp-current-name' here is the dashboard's own
+perspective, not the real origin. Fall back to the framework's
+`neo--last-user-perspective' in that case, which it captures right
+before making that switch."
   (when (neo/dashboard--perspective-available-p)
     (neo/dashboard--ensure-perspective-mode)
-    (let ((current-persp (persp-current-name)))
-      (unless (or neo/dashboard--origin-persp
-                  (neo/dashboard--current-perspective-dashboard-p current-persp))
-        (setq neo/dashboard--origin-persp current-persp))
-      (unless (neo/dashboard--current-perspective-dashboard-p current-persp)
+    (let* ((current-persp (persp-current-name))
+           (already-in-dashboard
+            (neo/dashboard--current-perspective-dashboard-p current-persp))
+           (origin
+            (if already-in-dashboard
+                (and (boundp 'neo--last-user-perspective)
+                     neo--last-user-perspective
+                     (not (neo/dashboard--current-perspective-dashboard-p
+                           neo--last-user-perspective))
+                     neo--last-user-perspective)
+              current-persp)))
+      (unless neo/dashboard--origin-persp
+        (setq neo/dashboard--origin-persp origin))
+      (unless already-in-dashboard
         (persp-switch neo/dashboard-persp)))))
 
 (defun neo/dashboard--leave ()
