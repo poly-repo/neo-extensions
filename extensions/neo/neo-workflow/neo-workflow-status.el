@@ -74,13 +74,22 @@
   :group 'neo-workflow-status)
 
 (defface neo-workflow-priority-base-face
-  '((t :family "Space Mono" :slant italic :weight bold))
-  "Base face for all workflow issue priorities."
+  '((t :weight bold))
+  "Base face for all workflow issue priorities.
+No `:slant italic': the installed \"Space Mono\" family only ships Regular
+and Bold, no italic style, so requesting italic on top of that family
+can't be satisfied and makes the font backend substitute a whole other
+family for the combination instead of just dropping the slant."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-issue-open-face
-  '((t :inherit (neo-workflow-priority-base-face default)))
-  "Face for open issues in workflow status."
+  '((t :inherit neo-workflow-priority-base-face))
+  "Face for open issues in workflow status.
+Does not inherit `default' directly: when this face is combined with
+`neo-workflow-issue-title-face' in a `face' text-property list, resolving
+an attribute (like `:family') all the way down to `default' here would
+\"claim\" it before `neo-workflow-issue-title-face' is ever consulted,
+silently overriding the latter's own explicit family/weight."
   :group 'neo-workflow-status)
 
 (defface neo-workflow-issue-active-face
@@ -99,7 +108,7 @@
   :group 'neo-workflow-status)
 
 (defface neo-workflow-issue-title-face
-  '((t :inherit (neo-workflow-priority-base-face default)))
+  '((t :inherit (neo-workflow-priority-base-face default) :family "Space Mono" :weight normal))
   "Face for issue titles in workflow status."
   :group 'neo-workflow-status)
 
@@ -245,12 +254,17 @@ excluding priority labels."
     (_ nil)))
 
 (defun neo--final-issue-title-face (issue)
-  "Return the face list for ISSUE title."
+  "Return the face list for ISSUE title.
+`neo-workflow-issue-title-face' comes first so its own explicit
+`:family'/`:weight' win; a face earlier in a `face' text-property list
+fully resolves its own attributes (including anything reached via its
+`:inherit' chain) before later faces are ever consulted, so putting
+status-face first would silently mask title-face's overrides."
   (let* ((state (neo-issue-state issue))
          (status-face (neo--get-issue-status-face state)))
     (if (neo--active-issue-p issue)
-        (list 'magit-head status-face 'neo-workflow-issue-title-face)
-      (list status-face 'neo-workflow-issue-title-face))))
+        (list 'neo-workflow-issue-title-face 'magit-head status-face)
+      (list 'neo-workflow-issue-title-face status-face))))
 
 (defun neo--final-issue-id-face (issue)
   "Return the face list for ISSUE id."
