@@ -27,6 +27,13 @@
   :type 'boolean
   :group 'neo-workflow-status)
 
+(defcustom neo/workflow-show-column-header nil
+  "When non-nil, show the vtable column header row (Pri/Title/Labels/...)
+above each board table.  Off by default: the column purpose is obvious from
+content (icons, indentation) and the header row just eats vertical space."
+  :type 'boolean
+  :group 'neo-workflow-status)
+
 (defvar neo/current-context nil
   "The current workflow context object (neo-context struct).")
 
@@ -102,11 +109,6 @@ silently overriding the latter's own explicit family/weight."
   "Face for completed issues in workflow status."
   :group 'neo-workflow-status)
 
-(defface neo-workflow-issue-id-face
-  '((t :inherit magit-hash))
-  "Face for issue IDs in workflow status."
-  :group 'neo-workflow-status)
-
 (defface neo-workflow-issue-title-face
   '((t :inherit (neo-workflow-priority-base-face default) :family "Space Mono" :weight normal))
   "Face for issue titles in workflow status."
@@ -152,6 +154,31 @@ silently overriding the latter's own explicit family/weight."
   "Face for low priority icon."
   :group 'neo-workflow-status)
 
+(defface neo-workflow-status-open-face
+  '((t :inherit neo-workflow-priority-base-face :foreground "#9CA3AF"))
+  "Face for the open status icon."
+  :group 'neo-workflow-status)
+
+(defface neo-workflow-status-in-progress-face
+  '((t :inherit neo-workflow-priority-base-face :foreground "#f0ad4e"))
+  "Face for the in_progress status icon."
+  :group 'neo-workflow-status)
+
+(defface neo-workflow-status-blocked-face
+  '((t :inherit neo-workflow-priority-base-face :foreground "#d73a49"))
+  "Face for the blocked status icon."
+  :group 'neo-workflow-status)
+
+(defface neo-workflow-status-closed-face
+  '((t :inherit neo-workflow-priority-base-face :foreground "#28a745"))
+  "Face for the closed status icon."
+  :group 'neo-workflow-status)
+
+(defface neo-workflow-status-deferred-face
+  '((t :inherit neo-workflow-priority-base-face :foreground "#3B82F6"))
+  "Face for the deferred status icon."
+  :group 'neo-workflow-status)
+
 ;; ============================================================
 ;; Priority logic
 ;; ============================================================
@@ -163,6 +190,40 @@ silently overriding the latter's own explicit family/weight."
 (defconst neo--priority-labels
   '("low" "mid" "high" "critical")
   "Legacy priority label names, still filtered out of the Labels column.")
+
+(defconst neo--implied-labels
+  '("epic" "emacs" "haskell")
+  "Label names filtered out of the Labels column because another part of the
+board already shows the same information.  \"epic\" and the per-language tags
+\"emacs\"/\"haskell\" are applied to an epic issue in beads and inherited by
+all of its children, so every issue under a given epic carries the same tag
+-- already implied by the stack section header it is nested under, e.g.
+\"Epic: advance the Emacs NEO project\".  More specific labels like \"mlody\",
+\"execution\", or \"lifecycle:...\" still carry information the header
+doesn't, so they are not filtered.")
+
+;; ============================================================
+;; Status icons
+;; ============================================================
+
+(defconst neo--status-icon-display
+  '(("open" . ("○" . neo-workflow-status-open-face))
+    ("ready" . ("○" . neo-workflow-status-open-face))
+    ("in_progress" . ("◐" . neo-workflow-status-in-progress-face))
+    ("in-progress" . ("◐" . neo-workflow-status-in-progress-face))
+    ("blocked" . ("●" . neo-workflow-status-blocked-face))
+    ("closed" . ("✓" . neo-workflow-status-closed-face))
+    ("done" . ("✓" . neo-workflow-status-closed-face))
+    ("deferred" . ("❄" . neo-workflow-status-deferred-face)))
+  "Map a beads status string to its (ICON . FACE) for the Status column.")
+
+(defun neo--status-icon (issue)
+  "Return a propertized status icon string for ISSUE.
+Returns an empty string when ISSUE has no recognized beads status."
+  (let ((entry (cdr (assoc (neo-issue-status issue) neo--status-icon-display))))
+    (if entry
+        (propertize (car entry) 'face (cdr entry))
+      "")))
 
 (defconst neo--priority-field-display
   '((0 . ("🔥" . neo-workflow-priority-icon-critical-face))
@@ -215,7 +276,7 @@ with no priority start at P4 (backlog)."
 (defun neo--labels (issue)
   "Return a space-separated string of propertized label names for ISSUE,
 excluding priority labels."
-  (let* ((skip (mapcar #'downcase neo--priority-labels))
+  (let* ((skip (mapcar #'downcase (append neo--priority-labels neo--implied-labels)))
          (labels (cl-remove-if (lambda (l) (member (downcase (neo-label-name l)) skip))
                                (neo-issue-labels issue))))
     (mapconcat
@@ -265,14 +326,6 @@ status-face first would silently mask title-face's overrides."
     (if (neo--active-issue-p issue)
         (list 'neo-workflow-issue-title-face 'magit-head status-face)
       (list 'neo-workflow-issue-title-face status-face))))
-
-(defun neo--final-issue-id-face (issue)
-  "Return the face list for ISSUE id."
-  (let* ((state (neo-issue-state issue))
-         (status-face (neo--get-issue-status-face state)))
-    (if (neo--active-issue-p issue)
-        (list 'magit-head status-face 'neo-workflow-issue-id-face)
-      (list status-face 'neo-workflow-issue-id-face))))
 
 (defun neo--get-branch-name (object)
   "Return the branch name for OBJECT (issue or stack), or nil."
@@ -941,12 +994,9 @@ perspective, and records the choice in the in-memory context store."
    :use-header-line nil
    :separator-width 1
    :insert t
-   :columns `((:name "ID" :width 6 :align 'right
+   :columns `((:name "" :width 2
                      :getter ,(lambda (object _)
-                                (if (neo-issue-p object)
-                                    (propertize (or (neo-issue-short-id object) "")
-                                                'face (neo--final-issue-id-face object))
-                                  "")))
+                                (if (neo-issue-p object) (neo--status-icon object) "")))
               (:name "Pri" :width 3 :align 'right
                      :getter ,(lambda (object _)
                                 (if (neo-issue-p object) (neo--priority-icon object) "")))
@@ -1038,7 +1088,9 @@ If TARGET-REPO-NAME and TARGET-ISSUE-ID are provided, position point on that iss
                 (neo--insert-repo-header repo)
 
                 (cl-letf (((symbol-function #'vtable--insert-header-line)
-                           (lambda (_table _width _spacer))))
+                           (if neo/workflow-show-column-header
+                               (symbol-function #'vtable--insert-header-line)
+                             (lambda (_table _width _spacer)))))
                   (let* ((table (neo/workflow-make-vtable
                                  (lambda () (neo--get-sorted-issues-for-repo repo)))))
                     (let ((end (point)))

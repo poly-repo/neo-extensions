@@ -75,7 +75,8 @@
   title             ;; string or nil
   type              ;; string (beads issue type)
   labels            ;; list of neo-label
-  state             ;; symbol: 'open or 'closed
+  state             ;; symbol: 'open or 'closed (coarse, for filtering)
+  status            ;; string: raw beads status (open/in_progress/blocked/closed/deferred/...)
   draft             ;; integer: 0 (unused, kept for compat)
   created-at        ;; string or nil
   updated-at        ;; string or nil
@@ -202,6 +203,7 @@ REPOSITORY-ID is the workspace path (used as the stable project key)."
      :type (format "%s" issue-type)
      :labels (neo--beads-labels-to-neo-labels labels-raw repository-id)
      :state (neo--beads-state-to-symbol status)
+     :status status
      :draft 0
      :created-at created-at
      :updated-at updated-at
