@@ -225,6 +225,22 @@ window is available."
   (interactive)
   (neo/ensure-worktree))
 
+(defun neo--better-git-worktree-sync (directory &rest _)
+  "Switch NEO to the worktree at DIRECTORY after Magit creates it.
+`magit-worktree-checkout'/`magit-worktree-branch' only run `git worktree
+add' and show a Magit status buffer for DIRECTORY -- they never touch
+projectile/persp/treemacs, unlike the `w' key on a Worktrees-section entry
+\(`neo/magit-worktree-action'), which goes through
+`neo/better-git-switch-to-project'. Route the native transient through the
+same function so both paths stay in sync."
+  (let ((expanded (magit--expand-worktree directory)))
+    (when (file-directory-p expanded)
+      (neo/better-git-switch-to-project expanded))))
+
+(with-eval-after-load 'magit-worktree
+  (advice-add 'magit-worktree-checkout :after #'neo--better-git-worktree-sync)
+  (advice-add 'magit-worktree-branch :after #'neo--better-git-worktree-sync))
+
 (with-eval-after-load 'magit
   ;; Refresh the repo status buffer whenever you save a file in that repo.
   (add-hook 'after-save-hook #'magit-after-save-refresh-status t))

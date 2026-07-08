@@ -81,7 +81,23 @@
               "/tmp/project/.personal-notes.org")
       (expect (nreverse magit-calls)
               :to-equal
-              '(("/tmp/project" nil))))))
+              '(("/tmp/project" nil)))))
+
+  (it "resets a reused scratch buffer's stale default-directory to the new root"
+    (let ((buffer (get-buffer-create "*scratch* (name)")))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer
+              (setq default-directory "/tmp/stale-old-project/"))
+            (neo--projects-reset-scratch-directory "name" "/tmp/new-project")
+            (expect (buffer-local-value 'default-directory buffer)
+                    :to-equal "/tmp/new-project/"))
+        (kill-buffer buffer))))
+
+  (it "does nothing when no scratch buffer exists yet for the perspective"
+    (expect (get-buffer "*scratch* (does-not-exist)") :to-be nil)
+    (expect (neo--projects-reset-scratch-directory "does-not-exist" "/tmp/new-project")
+            :to-be nil)))
 
 (provide 'test-neo-projects)
 ;;; test-neo-projects.el ends here

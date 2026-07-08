@@ -120,6 +120,28 @@
         (kill-buffer buffer))
       (expect shown :to-be nil)))
 
+  (it "syncs NEO to a worktree Magit creates when the directory now exists"
+    (let (switched)
+      (cl-letf (((symbol-function 'magit--expand-worktree)
+                 (lambda (dir) (concat "/expanded/" dir)))
+                ((symbol-function 'file-directory-p)
+                 (lambda (_dir) t))
+                ((symbol-function 'neo/better-git-switch-to-project)
+                 (lambda (path) (setq switched path))))
+        (neo--better-git-worktree-sync "new-wt" "some-branch"))
+      (expect switched :to-equal "/expanded/new-wt")))
+
+  (it "does not switch project when Magit's worktree creation failed"
+    (let (switched)
+      (cl-letf (((symbol-function 'magit--expand-worktree)
+                 (lambda (dir) (concat "/expanded/" dir)))
+                ((symbol-function 'file-directory-p)
+                 (lambda (_dir) nil))
+                ((symbol-function 'neo/better-git-switch-to-project)
+                 (lambda (path) (setq switched path))))
+        (neo--better-git-worktree-sync "new-wt" "some-branch"))
+      (expect switched :to-be nil)))
+
   (it "removes Forge issues and discussions from Magit status sections"
     (let ((magit-status-sections-hook '(forge-insert-status-headers
                                         forge-insert-issues

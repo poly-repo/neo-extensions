@@ -266,6 +266,18 @@ reconciling."
       (eval `(setf (treemacs-workspace->projects ,workspace) nil) t))
     (treemacs-do-add-project-to-workspace root name)))
 
+(defun neo--projects-reset-scratch-directory (name root)
+  "Point perspective NAME's scratch buffer at ROOT.
+`persp-new'/`persp-get-scratch-buffer' reuse an existing \"*scratch*
+\(NAME)\" buffer as-is, including a stale `default-directory', when
+perspectives are restored across sessions or a project's short name
+collides with an earlier one (see `neo/project-name-function'). Force it
+to ROOT on every switch so a reused scratch buffer never silently points
+at the wrong project."
+  (when-let* ((buffer (get-buffer (format "*scratch* (%s)" name))))
+    (with-current-buffer buffer
+      (setq default-directory (file-name-as-directory (expand-file-name root))))))
+
 (defun neo/projectile-update-treemacs ()
   "Update treemacs to show only the current project; switch perspective.
 Return non-nil if a new perspective was created for this project."
@@ -274,6 +286,7 @@ Return non-nil if a new perspective was created for this project."
 	       (name (projectile-project-name)))
       (let ((new-persp (not (neo--persp-exists-p name))))
         (persp-switch name)
+        (neo--projects-reset-scratch-directory name root)
         (neo/treemacs-show-only-project
          root
          (projectile-project-name root))
