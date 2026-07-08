@@ -52,10 +52,10 @@
 (defvar neo/dashboard--origin-persp nil
   "Perspective active before the dashboard was shown.")
 
-;; Set by `neo/application' (core/neo-application.el, loaded well before
-;; this extension) right before it switches to "App:Dashboard" -- see
-;; `neo/dashboard--enter'.
-(defvar neo--last-user-perspective)
+;; Pushed to by `neo/application' (core/neo-application.el, loaded well
+;; before this extension) right before it switches to "App:Dashboard" --
+;; see `neo/dashboard--enter'.
+(defvar neo--application-perspective-stack)
 
 
 (defun neo/dashboard--buffer-name ()
@@ -239,9 +239,12 @@ When BUFFER is nil, use the current dashboard buffer if it exists."
 When entered via the `neo/application' \"Dashboard\" wrapper (`M-a d'),
 that macro already switched to \"App:Dashboard\" before running this as
 its :setup, so `persp-current-name' here is the dashboard's own
-perspective, not the real origin. Fall back to the framework's
-`neo--last-user-perspective' in that case, which it captures right
-before making that switch."
+perspective, not the real origin. In that case the origin is instead
+the top of `neo--application-perspective-stack': the wrapper pushes the
+perspective it switched away from immediately before running :setup, and
+nothing else can push onto the stack in between, so popping it here both
+recovers the real origin and keeps the stack balanced for any further
+nested application launches."
   (when (neo/dashboard--perspective-available-p)
     (neo/dashboard--ensure-perspective-mode)
     (let* ((current-persp (persp-current-name))
@@ -249,11 +252,10 @@ before making that switch."
             (neo/dashboard--current-perspective-dashboard-p current-persp))
            (origin
             (if already-in-dashboard
-                (and (boundp 'neo--last-user-perspective)
-                     neo--last-user-perspective
-                     (not (neo/dashboard--current-perspective-dashboard-p
-                           neo--last-user-perspective))
-                     neo--last-user-perspective)
+                (let ((pushed (pop neo--application-perspective-stack)))
+                  (and pushed
+                       (not (neo/dashboard--current-perspective-dashboard-p pushed))
+                       pushed))
               current-persp)))
       (unless neo/dashboard--origin-persp
         (setq neo/dashboard--origin-persp origin))
