@@ -95,7 +95,7 @@
      1 font-lock-builtin-face)
    `(,(regexp-opt neo--mlody-mode-builtin-constants 'symbols)
      . font-lock-constant-face)
-   '("\\_<[0-9]+\\(?:\\.[0-9]+\\)?\\_>" . font-lock-number-face)
+   '("\\_<[0-9]+\\(?:\\.[0-9]+\\)?\\_>" . 'font-lock-number-face)
    '("^\\s-*--|?.*$" 0 font-lock-comment-face t))
   "Font-lock rules for `neo-mlody-mode'.")
 
