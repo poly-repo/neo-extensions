@@ -117,7 +117,42 @@ If COLOR is nil, use the theme's default foreground color."
 (defun neo--local-file (file)
   (expand-file-name file neo--dir))
 
-(cl-defmethod neo/extension-render-card ((ext neo/extension) framework)
+(defun neo/manager--enabled-roots ()
+  "Return the persisted `enabled-extensions' root slug strings, or nil."
+  (let ((config-val (neo/get-config "enabled-extensions")))
+    (if config-val (read config-val) nil)))
+
+(defun neo/manager--installed-slugs (framework)
+  "Return the slugs that would load on the next restart, per FRAMEWORK.
+
+Computed from the persisted `enabled-extensions' roots (not the live
+`installed-extensions' hash table), so the manager's Install/Disable buttons
+always reflect what a restart would actually do."
+  (neo/topo-sort-from-roots (neo-framework-available-extensions framework)
+                            (neo/manager--enabled-roots)
+                            '(:on-missing ignore :on-cycle ignore)))
+
+(defun neo/manager--install-extension (slug)
+  "Add SLUG to the persisted `enabled-extensions' roots and refresh the UI.
+
+Takes effect on the next restart -- this only persists the choice, it does
+not hot-load the extension into the running session."
+  (let* ((roots (neo/manager--enabled-roots))
+         (updated (if (member slug roots) roots (append roots (list slug)))))
+    (neo/set-config "enabled-extensions" (prin1-to-string updated))
+    (neo/set-config "pretend-new-user" "nil")
+    (message "Installed %s. Restart Emacs to load it." slug))
+  (neo/extensions-refresh-all))
+
+(defun neo/manager--disable-extension (slug)
+  "Placeholder: disabling SLUG is not implemented yet."
+  (message "Disable is not implemented yet for %s." slug))
+
+(defun neo/manager--uninstall-extension (slug)
+  "Placeholder: uninstalling SLUG is not implemented yet."
+  (message "Uninstall is not implemented yet for %s." slug))
+
+(cl-defmethod neo/extension-render-card ((ext neo/extension) framework &optional installed-slugs)
   "Render EXT in the current buffer. Return (start . end) position."
   (let ((start (point))
         (inhibit-message nil)
@@ -146,8 +181,17 @@ If COLOR is nil, use the theme's default foreground color."
       (insert (propertize desc 'face '(:slant italic :height 0.95)))
       (insert "\n\n"))
 
-    (insert (svg-lib-button "[check-bold] OK"
-                            (lambda () (interactive) (message "OK"))))
+    (let* ((slug (neo/extension-slug-to-string (neo--extension-slug ext)))
+           (installed-p (member slug installed-slugs)))
+      (if installed-p
+          (progn
+            (insert (svg-lib-button "[pause] Disable"
+                                    (lambda () (interactive) (neo/manager--disable-extension slug))))
+            (insert " ")
+            (insert (svg-lib-button "[trash-can] Uninstall"
+                                    (lambda () (interactive) (neo/manager--uninstall-extension slug)))))
+        (insert (svg-lib-button "[download] Install"
+                                (lambda () (interactive) (neo/manager--install-extension slug))))))
     (insert "\n")
     
     (let ((repo (neo/extension-repository ext))
@@ -281,12 +325,13 @@ If COLOR is nil, use the theme's default foreground color."
      'face 'neo/manager-header-face))))
 
 (defun neo/extensions-render ()
-  (let ((inhibit-read-only t)
-        (framework (neo--framework-instance)))
+  (let* ((inhibit-read-only t)
+         (framework (neo--framework-instance))
+         (installed-slugs (neo/manager--installed-slugs framework)))
     (erase-buffer)
 
     (maphash (lambda (_ v)
-               (neo/extension-render-card v framework))
+               (neo/extension-render-card v framework installed-slugs))
              (neo-framework-available-extensions framework))
     (goto-char (point-min))))
 

@@ -8,8 +8,6 @@
 
 (defvar-local neo/manager-quit-function nil)
 
-;; TODO DNL
-(add-to-list 'load-path "/home/mav/.local/share/wtrees/mav-83-mvp-extension-management/devex/editors/emacs/extensions/extensions/neo/neo-manager")
 (require 'neo-extension-manager-render)
 ;(require 'neo-extension-manager-navigation)
 
@@ -87,5 +85,17 @@ wraps this in `neo/with-ui-session'."
   ;; by the standalone `neo/manager-show' path.
   :bind "n")
 
+(defun neo/manager--maybe-launch-on-startup ()
+  "Open the Extension Manager once, right after `neo/start-configuration'.
+
+Consumes the one-shot `\"launch-extensions-manager-on-startup\"' config flag
+set by `neo/start-configuration' (core/neo-early-init-utils.el): clears it
+immediately so this only fires for the restart that follows clicking `Start
+configuration', not every subsequent boot."
+  (when (equal (neo/get-config "launch-extensions-manager-on-startup") "t")
+    (neo/set-config "launch-extensions-manager-on-startup" "nil")
+    (neo/app-neo-extensions)))
+
+(add-hook 'neo/after-framework-bootstrap-hook #'neo/manager--maybe-launch-on-startup)
 
 ;;; Note, no (provide 'neo-neo-manager) here, extensions are loaded not required.
