@@ -5,6 +5,7 @@
 (neo/use-package transient)
 
 (neo/use-package magit
+  :after transient
   :config
   (setq magit-save-repository-buffers 'dontask)
   ;; TODO we should handle this in a less ad-hoc way. One possibility is use-package keychord here, but this can be done only
