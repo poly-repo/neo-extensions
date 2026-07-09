@@ -91,10 +91,19 @@ wraps this in `neo/with-ui-session'."
 Consumes the one-shot `\"launch-extensions-manager-on-startup\"' config flag
 set by `neo/start-configuration' (core/neo-early-init-utils.el): clears it
 immediately so this only fires for the restart that follows clicking `Start
-configuration', not every subsequent boot."
+configuration', not every subsequent boot.
+
+Uses `neo/manager-render' directly rather than the `neo/application'-wrapped
+`neo/app-neo-extensions': the latter unconditionally `require's `perspective',
+which is only installed as part of `neo:projects' -- a package this minimal
+boot (nothing but `neo:extension-manager' enabled) never pulls in. The bare
+render path needs no perspective, so it works regardless of what else is
+enabled."
   (when (equal (neo/get-config "launch-extensions-manager-on-startup") "t")
     (neo/set-config "launch-extensions-manager-on-startup" "nil")
-    (neo/app-neo-extensions)))
+    (let ((buf (neo/manager-render)))
+      (with-current-buffer buf
+        (setq-local neo/manager-quit-function (lambda () (interactive) (bury-buffer)))))))
 
 (add-hook 'neo/after-framework-bootstrap-hook #'neo/manager--maybe-launch-on-startup)
 
