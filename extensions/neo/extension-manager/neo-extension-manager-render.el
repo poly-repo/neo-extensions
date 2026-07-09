@@ -335,12 +335,23 @@ stale large value would otherwise get clamped down to the very bottom of
 the new content. On a refresh triggered by a button (e.g. Install), the
 buffer already had real content and a settled display, so the user's scroll
 position and point are saved beforehand and restored afterward (clamped to
-the new buffer size), so clicking a button does not jump the display."
+the new buffer size), so clicking a button does not jump the display.
+
+Rendering all cards can be slow the first time an extension's packages
+(e.g. svg-lib) or its `neo--get-extension-info' introspection need to
+install/refresh things via elpaca, which pops up `*elpaca-log*' in whatever
+window is current -- including this one, mid-loop. When that happens,
+Emacs snapshots this buffer's then-current (mid-render, not-yet-final)
+point into that window's `window-prev-buffers', and restoring this buffer
+later would land back at that stale mid-render position instead of the
+top. Re-assert this buffer and the intended point/start on WIN as the last
+step, after all cards are drawn, so any such hijack gets overridden."
   (let* ((inhibit-read-only t)
+         (buf (current-buffer))
          (framework (neo--framework-instance))
          (installed-slugs (neo/manager--installed-slugs framework))
          (first-render-p (= (point-min) (point-max)))
-         (win (get-buffer-window (current-buffer) t))
+         (win (get-buffer-window buf t))
          (saved-point (if first-render-p 1 (point)))
          (saved-window-start (if first-render-p 1 (and win (window-start win)))))
     (erase-buffer)
@@ -349,7 +360,9 @@ the new buffer size), so clicking a button does not jump the display."
                (neo/extension-render-card v framework installed-slugs))
              (neo-framework-available-extensions framework))
     (goto-char (min saved-point (point-max)))
-    (when win
+    (when (window-live-p win)
+      (set-window-buffer win buf)
+      (set-window-point win (point))
       (set-window-start win (min saved-window-start (point-max))))))
 
 (defun neo/extensions-refresh-all ()
