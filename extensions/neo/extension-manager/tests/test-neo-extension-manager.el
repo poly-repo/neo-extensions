@@ -77,5 +77,24 @@
       (spy-on 'neo/get-config :and-return-value nil)
       (expect (neo/manager--installed-slugs framework) :to-equal nil))))
 
+(describe "neo/extensions-render"
+  (it "skips hidden extensions when drawing cards"
+    (let* ((available (make-hash-table :test 'equal))
+           (visible (make-neo/extension :name "a" :publisher "pub"))
+           (hidden (make-neo/extension :name "extension-manager" :publisher "neo" :hidden t))
+           (framework (make-neo-framework
+                       :available-extensions available
+                       :installed-extensions (make-hash-table :test 'equal)))
+           (rendered nil))
+      (puthash "pub:a" visible available)
+      (puthash "neo:extension-manager" hidden available)
+      (spy-on 'neo--framework-instance :and-return-value framework)
+      (spy-on 'neo/manager--installed-slugs :and-return-value nil)
+      (spy-on 'neo/extension-render-card :and-call-fake
+              (lambda (ext &rest _) (push ext rendered)))
+      (with-temp-buffer
+        (neo/extensions-render))
+      (expect rendered :to-equal (list visible)))))
+
 (provide 'test-neo-extension-manager)
 ;;; test-neo-extension-manager.el ends here

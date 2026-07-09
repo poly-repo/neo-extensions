@@ -8,6 +8,7 @@
  :keywords ()
 
  :requires ()
+ :hidden t
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"

@@ -357,7 +357,8 @@ step, after all cards are drawn, so any such hijack gets overridden."
     (erase-buffer)
 
     (maphash (lambda (_ v)
-               (neo/extension-render-card v framework installed-slugs))
+               (unless (neo/extension-hidden v)
+                 (neo/extension-render-card v framework installed-slugs)))
              (neo-framework-available-extensions framework))
     (goto-char (min saved-point (point-max)))
     (when (window-live-p win)
