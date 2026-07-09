@@ -327,17 +327,22 @@ not hot-load the extension into the running session."
 (defun neo/extensions-render ()
   "Redraw the extension list, preserving the current view.
 
-On the very first render the buffer is empty, so point and window-start are
-both 1 and this naturally lands on the top of the freshly drawn list. On a
-refresh triggered by a button (e.g. Install), the user's scroll position and
-point are saved beforehand and restored afterward, clamped to the new buffer
-size, so clicking a button does not jump the display back to the top."
+On the very first render the buffer is empty; land on the top of the freshly
+drawn list rather than trusting `window-start', which can still hold a stale
+value left over from whatever buffer this window showed before
+`switch-to-buffer' -- there has been no redisplay yet to refresh it, and a
+stale large value would otherwise get clamped down to the very bottom of
+the new content. On a refresh triggered by a button (e.g. Install), the
+buffer already had real content and a settled display, so the user's scroll
+position and point are saved beforehand and restored afterward (clamped to
+the new buffer size), so clicking a button does not jump the display."
   (let* ((inhibit-read-only t)
          (framework (neo--framework-instance))
          (installed-slugs (neo/manager--installed-slugs framework))
+         (first-render-p (= (point-min) (point-max)))
          (win (get-buffer-window (current-buffer) t))
-         (saved-point (point))
-         (saved-window-start (and win (window-start win))))
+         (saved-point (if first-render-p 1 (point)))
+         (saved-window-start (if first-render-p 1 (and win (window-start win)))))
     (erase-buffer)
 
     (maphash (lambda (_ v)
