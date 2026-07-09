@@ -7,8 +7,11 @@
  :categories (neo) ; not sure what the intention for this was
  :keywords ()
 
- :requires ()
- :depends-on ("neo:projects")		; TODO: this is not a depends-on in the sense of "recommend". But if that's used, we want to come after it
+ :requires ("neo:projects")		; dashboard's :custom sets dashboard-projects-backend to
+					; 'projectile, which neo:projects (not dashboard itself)
+					; installs -- this must be a hard :requires, not just
+					; :depends-on, or projectile is never installed
+ :depends-on ()
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"

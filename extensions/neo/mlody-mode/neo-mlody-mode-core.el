@@ -223,7 +223,7 @@
                (kind (neo--mlody-mode-classify-code code)))
           (unless (memq kind '(blank comment))
             (setq stack (neo--mlody-mode-pop-contexts stack (current-indentation)))
-            (when-let ((context (neo--mlody-mode-opening-context kind)))
+            (when-let* ((context (neo--mlody-mode-opening-context kind)))
               (setq stack (neo--mlody-mode-push-context stack context
                                                         (current-indentation))))))
         (forward-line 1)))
@@ -261,11 +261,11 @@
       ((or 'top-decl 'top-import-open 'top-task-open 'top-where-open)
        0)
       ('import-item
-       (if-let ((context (neo--mlody-mode-nearest-context stack 'import)))
+       (if-let* ((context (neo--mlody-mode-nearest-context stack 'import)))
            (plist-get context :child-indent)
          neo/mlody-mode-indent-offset))
       ('section-open
-       (if-let ((context (neo--mlody-mode-nearest-context stack 'task)))
+       (if-let* ((context (neo--mlody-mode-nearest-context stack 'task)))
            (plist-get context :child-indent)
          neo/mlody-mode-indent-offset))
       ((or 'port-open 'inline-port)

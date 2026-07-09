@@ -7,7 +7,7 @@
  :categories (neo) ; not sure what the intention for this was
  :keywords (programming)
 
- :requires ()
+ :requires ("neo:better-git")		; neo/git-branch-from-issue is defined there
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"

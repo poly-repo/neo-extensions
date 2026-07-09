@@ -6,8 +6,9 @@
  :description "Python support."
  :categories (neo)
  :keywords (programming python)
- :requires ()
- :depends-on ("neo:programming-foundation")
+ :requires ("neo:programming-foundation")	; (require 'neo-programming-foundation-treesit)
+						; needs its dir on load-path
+ :depends-on ()
  :tree-sitter-grammars
  ((python "https://github.com/tree-sitter/tree-sitter-python"))
  :repository (

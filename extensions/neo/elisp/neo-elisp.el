@@ -12,6 +12,22 @@
   :config
   (eval-expr-install))
 
+;; Declared *before* `helpful': helpful's own Package-Requires lists
+;; elisp-refs as a dependency, so if helpful were declared first, Elpaca
+;; would auto-resolve+activate elisp-refs as part of helpful's dependency
+;; graph, and this explicit declaration would then create a second,
+;; independent queue entry for the same package -- racing the first and
+;; tripping Elpaca's "loaded before Elpaca activation" warning (the same
+;; duplicate-declaration race documented in neo-better-git.el's NOTE about
+;; `transient').
+;; TODO: not sure this is actually useful to me. el-search is probably more general, only one is likely to stay.
+(neo/use-package elisp-refs
+  :commands (elisp-refs-function
+	     elisp-refs-macro
+	     elisp-refs-variable
+	     elisp-refs-special
+	     elisp-refs-symbol))
+
 (neo/use-package helpful)
 
 ;; (neo/use-package elisp-def
@@ -37,14 +53,6 @@
   :config
   (define-key paredit-mode-map (kbd "RET") nil)
   )
-
-;; TODO: not sure this is actually useful to me. el-search is probably more general, only one is likely to stay.
-(neo/use-package elisp-refs
-  :commands (elisp-refs-function
-	     elisp-refs-macro
-	     elisp-refs-variable
-	     elisp-refs-special
-	     elisp-refs-symbol))
 
 (neo/use-package el-search)
 

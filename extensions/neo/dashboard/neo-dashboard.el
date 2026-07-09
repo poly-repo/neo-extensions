@@ -9,8 +9,6 @@
   (expand-file-name "hacker.png" (file-name-directory (or load-file-name byte-compile-current-file))))
 
 
-(neo/use-package dashboard-hackernews)
-
 (defun neo--setup-banner ()
   (if (file-readable-p neo--hacker-image)
       (progn
@@ -328,5 +326,17 @@ return to whatever was active before the dashboard took over."
   (:map dashboard-mode-map
         ("q" . neo/dashboard-quit))
   :hook
-  (neo/after-framework-bootstrap .  #'dashboard-insert-startupify-lists)
-  (neo/after-framework-bootstrap . #'dashboard-initialize))
+  (neo/after-framework-bootstrap . dashboard-insert-startupify-lists)
+  (neo/after-framework-bootstrap . dashboard-initialize))
+
+;; Declared *after* the `dashboard' use-package block, not before: this
+;; package's own source does `(require 'dashboard)' at its top level, and
+;; its package metadata also lists `dashboard' as a dependency. If this were
+;; enqueued first, Elpaca would auto-resolve+activate `dashboard' as part of
+;; that dependency graph, then our own explicit `dashboard' declaration above
+;; would create a second, independent queue entry for the same package --
+;; racing the first and tripping Elpaca's "loaded before Elpaca activation"
+;; warning when its activation step finds the feature already provided (the
+;; same duplicate-declaration race documented in neo-better-git.el's NOTE
+;; about `transient').
+(neo/use-package dashboard-hackernews)
