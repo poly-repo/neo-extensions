@@ -358,7 +358,12 @@ step, after all cards are drawn, so any such hijack gets overridden."
 
     (maphash (lambda (_ v)
                (unless (neo/extension-hidden v)
-                 (neo/extension-render-card v framework installed-slugs)))
+                 (condition-case err
+                     (neo/extension-render-card v framework installed-slugs)
+                   (error
+                    (neo/log-warn 'core "Failed to render card for %s: %s"
+                                  (neo/extension-slug-to-string (neo--extension-slug v))
+                                  (error-message-string err))))))
              (neo-framework-available-extensions framework))
     (goto-char (min saved-point (point-max)))
     (when (window-live-p win)

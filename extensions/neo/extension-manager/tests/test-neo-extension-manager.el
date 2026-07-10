@@ -3,6 +3,7 @@
 (require 'buttercup)
 (require 'cl-lib)
 (require 'neo-early-init-utils)
+(require 'neo-logging)
 
 ;; `neo-config' (pulled in transitively via `neo-framework') opens a real
 ;; sqlite handle at load time; point it at a scratch dir instead of a real
@@ -94,7 +95,30 @@
               (lambda (ext &rest _) (push ext rendered)))
       (with-temp-buffer
         (neo/extensions-render))
-      (expect rendered :to-equal (list visible)))))
+      (expect rendered :to-equal (list visible))))
+
+  (it "keeps rendering remaining cards when one card's render signals an error"
+    (let* ((available (make-hash-table :test 'equal))
+           (bad (make-neo/extension :name "bad" :publisher "pub"))
+           (good (make-neo/extension :name "good" :publisher "pub"))
+           (framework (make-neo-framework
+                       :available-extensions available
+                       :installed-extensions (make-hash-table :test 'equal)))
+           (rendered nil))
+      (puthash "pub:bad" bad available)
+      (puthash "pub:good" good available)
+      (spy-on 'neo--framework-instance :and-return-value framework)
+      (spy-on 'neo/manager--installed-slugs :and-return-value nil)
+      (spy-on 'neo/log-warn)
+      (spy-on 'neo/extension-render-card :and-call-fake
+              (lambda (ext &rest _)
+                (if (eq ext bad)
+                    (error "boom")
+                  (push ext rendered))))
+      (with-temp-buffer
+        (neo/extensions-render))
+      (expect rendered :to-equal (list good))
+      (expect 'neo/log-warn :to-have-been-called))))
 
 (provide 'test-neo-extension-manager)
 ;;; test-neo-extension-manager.el ends here
