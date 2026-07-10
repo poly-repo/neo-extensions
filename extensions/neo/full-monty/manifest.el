@@ -6,6 +6,7 @@
  :description "Don't settle for less, YOLO"
  :categories (neo)
  :keywords (neo)
+ :hidden t
  :requires (
 	    "neo:dashboard"
 	    "neo:elisp"
