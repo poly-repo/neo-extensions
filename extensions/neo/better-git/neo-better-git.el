@@ -21,9 +21,13 @@
   :after transient
   :config
   (setq magit-save-repository-buffers 'dontask)
-  ;; TODO we should handle this in a less ad-hoc way. One possibility is use-package keychord here, but this can be done only
-  ;; when we're able to merge multiple use-package for the same package
-  (when (featurep 'key-chord) (key-chord-define-global "//" 'magit-status))
+  ;; `key-chord' itself is only installed/enabled by neo:questionable-defaults,
+  ;; not a :requires of this extension -- `with-eval-after-load' (matching
+  ;; neo-ui-side-windows.el and neo-programming-foundation.el's own key-chord
+  ;; bindings) picks up the binding whenever key-chord loads, regardless of
+  ;; which of the two extensions gets installed first.
+  (with-eval-after-load 'key-chord
+    (key-chord-define-global "//" 'magit-status))
   (transient-append-suffix 'magit-branch "C"
     '("K" "delete all merged" neo/delete-merged-branches))
   :custom
