@@ -85,6 +85,26 @@ wraps this in `neo/with-ui-session'."
   ;; by the standalone `neo/manager-show' path.
   :bind "n")
 
+(defun neo/app-neo-extensions--dispatch ()
+  "Open the Extension Manager, tolerating a missing `perspective' package.
+
+`neo/app-neo-extensions' (defined above by the `neo/application' macro)
+unconditionally `require's `perspective', which is only installed once
+`neo:projects' has been enabled at least once. Before that -- e.g. a user
+who abandoned the \"Start configuration\" flow after disabling everything
+but a couple of minimal extensions -- fall back to the same bare,
+perspective-free `neo/manager-render' entry point that
+`neo/manager--maybe-launch-on-startup' already uses, so `M-a n' always
+works regardless of what else is enabled."
+  (interactive)
+  (if (require 'perspective nil t)
+      (neo/app-neo-extensions)
+    (neo/manager-render)))
+
+(define-key neo/applications-map (kbd "n") #'neo/app-neo-extensions--dispatch)
+(when-let* ((app (gethash "Neo Extensions" neo--applications)))
+  (setf (neo/application-command app) #'neo/app-neo-extensions--dispatch))
+
 (defun neo/manager--maybe-launch-on-startup ()
   "Open the Extension Manager once, right after `neo/start-configuration'.
 
@@ -98,9 +118,19 @@ Uses `neo/manager-render' directly rather than the `neo/application'-wrapped
 which is only installed as part of `neo:projects' -- a package this minimal
 boot (nothing but `neo:extension-manager' enabled) never pulls in. The bare
 render path needs no perspective, so it works regardless of what else is
-enabled."
+enabled.
+
+Also pre-selects `neo:dashboard' via `neo/manager--install-extension', so its
+card shows as already installed and an abandoned session (user quits without
+touching anything) is still self-recovering on the *next* restart. This runs
+on `neo/after-framework-bootstrap-hook', i.e. after `neo/bootstrap' has
+already finished for the current boot, so persisting the choice here does not
+hot-load `neo:dashboard' (or the `neo:projects'/`perspective' it requires)
+into this session -- it takes effect starting the boot after this one, so
+there is no race with the manager staying on screen right now."
   (when (equal (neo/get-config "launch-extensions-manager-on-startup") "t")
     (neo/set-config "launch-extensions-manager-on-startup" "nil")
+    (neo/manager--install-extension "neo:dashboard")
     (let ((buf (neo/manager-render)))
       (with-current-buffer buf
         (setq-local neo/manager-quit-function (lambda () (interactive) (bury-buffer)))))))

@@ -18,6 +18,10 @@
 (load-file (expand-file-name "../neo-extension-manager-render.el"
                              (file-name-directory (or load-file-name buffer-file-name))))
 
+(require 'neo-application)
+(load-file (expand-file-name "../neo-extension-manager.el"
+                             (file-name-directory (or load-file-name buffer-file-name))))
+
 (describe "neo/manager--install-extension"
   (it "appends a new slug to the persisted enabled-extensions roots"
     (let (stored)
@@ -119,6 +123,49 @@
         (neo/extensions-render))
       (expect rendered :to-equal (list good))
       (expect 'neo/log-warn :to-have-been-called))))
+
+(describe "neo/app-neo-extensions--dispatch"
+  (it "opens the perspective-backed application when perspective is available"
+    (spy-on 'require :and-return-value t)
+    (spy-on 'neo/app-neo-extensions)
+    (spy-on 'neo/manager-render)
+    (neo/app-neo-extensions--dispatch)
+    (expect 'neo/app-neo-extensions :to-have-been-called)
+    (expect 'neo/manager-render :not :to-have-been-called))
+
+  (it "falls back to the bare manager render when perspective is unavailable"
+    (spy-on 'require :and-return-value nil)
+    (spy-on 'neo/app-neo-extensions)
+    (spy-on 'neo/manager-render)
+    (neo/app-neo-extensions--dispatch)
+    (expect 'neo/manager-render :to-have-been-called)
+    (expect 'neo/app-neo-extensions :not :to-have-been-called)))
+
+(describe "neo/manager--maybe-launch-on-startup"
+  (it "does nothing when the one-shot flag is not set"
+    (spy-on 'neo/get-config :and-return-value nil)
+    (spy-on 'neo/set-config)
+    (spy-on 'neo/manager--install-extension)
+    (spy-on 'neo/manager-render)
+    (neo/manager--maybe-launch-on-startup)
+    (expect 'neo/manager-render :not :to-have-been-called)
+    (expect 'neo/manager--install-extension :not :to-have-been-called))
+
+  (it "consumes the flag, pre-selects the dashboard, and renders the manager"
+    (spy-on 'neo/get-config :and-return-value "t")
+    (spy-on 'neo/set-config)
+    (spy-on 'neo/manager--install-extension)
+    (let ((test-buffer (generate-new-buffer " *test-manager*")))
+      (unwind-protect
+          (progn
+            (spy-on 'neo/manager-render :and-return-value test-buffer)
+            (neo/manager--maybe-launch-on-startup)
+            (expect 'neo/set-config :to-have-been-called-with
+                    "launch-extensions-manager-on-startup" "nil")
+            (expect 'neo/manager--install-extension :to-have-been-called-with
+                    "neo:dashboard")
+            (expect 'neo/manager-render :to-have-been-called))
+        (kill-buffer test-buffer)))))
 
 (provide 'test-neo-extension-manager)
 ;;; test-neo-extension-manager.el ends here
