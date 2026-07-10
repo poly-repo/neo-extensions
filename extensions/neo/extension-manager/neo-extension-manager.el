@@ -120,17 +120,19 @@ boot (nothing but `neo:extension-manager' enabled) never pulls in. The bare
 render path needs no perspective, so it works regardless of what else is
 enabled.
 
-Also pre-selects `neo:dashboard' via `neo/manager--install-extension', so its
-card shows as already installed and an abandoned session (user quits without
-touching anything) is still self-recovering on the *next* restart. This runs
-on `neo/after-framework-bootstrap-hook', i.e. after `neo/bootstrap' has
-already finished for the current boot, so persisting the choice here does not
+Also pre-selects `neo:dashboard' via `neo/manager--persist-enabled-extension'
+(config-only, unlike the Install button's `neo/manager--install-extension',
+which also hot-loads), so its card shows as already installed and an
+abandoned session (user quits without touching anything) is still
+self-recovering on the *next* restart. This runs on
+`neo/after-framework-bootstrap-hook', i.e. after `neo/bootstrap' has already
+finished for the current boot, so persisting the choice here does not
 hot-load `neo:dashboard' (or the `neo:projects'/`perspective' it requires)
 into this session -- it takes effect starting the boot after this one, so
 there is no race with the manager staying on screen right now."
   (when (equal (neo/get-config "launch-extensions-manager-on-startup") "t")
     (neo/set-config "launch-extensions-manager-on-startup" "nil")
-    (neo/manager--install-extension "neo:dashboard")
+    (neo/manager--persist-enabled-extension "neo:dashboard")
     (let ((buf (neo/manager-render)))
       (with-current-buffer buf
         (setq-local neo/manager-quit-function (lambda () (interactive) (bury-buffer)))))))

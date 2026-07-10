@@ -102,6 +102,35 @@ If COLOR is nil, use the theme's default foreground color."
 (cl-defgeneric neo/extension-render-card (object)
   "Render OBJECT at point and return a point marker.")
 
+(defconst neo/manager--spinner-frames '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  "Animation frames for the install spinner.")
+
+(defvar-local neo/manager--installing-label nil
+  "Slug of the extension currently being installed, or nil.
+
+Set by `neo/manager--start-install-spinner'. While non-nil,
+`neo/extension-render-card' draws that slug's card with a spinner glyph in
+place of its Install button, instead of the button itself.")
+
+(defvar-local neo/manager--spinner-index 0
+  "Current animation frame index into `neo/manager--spinner-frames'.")
+
+(defvar-local neo/manager--spinner-timer nil
+  "Repeating timer driving the install spinner, or nil.")
+
+(defvar-local neo/manager--spinner-marker nil
+  "Marker at the animated glyph inside the installing card's button area.
+
+Set by `neo/extension-render-card' when it draws the card matching
+`neo/manager--installing-label'. Consumed by
+`neo/manager--update-spinner-glyph' to redraw just that one character on
+each timer tick, without re-rendering the whole card.")
+
+(defun neo/manager--spinner-glyph ()
+  "Return the current spinner glyph."
+  (nth (mod neo/manager--spinner-index (length neo/manager--spinner-frames))
+       neo/manager--spinner-frames))
+
 (defun neo/manager--info-label (text)
   (propertize text 'face 'neo/manager-info-label-face))
 
@@ -132,16 +161,102 @@ always reflect what a restart would actually do."
                             (neo/manager--enabled-roots)
                             '(:on-missing ignore :on-cycle ignore)))
 
-(defun neo/manager--install-extension (slug)
-  "Add SLUG to the persisted `enabled-extensions' roots and refresh the UI.
+(defun neo/manager--persist-enabled-extension (slug)
+  "Add SLUG to the persisted `enabled-extensions' roots, without loading it.
 
-Takes effect on the next restart -- this only persists the choice, it does
-not hot-load the extension into the running session."
+Takes effect on the next restart only. Used where hot-loading would be
+unsafe or unwanted right now -- e.g. `neo/manager--maybe-launch-on-startup'
+pre-selects `neo:dashboard' this way specifically so it does NOT load (and
+race the one-shot manager launch) during the boot that follows `Start
+configuration'."
   (let* ((roots (neo/manager--enabled-roots))
          (updated (if (member slug roots) roots (append roots (list slug)))))
     (neo/set-config "enabled-extensions" (prin1-to-string updated))
-    (neo/set-config "pretend-new-user" "nil")
-    (message "Installed %s. Restart Emacs to load it." slug))
+    (neo/set-config "pretend-new-user" "nil")))
+
+(defun neo/manager--resolve-extension (framework slug)
+  "Install, load, and configure SLUG (and any unmet `:requires') in FRAMEWORK.
+
+Mirrors the install/load/replay-packages steps `neo/bootstrap' performs for
+the whole `enabled-extensions' set at startup, scoped here to just the
+extensions SLUG transitively needs that are not already in FRAMEWORK's
+`installed-extensions' -- an extension already installed this session is
+left untouched.
+
+Returns the slug strings that were newly installed, in dependency order
+(dependencies before dependents).
+
+Caveat: an extension that hooks itself onto `neo/after-framework-bootstrap-
+hook' (e.g. via a `neo/use-package' `:hook', or directly via `(if neo/
+framework-bootstrapped-p (do-it-now) (add-hook 'neo/after-framework-
+bootstrap-hook #'do-it-later))') relies on that hook firing once at startup;
+it has already run for this session by the time anything can be hot-
+installed. `neo/framework-bootstrapped-p' is bound to nil for the duration
+of the load+replay loop below so such code takes its defer path here too,
+and any function that gets newly added to `neo/after-framework-bootstrap-
+hook' as a result is fired once the loop finishes (with the flag restored to
+its real value), so it activates in this session instead of waiting for the
+next restart. A hook function already present before this call -- e.g. one
+that already fired during real boot and does not remove itself -- is left
+alone; only the delta added during this call is fired."
+  (let* ((available (neo-framework-available-extensions framework))
+         (installed (neo-framework-installed-extensions framework))
+         (wanted (neo/topo-sort-from-roots available (list slug)
+                                           '(:on-missing warn :on-cycle warn)))
+         (new-slugs (seq-remove (lambda (s) (gethash s installed)) wanted))
+         (hook-before (copy-sequence neo/after-framework-bootstrap-hook)))
+    ;; Extension files loaded here are not yet fully bootstrapped in the
+    ;; `neo/bootstrap' sense: their own transitive packages are installed
+    ;; and replayed per-slug, interleaved, in the loop below, not all at
+    ;; once before any of them load. Leaving the (stale, already-true)
+    ;; global flag in place would make code like
+    ;; `neo-programming-foundation.el''s `(if neo/framework-bootstrapped-p
+    ;; ...)' run immediately instead of deferring, before its own
+    ;; `use-package' dependencies (e.g. `vui') have been replayed.
+    (let ((neo/framework-bootstrapped-p nil))
+      (dolist (slug-string new-slugs)
+        (when-let* ((ext (gethash slug-string available))
+                    (ext-slug (neo--extension-slug ext)))
+          (neo/install-extension framework
+                                 (make-neo/installation
+                                  :extension-slug ext-slug
+                                  :installed-at (current-time)))
+          (if (neo--load-extension ext)
+              (provide (neo/extension-feature-symbol ext-slug))
+            (neo/log-warn 'core "Extension %s file not found or failed to load" slug-string))
+          (neo/replay-extension-packages ext-slug))))
+    (dolist (fn (seq-difference neo/after-framework-bootstrap-hook hook-before))
+      (condition-case err
+          (funcall fn)
+        (error
+         (neo/log-warn 'core "Deferred bootstrap hook %s failed during hot-install: %s"
+                       fn err))))
+    new-slugs))
+
+(defun neo/manager--install-extension (slug)
+  "Install SLUG into the running session and persist the choice.
+
+Resolves SLUG the way `neo/bootstrap' resolves a deferred `neo/extension' at
+startup -- installs, loads, and replays packages for SLUG and any of its
+unmet `:requires', via `neo/manager--resolve-extension' -- so it (and
+whatever it pulls in) is usable immediately, not just after a restart.
+
+Runs a spinner in place of the card's Install button for the duration:
+`neo/manager--resolve-extension' blocks synchronously (elpaca package
+installs use `:wait t'), so without this there is no feedback at all between
+clicking Install and the buffer refreshing once it's done -- and a header-
+line-only indicator is too easy to miss."
+  (neo/manager--persist-enabled-extension slug)
+  (let* ((buf (current-buffer))
+         (newly-loaded
+          (unwind-protect
+              (progn
+                (neo/manager--start-install-spinner buf slug)
+                (neo/manager--resolve-extension (neo--framework-instance) slug))
+            (neo/manager--stop-install-spinner buf))))
+    (message (if newly-loaded
+                 (format "Installed %s." (mapconcat #'identity newly-loaded ", "))
+               (format "%s is already installed." slug))))
   (neo/extensions-refresh-all))
 
 (defun neo/manager--disable-extension (slug)
@@ -182,16 +297,27 @@ not hot-load the extension into the running session."
       (insert "\n\n"))
 
     (let* ((slug (neo/extension-slug-to-string (neo--extension-slug ext)))
-           (installed-p (member slug installed-slugs)))
-      (if installed-p
-          (progn
-            (insert (svg-lib-button "[pause] Disable"
-                                    (lambda () (interactive) (neo/manager--disable-extension slug))))
-            (insert " ")
-            (insert (svg-lib-button "[trash-can] Uninstall"
-                                    (lambda () (interactive) (neo/manager--uninstall-extension slug)))))
+           (installed-p (member slug installed-slugs))
+           (installing-p (equal slug neo/manager--installing-label)))
+      (cond
+       (installing-p
+        ;; Replaces the Install button outright (rather than merely
+        ;; disabling it) so a mid-install card can't be mistaken for one
+        ;; still waiting to be clicked -- this is what the header-line-only
+        ;; spinner missed: it was too easy to not notice at all.
+        (let ((glyph-start (point)))
+          (insert (propertize (neo/manager--spinner-glyph) 'face '(:weight bold)))
+          (setq neo/manager--spinner-marker (copy-marker glyph-start)))
+        (insert (format " Installing %s…" slug)))
+       (installed-p
+        (insert (svg-lib-button "[pause] Disable"
+                                (lambda () (interactive) (neo/manager--disable-extension slug))))
+        (insert " ")
+        (insert (svg-lib-button "[trash-can] Uninstall"
+                                (lambda () (interactive) (neo/manager--uninstall-extension slug)))))
+       (t
         (insert (svg-lib-button "[download] Install"
-                                (lambda () (interactive) (neo/manager--install-extension slug))))))
+                                (lambda () (interactive) (neo/manager--install-extension slug)))))))
     (insert "\n")
     
     (let ((repo (neo/extension-repository ext))
@@ -300,29 +426,91 @@ not hot-load the extension into the running session."
   (setq neo/current-filter 'disabled)
   (neo/extensions-refresh-all))
 
+(defun neo/manager--update-spinner-glyph ()
+  "Redraw just the animated glyph at `neo/manager--spinner-marker' in place.
+
+Cheap per-tick update: touches only the single glyph character, not a full
+`neo/extensions-render', which would re-run `neo--get-extension-info'
+package introspection for every card and would itself be slow enough to
+fight the spinner's own purpose."
+  (when (and neo/manager--spinner-marker (marker-position neo/manager--spinner-marker))
+    (let ((inhibit-read-only t))
+      (save-excursion
+        (goto-char neo/manager--spinner-marker)
+        (delete-char 1)
+        (insert (propertize (neo/manager--spinner-glyph) 'face '(:weight bold)))))))
+
+(defun neo/manager--start-install-spinner (buf label)
+  "Animate an install spinner for LABEL's card in BUF.
+
+`neo/replay-extension-packages' (invoked by `neo/manager--resolve-extension')
+blocks synchronously on elpaca via `:ensure (:wait t)', but elpaca's own wait
+loop polls with `sit-for', which still runs timers and redisplay -- so a
+timer nudging the display is enough to animate visibly during that blocking
+call.
+
+A one-time full re-render happens here so LABEL's card swaps its Install
+button for the spinner placeholder (see `neo/extension-render-card'); every
+subsequent tick then only touches that placeholder's single glyph character
+via `neo/manager--update-spinner-glyph' -- never a second full re-render,
+since that would re-run `neo--get-extension-info' package introspection for
+every card and fight the spinner's own purpose. Pair with
+`neo/manager--stop-install-spinner'."
+  (with-current-buffer buf
+    (setq neo/manager--installing-label label)
+    (setq neo/manager--spinner-index 0)
+    (setq neo/manager--spinner-marker nil)
+    (neo/extensions-refresh-all)
+    (setq neo/manager--spinner-timer
+          (run-with-timer
+           0.12 0.12
+           (lambda ()
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (setq neo/manager--spinner-index (1+ neo/manager--spinner-index))
+                 (neo/manager--update-spinner-glyph)
+                 (force-mode-line-update))))))))
+
+(defun neo/manager--stop-install-spinner (buf)
+  "Cancel the spinner started by `neo/manager--start-install-spinner'.
+
+Leaves the actual card/button swap back to Disable/Uninstall (or Install,
+on failure) to the caller's own full refresh -- `neo/manager--install-
+extension' always does one right after this returns -- so this only clears
+state and cancels the timer."
+  (when (buffer-live-p buf)
+    (with-current-buffer buf
+      (when (timerp neo/manager--spinner-timer)
+        (cancel-timer neo/manager--spinner-timer))
+      (setq neo/manager--spinner-timer nil)
+      (setq neo/manager--installing-label nil)
+      (setq neo/manager--spinner-marker nil))))
+
 (defun neo/manager-update-header ()
   (setq-local
    header-line-format
-   (list
-    (propertize " " 'face 'neo/manager-header-face)
-    (svg-lib-button "[check-bold] All"
-                        (lambda () (interactive) (message "All")))
-    (propertize " " 'face 'neo/manager-header-face)
-    (neo/header-button "[All]" #'neo/filter-all
-                       (eq neo/current-filter 'all))
-    (propertize "  " 'face 'neo/manager-header-face)
-    (neo/header-button "[Installed]" #'neo/filter-installed
-                       (eq neo/current-filter 'installed))
-    (propertize "  " 'face 'neo/manager-header-face)
-    (neo/header-button "[Recommended]" #'neo/filter-recommended
-                       (eq neo/current-filter 'recommended))
-    (propertize "  " 'face 'neo/manager-header-face)
-    (neo/header-button "[Disabled]" #'neo/filter-disabled
-                       (eq neo/current-filter 'disabled))
-    (propertize
-     " "
-     'display '(space :align-to right)
-     'face 'neo/manager-header-face))))
+   (append
+    (list
+     (propertize " " 'face 'neo/manager-header-face)
+     (svg-lib-button "[check-bold] All"
+                         (lambda () (interactive) (message "All")))
+     (propertize " " 'face 'neo/manager-header-face)
+     (neo/header-button "[All]" #'neo/filter-all
+                        (eq neo/current-filter 'all))
+     (propertize "  " 'face 'neo/manager-header-face)
+     (neo/header-button "[Installed]" #'neo/filter-installed
+                        (eq neo/current-filter 'installed))
+     (propertize "  " 'face 'neo/manager-header-face)
+     (neo/header-button "[Recommended]" #'neo/filter-recommended
+                        (eq neo/current-filter 'recommended))
+     (propertize "  " 'face 'neo/manager-header-face)
+     (neo/header-button "[Disabled]" #'neo/filter-disabled
+                        (eq neo/current-filter 'disabled)))
+    (list
+     (propertize
+      " "
+      'display '(space :align-to right)
+      'face 'neo/manager-header-face)))))
 
 (defun neo/extensions-render ()
   "Redraw the extension list, preserving the current view.
