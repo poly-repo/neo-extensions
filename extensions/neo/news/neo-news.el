@@ -5,6 +5,10 @@
 ;;; Mail and news in Emacs
 
 (require 'auth-source)
+(require 'neo-application)
+
+(defconst neo--news-application-name "Gnus"
+  "Name of the Neo application that opens Gnus.")
 
 (defgroup neo-news nil
   "Customization options for the news extension."
@@ -48,11 +52,21 @@ When nil, fall back to `user-mail-address'."
   :group 'neo-news)
 
 (defcustom neo/news-secondary-select-methods
-  '((nnhackernews "")
-    (nnreddit ""))
+  '((nnhackernews ""))
   "Secondary Gnus backends to expose alongside the primary mail backend."
   :type '(repeat sexp)
   :group 'neo-news)
+
+(defun neo--news-application-active-p ()
+  "Return non-nil when the current perspective is the Gnus application."
+  (and (fboundp 'persp-current-name)
+       (string= (persp-current-name)
+                (format "App:%s" neo--news-application-name))))
+
+(defun neo--news-enable-application-mode ()
+  "Enable `neo-application-mode' in Gnus buffers opened via Neo."
+  (when (neo--news-application-active-p)
+    (neo-application-mode 1)))
 
 (defun neo--news-openpgp-signer ()
   "Return the OpenPGP signer key ID from `auth-source'."
@@ -101,8 +115,14 @@ When nil, fall back to `user-mail-address'."
           gnus-sum-thread-tree-leaf-with-other "├─► "
           gnus-sum-thread-tree-single-leaf "╰─► ")))
 
+;;;###autoload
+(defun neo/news ()
+  "Open or resume Gnus in the current perspective."
+  (interactive)
+  (gnus))
+
 (neo/use-package gnus
-  :ensure nil ;; Gnus is built into Emacs, so we don't need to install it separately
+  :builtin t
   :custom
   (gnus-init-file (expand-file-name "gnus.el" user-emacs-directory))
   (gnus-select-method
@@ -143,8 +163,13 @@ When nil, fall back to `user-mail-address'."
        '((not gnus-article-sort-by-date))))))
   :hook
   ((message-setup . mml-secure-message-encrypt)
+   (message-mode . neo--news-enable-application-mode)
+   (gnus-group-mode . neo--news-enable-application-mode)
    (gnus-summary-mode . neo/news-summary-keys)
-   (gnus-summary-mode . neo/news-sort-summary-by-date))
+   (gnus-summary-mode . neo/news-sort-summary-by-date)
+   (gnus-summary-mode . neo--news-enable-application-mode)
+   (gnus-article-mode . neo--news-enable-application-mode)
+   (gnus-server-mode . neo--news-enable-application-mode))
   :config
   (neo--news-configure-openpgp)
   (neo--news-configure-thread-tree))
@@ -157,7 +182,11 @@ When nil, fall back to `user-mail-address'."
 (neo/use-package nnhackernews
   :after gnus)
 
-(neo/use-package nnreddit
-  :after gnus)
+(neo/application "Gnus"
+  ;; Gnus already uses q/Q heavily; keep those bindings and rely on the
+  ;; default Neo application escape chord instead.
+  :setup (neo/news)
+  :bind "g"
+  :quit-keys nil)
 
 ;;; Note, no (provide 'neo-news) here, extensions are loaded not required.
