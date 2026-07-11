@@ -17,6 +17,7 @@
 	    "neo:ui"
 	    "neo:better-git"
 	    "neo:terminal"
+	    "neo:news"
 	    "neo:projects"
 	    "neo:programming-foundation"
 	    "neo:neo-workflow"
