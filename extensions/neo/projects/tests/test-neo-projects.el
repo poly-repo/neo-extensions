@@ -99,5 +99,68 @@
     (expect (neo--projects-reset-scratch-directory "does-not-exist" "/tmp/new-project")
             :to-be nil)))
 
+(describe "neo-projects: new project worktree"
+  (it "derives a repo name from an SSH remote URL"
+    (expect (neo--projects-repo-name-from-remote-url
+             "git@github.com:owner/omega.git")
+            :to-equal "omega"))
+
+  (it "derives a repo name from an HTTPS remote URL without .git suffix"
+    (expect (neo--projects-repo-name-from-remote-url
+             "https://github.com/owner/omega")
+            :to-equal "omega"))
+
+  (it "builds the worktree directory from repo and slug"
+    (expect (neo--projects-new-worktree-directory "omega" "add-oauth-login")
+            :to-equal (expand-file-name "omega_add-oauth-login"
+                                         "~/.local/share/wtrees/")))
+
+  (it "builds the branch name from repo and slug"
+    (expect (neo--projects-new-worktree-branch "omega" "add-oauth-login")
+            :to-equal "omega/add-oauth-login"))
+
+  (it "resolves the current repo name via magit-get"
+    (cl-letf (((symbol-function 'magit-get)
+               (lambda (&rest _keys) "git@github.com:owner/omega.git")))
+      (expect (neo--projects-current-repo-name) :to-equal "omega")))
+
+  (it "errors when there is no origin remote"
+    (cl-letf (((symbol-function 'magit-get)
+               (lambda (&rest _keys) nil)))
+      (expect (neo--projects-current-repo-name) :to-throw)))
+
+  (it "creates a worktree off origin/main and switches to it, in order"
+    (let (calls)
+      (cl-letf (((symbol-function 'neo--projects-current-repo-name)
+                 (lambda () "omega"))
+                ((symbol-function 'neo/git--slugify)
+                 (lambda (_title &optional _max-words) "add-oauth-login"))
+                ((symbol-function 'neo/magit-worktree-create)
+                 (lambda (directory branch &optional start-point)
+                   (push (list 'create directory branch start-point) calls)))
+                ((symbol-function 'neo/better-git-switch-to-project)
+                 (lambda (path) (push (list 'switch path) calls))))
+        (neo/projectile-new-project "Add OAuth login"))
+      (expect (nreverse calls)
+              :to-equal
+              (list (list 'create
+                          (expand-file-name "omega_add-oauth-login"
+                                             "~/.local/share/wtrees/")
+                          "omega/add-oauth-login"
+                          nil)
+                    (list 'switch
+                          (expand-file-name "omega_add-oauth-login"
+                                             "~/.local/share/wtrees/"))))))
+
+  (it "refuses an empty description"
+    (expect (neo/projectile-new-project "") :to-throw))
+
+  (it "refuses a description that slugifies to nothing"
+    (cl-letf (((symbol-function 'neo--projects-current-repo-name)
+               (lambda () "omega"))
+              ((symbol-function 'neo/git--slugify)
+               (lambda (_title &optional _max-words) "")))
+      (expect (neo/projectile-new-project "the a an") :to-throw))))
+
 (provide 'test-neo-projects)
 ;;; test-neo-projects.el ends here

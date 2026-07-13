@@ -26,6 +26,44 @@
     (message "(projectile-switch-project %s)" root)
     (projectile-switch-project-by-name root)))
 
+(defun neo--projects-repo-name-from-remote-url (url)
+  "Extract a short repo name from git remote URL (SSH or HTTPS form)."
+  (replace-regexp-in-string
+   "\\.git\\'" ""
+   (car (last (split-string url "/" t)))))
+
+(defun neo--projects-current-repo-name ()
+  "Return the short repo name for the current repo's origin remote."
+  (let ((url (magit-get "remote" "origin" "url")))
+    (unless url
+      (user-error "No `origin' remote configured for this repository"))
+    (neo--projects-repo-name-from-remote-url url)))
+
+(defun neo--projects-new-worktree-directory (repo slug)
+  "Return the worktree directory path for REPO and SLUG."
+  (expand-file-name (format "%s_%s" repo slug) "~/.local/share/wtrees/"))
+
+(defun neo--projects-new-worktree-branch (repo slug)
+  "Return the new-project branch name for REPO and SLUG."
+  (format "%s/%s" repo slug))
+
+(defun neo/projectile-new-project (description)
+  "Create a new git worktree of the current repo off origin/main, from DESCRIPTION.
+DESCRIPTION is free text; it is slugified via `neo/git--slugify' to
+build both the worktree directory name and branch name, then
+switched to via `neo/better-git-switch-to-project'."
+  (interactive "sNew project description: ")
+  (when (string-blank-p description)
+    (user-error "New project description must not be empty"))
+  (let* ((repo (neo--projects-current-repo-name))
+         (slug (neo/git--slugify description)))
+    (when (string-blank-p slug)
+      (user-error "Could not derive a usable name from %S; try different words" description))
+    (let ((directory (neo--projects-new-worktree-directory repo slug))
+          (branch (neo--projects-new-worktree-branch repo slug)))
+      (neo/magit-worktree-create directory branch)
+      (neo/better-git-switch-to-project directory))))
+
 
 (defvar neo/project-last-switched-times (make-hash-table :test 'equal)
   "Hash table mapping project root -> last switch time (float seconds since epoch).")
@@ -133,7 +171,8 @@ low-priority buffers such as `*scratch*'."
   (projectile-mode 1)
   (projectile-discover-projects-in-search-path)
   (with-eval-after-load 'project
-    (define-key project-prefix-map (kbd "p") #'neo/projectile-switch-project-by-name))
+    (define-key project-prefix-map (kbd "p") #'neo/projectile-switch-project-by-name)
+    (define-key project-prefix-map (kbd "n") #'neo/projectile-new-project))
   :bind
   (:map projectile-command-map
         ("p" . neo/projectile-switch-project-by-name))

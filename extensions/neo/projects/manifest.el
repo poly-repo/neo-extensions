@@ -6,7 +6,7 @@
  :description "Not Jira, be happy"
  :categories (neo)
  :keywords (ui appearance)
- :requires ()
+ :requires ("neo:better-git")   ; neo/magit-worktree-create and neo/better-git-switch-to-project are defined there
  :repository (
 	      :type "git"
 	      :url "https://github.com/poly-repo/neo-extensions.git"
