@@ -359,8 +359,8 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
 ;; (defun neo/python-eglot-shadow-venv-setup ()
 ;;   "Set eglot/BasedPyright to use the shadow Bazel virtualenv."
 ;;   (setq eglot-workspace-configuration
-;;               `((:pyright . (:python (:venvPath "~/.python"
-;; 						:pythonPath "~/.python/bin/python"))))))
+;;               `((:pyright . (:python (:venvPath "~/.neo-python"
+;; 						:pythonPath "~/.neo-python/bin/python"))))))
 
 (neo/use-package eglot
   :config

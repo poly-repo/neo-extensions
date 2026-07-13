@@ -114,7 +114,7 @@
   (leetcode-save-solutions t)
   (leetcode-focus nil)			; we do our thing with projects and perspectives
   ;; TODO create a leetcode environment when this extension is selected
-  (leetcode-python-environment (file-name-concat user-emacs-directory ".python")))
+  (leetcode-python-environment (file-name-concat user-emacs-directory ".neo-python")))
 
 (defun neo/leetcode ()
   (interactive)
