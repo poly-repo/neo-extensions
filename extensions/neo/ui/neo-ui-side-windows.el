@@ -50,15 +50,27 @@
 (neo/side-window :mode 'eshell-mode :include-derived t :side 'bottom :size 20)
 
 (defvar neo/side-actions nil
-  "Alist mapping symbols to functions.")
+  "Alist mapping SIDE to a plist of :strong and :weak actions, run by
+`neo/dispatch-side' when no window or buffer already targets that side.")
+
+(defun neo/register-side-action (side function &optional weak)
+  "Register FUNCTION as an action for SIDE ('left, 'right, 'top, or 'bottom).
+A non-WEAK (\"strong\") FUNCTION replaces any previous strong action for
+SIDE and always takes priority. A WEAK FUNCTION only runs when SIDE has no
+strong action registered -- a fallback, not tried when something stronger
+is available."
+  (let ((plist (alist-get side neo/side-actions)))
+    (setf (alist-get side neo/side-actions)
+          (plist-put plist (if weak :weak :strong) function))))
 
 (defun neo/register-side-window-default (side func)
-  "Register FUNC for a specific SIDE ('left, 'right, 'up, or 'down)."
-  (setf (alist-get side neo/side-actions) func))
+  "Register FUNC as SIDE's strong default action for `neo/dispatch-side'."
+  (neo/register-side-action side func))
 
 (defun neo/dispatch-side (side)
-  "Execute the function associated with SIDE."
-  (let ((action (alist-get side neo/side-actions)))
+  "Run the strong action registered for SIDE, or its weak fallback if none."
+  (let* ((plist (alist-get side neo/side-actions))
+         (action (or (plist-get plist :strong) (plist-get plist :weak))))
     (if (functionp action)
         (funcall action)
       (message "NEO: No action registered for and no buffers targeting %s side" side))))

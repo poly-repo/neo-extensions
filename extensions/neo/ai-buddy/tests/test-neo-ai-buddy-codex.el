@@ -8,6 +8,10 @@
   "Ignore package declarations while loading extension code in tests."
   nil)
 
+(defun neo/register-side-action (&rest _args)
+  "Stub for the real definition in neo-ui, not loaded by this test file."
+  nil)
+
 (load-file (expand-file-name "../neo-ai-buddy-codex.el"
                              (file-name-directory (or load-file-name buffer-file-name))))
 
@@ -63,6 +67,61 @@
               :to-equal '((codex-cli-start :around neo--ai-buddy-codex-run-with-direnv)
                           (codex-cli-toggle :around neo--ai-buddy-codex-run-with-direnv)
                           (codex-cli-toggle-all :around neo--ai-buddy-codex-run-with-direnv)))))
+
+  (it "registers Codex as the weak right-side fallback action"
+    (let (calls)
+      (cl-letf (((symbol-function 'neo/register-side-action)
+                 (lambda (side function weak)
+                   (push (list side function weak) calls))))
+        (neo--ai-buddy-codex-register-side-action))
+      (expect calls
+              :to-equal '((right neo--ai-buddy-codex-side-window-action weak)))))
+
+  (it "does nothing when no project is active"
+    (let (called)
+      (cl-letf (((symbol-function 'require) (lambda (feature &rest _) feature))
+                ((symbol-function 'codex-cli-project-root)
+                 (lambda () (error "No project found")))
+                ((symbol-function 'codex-cli--project-session-buffers)
+                 (lambda () (push 'session-buffers called)))
+                ((symbol-function 'codex-cli-toggle)
+                 (lambda (&optional _session) (push 'toggle called)))
+                ((symbol-function 'codex-cli-start)
+                 (lambda (&optional _session) (push 'start called))))
+        (neo--ai-buddy-codex-side-window-action))
+      (expect called :to-equal nil)))
+
+  (it "toggles an existing session without prompting"
+    (let (called)
+      (cl-letf (((symbol-function 'require) (lambda (feature &rest _) feature))
+                ((symbol-function 'codex-cli-project-root)
+                 (lambda () "/tmp/project/"))
+                ((symbol-function 'codex-cli--project-session-buffers)
+                 (lambda () (list (current-buffer))))
+                ((symbol-function 'codex-cli-toggle)
+                 (lambda (&optional _session) (push 'toggle called)))
+                ((symbol-function 'codex-cli-start)
+                 (lambda (&optional _session) (push 'start called)))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (&rest _args) (error "must not prompt"))))
+        (neo--ai-buddy-codex-side-window-action))
+      (expect called :to-equal '(toggle))))
+
+  (it "starts a new session without prompting when none exists"
+    (let (called)
+      (cl-letf (((symbol-function 'require) (lambda (feature &rest _) feature))
+                ((symbol-function 'codex-cli-project-root)
+                 (lambda () "/tmp/project/"))
+                ((symbol-function 'codex-cli--project-session-buffers)
+                 (lambda () nil))
+                ((symbol-function 'codex-cli-toggle)
+                 (lambda (&optional _session) (push 'toggle called)))
+                ((symbol-function 'codex-cli-start)
+                 (lambda (&optional _session) (push 'start called)))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (&rest _args) (error "must not prompt"))))
+        (neo--ai-buddy-codex-side-window-action))
+      (expect called :to-equal '(start))))
 
   (it "builds vterm with cmake in the package build directory"
     (let (continued call)

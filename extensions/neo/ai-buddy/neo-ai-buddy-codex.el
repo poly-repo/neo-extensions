@@ -92,6 +92,29 @@
     (unless (advice-member-p #'neo--ai-buddy-codex-run-with-direnv command)
       (advice-add command :around #'neo--ai-buddy-codex-run-with-direnv))))
 
+(defun neo--ai-buddy-codex-side-window-action ()
+  "Open or toggle a Codex CLI session for the current project.
+Registered as the weak `neo/dispatch-side' action for the right side: only
+runs when nothing stronger is registered, and only when a project is
+active. Unlike calling `codex-cli-toggle' directly, never prompts to
+create a session -- a missing session is started outright."
+  ;; `codex-cli-project-root' lives in codex-cli-project.el, which has no
+  ;; autoload cookies of its own -- it's only defined once `codex-cli' is
+  ;; actually required (normally triggered by invoking one of codex-cli's
+  ;; own autoloaded commands first). Since this action may be the very
+  ;; first thing to touch Codex CLI in a session, force the require so the
+  ;; function exists instead of silently no-op'ing via `ignore-errors'.
+  (require 'codex-cli)
+  (if (ignore-errors (codex-cli-project-root))
+      (if (codex-cli--project-session-buffers)
+          (codex-cli-toggle)
+        (codex-cli-start))
+    (message "NEO: no active project; not starting Codex CLI")))
+
+(defun neo--ai-buddy-codex-register-side-action ()
+  "Register Codex CLI as the weak `right' side-window fallback action."
+  (neo/register-side-action 'right #'neo--ai-buddy-codex-side-window-action 'weak))
+
 (defun neo--ai-buddy-vterm-build-in-directory (directory)
   "Compile `vterm-module' in DIRECTORY."
   (let ((default-directory directory)
@@ -157,5 +180,11 @@
   :config
   (neo--ai-buddy-codex-enable-direnv-allow))
 
+;; Registered unconditionally (not from the `codex-cli' :config block above)
+;; because that block only runs once `vterm' has actually loaded -- but
+;; opening Codex via the side-window chord is often what triggers vterm's
+;; first load, so gating the registration on it would mean the action never
+;; becomes available until something else loads vterm first.
+(neo--ai-buddy-codex-register-side-action)
 
 (provide 'neo-ai-buddy-codex)
