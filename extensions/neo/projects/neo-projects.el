@@ -261,6 +261,8 @@ consumers can decide which perspective should ultimately be selected.")
   ;; not sure about this guy
   (treemacs-follow-mode 1)
   (add-to-list 'treemacs-pre-file-insert-predicates #'treemacs-is-file-git-ignored?)
+  (treemacs-git-mode 'deferred)
+  (treemacs-git-commit-diff-mode 1)
   )
 
 (neo/use-package treemacs-all-the-icons

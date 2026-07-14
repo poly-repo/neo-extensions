@@ -330,20 +330,11 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
       (push (cons mode-list server-command) eglot-server-programs))))
 
 (defun neo--eglot-format-if-supported ()
-  "Format buffer only if the server exists and supports it."
-  (let ((server (eglot-current-server)))
-    (when (and server 
-               (eglot-server-capable :documentFormattingProvider))
-      (eglot-format))))
-
-(defun neo--eglot-format-if-supported ()
   "Format the buffer if Eglot is managing it and supports formatting."
-  (when (and (fboundp 'eglot-managed-p) 
+  (when (and (fboundp 'eglot-managed-p)
              (eglot-managed-p))
     (when (eglot-server-capable :documentFormattingProvider)
       (eglot-format-buffer))))
-
-(add-hook 'before-save-hook #'neo--eglot-format-if-supported)
 
 ;; TODO some LSP don't support formatting
 (defun neo/eglot-format-on-save ()
@@ -352,7 +343,7 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
              eglot--managed-mode
 	     (eglot-server-capable :documentFormattingProvider)
 	     (fboundp 'eglot-format-buffer))
-    (add-hook 'before-save-hook #'eglot-format-buffer nil :local)))
+    (add-hook 'before-save-hook #'neo--eglot-format-if-supported nil :local)))
 
 					;(add-hook 'before-save-hook #'eglot-format-buffer)
 
