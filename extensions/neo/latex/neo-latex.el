@@ -280,7 +280,7 @@
 
 (neo/use-package reftex
   :ensure nil
-  :after auctex
+  :after tex
   :hook (LaTeX-mode . turn-on-reftex)
   :custom
   (reftex-plug-into-AUCTeX t)
@@ -331,7 +331,8 @@
           (preview . "${author editor} (${year issued date}) ${title}.\n")
           (note    . "Notes on ${author editor}, ${title}"))))
 
-(neo/use-package auctex
+(neo/use-package tex
+  :ensure (auctex :wait t)
   :defer t
   :custom
   (TeX-auto-save t)
