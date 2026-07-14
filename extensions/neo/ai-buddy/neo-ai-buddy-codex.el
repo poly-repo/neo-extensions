@@ -178,7 +178,10 @@ create a session -- a missing session is started outright."
 	codex-cli-width 90)
   (setq codex-cli-toggle-all-min-width 60)
   :config
-  (neo--ai-buddy-codex-enable-direnv-allow))
+  (neo--ai-buddy-codex-enable-direnv-allow)
+  ;; Stop any running Codex CLI sessions on exit rather than leaving their
+  ;; vterm processes (and the codex subprocesses under them) orphaned.
+  (add-hook 'kill-emacs-hook #'codex-cli-stop-all))
 
 ;; Registered unconditionally (not from the `codex-cli' :config block above)
 ;; because that block only runs once `vterm' has actually loaded -- but
