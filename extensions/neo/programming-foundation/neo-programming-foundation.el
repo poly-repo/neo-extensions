@@ -361,8 +361,9 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
   (unless (listp eglot-stay-out-of)
     (setq eglot-stay-out-of nil))
   (with-eval-after-load 'key-chord
-    (with-eval-after-load 'c++-ts-mode
-      (key-chord-define c++-ts-mode-map "''" #'eglot-code-action-quickfix)))
+    (add-hook 'eglot-managed-mode-hook
+              (lambda ()
+                (key-chord-define-local "''" #'eglot-code-action-quickfix))))
   :hook
   ((c++-mode c++-ts-mode) . eglot-ensure)
   (eglot-managed-mode . neo/eglot-format-on-save)
