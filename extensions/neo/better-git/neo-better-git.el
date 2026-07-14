@@ -425,6 +425,116 @@ silently so one broken entry does not block startup."
      forge-github-repository))
   )
 
+(defun neo--project-perspective-p ()
+  "Return non-nil when the current perspective belongs to a Neo project.
+Neo application perspectives (dashboard, extension manager, etc. -- see
+`neo/application' in neo-application.el) are always named \"App:NAME\",
+and the initial, pre-project frame perspective is named
+`persp-initial-frame-name' (\"main\" by default). Project perspectives
+are neither of those, and are only ever entered while
+`projectile-project-root' resolves (see `neo/projectile-update-treemacs'
+in neo-projects.el)."
+  (and (featurep 'perspective)
+       (let ((name (persp-current-name)))
+         (and name
+              (not (string-prefix-p "App:" name))
+              (not (string= name persp-initial-frame-name))))
+       (fboundp 'projectile-project-root)
+       (projectile-project-root)
+       t))
+
+(defun neo--push-and-create-pr-branch ()
+  "Return the current branch name, or signal a `user-error'."
+  (let ((branch (magit-get-current-branch)))
+    (unless branch
+      (user-error "No current branch (detached HEAD) -- cannot push or create a PR"))
+    (when (equal branch "main")
+      (user-error "Refusing to push/create a pull-request for `main' against itself"))
+    branch))
+
+(defun neo--push-and-create-pr-push (branch)
+  "Synchronously push BRANCH to its push-remote, creating it if needed.
+Mirrors `magit-push-current-to-pushremote' but runs via `magit-run-git'
+\(not `-async'), matching `neo/magit-worktree-create''s style, so the
+caller can rely on the push having completed before checking for a PR."
+  (let ((remote (or (magit-get-push-remote branch) "origin")))
+    (if (zerop (magit-run-git
+                "push" "-v" "-u" remote
+                (format "refs/heads/%s:refs/heads/%s" branch branch)))
+        remote
+      (error "Failed to push %s to %s" branch remote))))
+
+(defun neo--push-and-create-pr-existing (owner name apihost branch)
+  "Return (URL . NUMBER) of an open PR for BRANCH against `main' on OWNER/NAME, or nil.
+Queries GitHub live via `ghub-request' (not Forge's local synced DB),
+using the same `:auth 'forge' convention Forge's own request helpers
+use (see forge-client.el, forge-github.el)."
+  (let ((response
+         (ghub-request "GET" (format "/repos/%s/%s/pulls" owner name) nil
+                       :query `((head . ,(format "%s:%s" owner branch))
+                                (base . "main")
+                                (state . "open"))
+                       :auth 'forge :host apihost :forge 'github)))
+    (when-let* ((pr (car response)))
+      (cons (cdr (assq 'html_url pr)) (cdr (assq 'number pr))))))
+
+(defun neo--push-and-create-pr-create (owner name apihost branch)
+  "Create a PR for BRANCH against `main' on OWNER/NAME; return (URL . NUMBER).
+Posts directly via `ghub-request' (`:payload', since this is a POST --
+see ghub.el's own docstring for why GET uses `:query' and POST uses
+`:payload') rather than going through Forge's interactive
+`forge-create-pullreq' compose buffer -- this command is meant to be
+fully automatic, with no review/submit step. This is the same REST
+endpoint `forge--submit-create-pullreq' posts to for GitHub
+repositories (see forge-github.el), so the response shape -- and in
+particular the `number' field used below to register the PR with
+Forge -- matches what Forge itself relies on."
+  (let ((response
+         (ghub-request "POST" (format "/repos/%s/%s/pulls" owner name) nil
+                       :payload `((title . ,(format "Ongoing PR for %s" branch))
+                                  (head . ,branch)
+                                  (base . "main"))
+                       :auth 'forge :host apihost :forge 'github)))
+    (cons (cdr (assq 'html_url response)) (cdr (assq 'number response)))))
+
+(defun neo/push-and-create-pr ()
+  "Push the current branch and create a GitHub pull-request against `main'.
+
+Pushes the current branch to its push-remote synchronously (creating
+the remote branch if needed), then checks live via GitHub's API
+whether an open pull-request already exists for it against `main'. If
+so, message its URL and offer to open it. Otherwise create one
+directly via GitHub's API, titled \"Ongoing PR for BRANCH\", and
+message its URL.
+
+Either way, the PR is also pulled into Forge's local database via
+`forge--pull-topic', the same call Forge's own `forge-create-pullreq'
+makes after submitting (see `forge--post-submit-callback' in
+forge-post.el) -- otherwise the PR would exist on GitHub but stay
+invisible to Forge commands like `forge-visit-pullreq'."
+  (interactive)
+  (unless (neo--project-perspective-p)
+    (user-error "neo/push-and-create-pr only works in a project perspective (current: %s)"
+                (if (featurep 'perspective) (persp-current-name) "none")))
+  (let* ((branch (neo--push-and-create-pr-branch))
+         (repo (forge-get-repository :tracked))
+         (owner (oref repo owner))
+         (name (oref repo name))
+         (apihost (oref repo apihost)))
+    (neo--push-and-create-pr-push branch)
+    ;; NOTE: deliberately no condition-case around either ghub call below --
+    ;; a failed existence check or creation call must abort this command
+    ;; rather than risking a duplicate PR or silently failing.
+    (if-let* ((existing (neo--push-and-create-pr-existing owner name apihost branch)))
+        (pcase-let ((`(,url . ,number) existing))
+          (forge--pull-topic repo number)
+          (message "neo: an open pull-request for `%s' already exists: %s" branch url)
+          (when (y-or-n-p (format "Open %s in a browser? " url))
+            (browse-url url)))
+      (pcase-let ((`(,url . ,number) (neo--push-and-create-pr-create owner name apihost branch)))
+        (forge--pull-topic repo number)
+        (message "neo: created pull-request for `%s': %s" branch url)))))
+
 ;; (use-package gptel
 ;;   :init
 ;;   (setq-default gptel-default-mode 'markdown-mode

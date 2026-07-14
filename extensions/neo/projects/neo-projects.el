@@ -172,7 +172,8 @@ low-priority buffers such as `*scratch*'."
   (projectile-discover-projects-in-search-path)
   (with-eval-after-load 'project
     (define-key project-prefix-map (kbd "p") #'neo/projectile-switch-project-by-name)
-    (define-key project-prefix-map (kbd "n") #'neo/projectile-new-project))
+    (define-key project-prefix-map (kbd "n") #'neo/projectile-new-project)
+    (define-key project-prefix-map (kbd "P") #'neo/push-and-create-pr))
   :bind
   (:map projectile-command-map
         ("p" . neo/projectile-switch-project-by-name))
