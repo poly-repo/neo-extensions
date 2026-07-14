@@ -41,9 +41,6 @@
       (kill-buffer buffer))
     nil))
 
-(advice-add 'eshell/cat :override #'aweshell-cat-with-syntax-highlight)
-
-
 (defun neo/eshell--commands->regexps (commands)
   "Convert a list of shell COMMANDS into a list of regexps.
 Each command will be anchored to match at the beginning of a line,
@@ -149,6 +146,11 @@ form that returns a string to be passed to `eshell-parse-command`."
   (eshell-directory-name (no-littering-expand-var-file-name "eshell"))
   (eshell-input-filter #'neo/eshell-history-filter)
   (eshell-ls-use-colors t)
+  (eshell-prompt-function
+   (lambda ()
+     (concat (eshell/pwd) "\n $ ")))
+  :config
+  (advice-add 'eshell/cat :override #'aweshell-cat-with-syntax-highlight)
   :hook
   (eshell-load . #'eat-eshell-mode))
 
@@ -263,11 +265,6 @@ Does not prompt in the minibuffer."
 
 ;; TODO make this into a toggling thing and deine it inside eshell use-package
 					;(key-chord-define-global ",t" #'neo/toggle-eshell)
-
-(setq eshell-prompt-function
-      (lambda ()
-        (concat (eshell/pwd) "\n $ ")))
-
 
 (neo/use-package eshell-syntax-highlighting
   :after eshell

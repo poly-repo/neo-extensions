@@ -360,6 +360,9 @@ SERVER-COMMAND is a list like (\"pyright-langserver\" \"--stdio\")."
   ;; which crashes eglot-client-capabilities before any connection is made.
   (unless (listp eglot-stay-out-of)
     (setq eglot-stay-out-of nil))
+  (with-eval-after-load 'key-chord
+    (with-eval-after-load 'c++-ts-mode
+      (key-chord-define c++-ts-mode-map "''" #'eglot-code-action-quickfix)))
   :hook
   ((c++-mode c++-ts-mode) . eglot-ensure)
   (eglot-managed-mode . neo/eglot-format-on-save)
@@ -534,13 +537,6 @@ behavior."
   :bind
   ("C-." . #'imenu-list-minor-mode)
   )
-
-(with-eval-after-load 'key-chord
-  (with-eval-after-load 'eglot
-    (with-eval-after-load 'c++-ts-mode
-      (message "DEFINING CHORD")
-      (message "KEYMAP BOUND")
-      (key-chord-define c++-ts-mode-map "''" #'eglot-code-action-quickfix))))
 
 ;; (defun neo--locate-coveralls (file-dir file-name)
 ;;   (message "**** file-dir: %s, file-name: %s" file-dir file-name)

@@ -15,22 +15,41 @@
   :custom
   (treesit-fold-line-count-format " <%d lines> ")
   :config
-  (global-treesit-fold-indicators-mode 1))
+  (global-treesit-fold-indicators-mode 1)
+  (with-eval-after-load 'treesit-fold-indicators
+    ;; The indicator stays on the default left fringe, but
+    ;; `dape-breakpoint-global-mode' (neo:python) also binds `<left-fringe>
+    ;; mouse-1' there in every `prog-mode' buffer, Haskell included, and
+    ;; wins the minor-mode-map-alist race. Rather than let the two silently
+    ;; fight over the click, give it to dape unconditionally: drop this
+    ;; map's left-fringe binding so `key-binding' always falls through to
+    ;; dape's (verified: an explicit nil binding in a higher-precedence
+    ;; keymap does fall through to a real binding in a lower one, it
+    ;; doesn't just resolve to "unbound"). Folding is meant to be driven
+    ;; from the keyboard anyway -- see `neo/haskell-toggle-imports-fold'.
+    (define-key treesit-fold-indicators-mode-map [left-fringe mouse-1] nil))
+  (with-eval-after-load 'treesit-fold-indicators
+    ;; Upstream's +/- glyph is only 7px tall, so on a normal ~20px line
+    ;; it renders as a barely-visible speck centered in a lot of empty
+    ;; fringe. Redraw it (and the matching box baked into the head-line
+    ;; bitmap) at 2x so the toggle control is actually legible.
+    (let ((plus-rows '(#b1111111 #b1000001 #b1001001 #b1011101 #b1001001 #b1000001 #b1111111))
+          (scale 2))
+      (define-fringe-bitmap 'treesit-fold-indicators-fr-plus
+        (neo/treesit-fold--stretch-bitmap-rows plus-rows scale))
+      (define-fringe-bitmap 'treesit-fold-indicators-fr-minus-tail
+        (vconcat (make-list 10 #b00000000)
+                 (neo/treesit-fold--stretch-bitmap-rows plus-rows scale)
+                 (make-list 6 #b00011000))))))
+
+;; The following advice/defun overrides stay outside neo/use-package: a
+;; `defun' needs no package-load-order guarantee to define itself, and
+;; when it overrides a package-owned symbol (last `defalias' wins, unlike
+;; `advice-add') the `with-eval-after-load' guard is what makes it win
+;; over the package's own definition -- that's unaffected by whether the
+;; code sits inside or outside the neo/use-package block.
 
 (with-eval-after-load 'treesit-fold-indicators
-  ;; The indicator stays on the default left fringe, but
-  ;; `dape-breakpoint-global-mode' (neo:python) also binds `<left-fringe>
-  ;; mouse-1' there in every `prog-mode' buffer, Haskell included, and
-  ;; wins the minor-mode-map-alist race. Rather than let the two silently
-  ;; fight over the click, give it to dape unconditionally: drop this
-  ;; map's left-fringe binding so `key-binding' always falls through to
-  ;; dape's (verified: an explicit nil binding in a higher-precedence
-  ;; keymap does fall through to a real binding in a lower one, it
-  ;; doesn't just resolve to "unbound"). Folding is meant to be driven
-  ;; from the keyboard anyway -- see `neo/haskell-toggle-imports-fold'.
-  (define-key treesit-fold-indicators-mode-map [left-fringe mouse-1] nil))
-
-(with-eval-after-load 'treesit-fold
   (defun neo/treesit-fold-disable-indicator-refresh-on-typing ()
     "Do not refresh tree-sitter fold indicators refreshing on every character
 typed. This helps improve performance."
@@ -44,19 +63,6 @@ typed. This helps improve performance."
   (apply #'vector (apply #'append (mapcar (lambda (row) (make-list scale row)) rows))))
 
 (with-eval-after-load 'treesit-fold-indicators
-  ;; Upstream's +/- glyph is only 7px tall, so on a normal ~20px line
-  ;; it renders as a barely-visible speck centered in a lot of empty
-  ;; fringe. Redraw it (and the matching box baked into the head-line
-  ;; bitmap) at 2x so the toggle control is actually legible.
-  (let ((plus-rows '(#b1111111 #b1000001 #b1001001 #b1011101 #b1001001 #b1000001 #b1111111))
-        (scale 2))
-    (define-fringe-bitmap 'treesit-fold-indicators-fr-plus
-      (neo/treesit-fold--stretch-bitmap-rows plus-rows scale))
-    (define-fringe-bitmap 'treesit-fold-indicators-fr-minus-tail
-      (vconcat (make-list 10 #b00000000)
-               (neo/treesit-fold--stretch-bitmap-rows plus-rows scale)
-               (make-list 6 #b00011000))))
-
   ;; Upstream also only wires up mouse-1 on the *head* line of a fold
   ;; range (the `fr-plus'/`fr-minus-tail' bitmap). For a fold spanning
   ;; many lines -- e.g. a large Haskell import block -- the head line

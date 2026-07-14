@@ -129,6 +129,12 @@
 		  (neo/switch-to-project original-project)))
     (leetcode)))
 
+;; Stays outside neo/use-package: this is a `defun' override of a
+;; package-owned function, so the with-eval-after-load guard here is what
+;; makes it run (and win) after leetcode defines its own version -- moving
+;; it into the :config above wouldn't add any guarantee `:config` doesn't
+;; already provide, since it's the guard, not the physical location, that
+;; matters for a plain defalias override.
 (with-eval-after-load 'leetcode
   (defun leetcode--problems-rows ()
     "Generate tabulated list rows from `leetcode--problems'.

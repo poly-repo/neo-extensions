@@ -352,14 +352,9 @@
   (add-hook 'compilation-finish-functions
             (lambda (_buf _msg)
               (when (derived-mode-p 'latex-mode)
-                (ignore-errors (reftex-parse-all))))))
-
-(with-eval-after-load 'tex
+                (ignore-errors (reftex-parse-all)))))
   (add-to-list 'TeX-view-program-list
                '("Evince" "evince --page-index=%(outpage) %o"))
-  (setq TeX-view-program-selection '((output-pdf "Evince")))
-  (setq TeX-source-correlate-mode t
-        TeX-source-correlate-method 'synctex
-        TeX-source-correlate-start-server t))
+  (setq TeX-view-program-selection '((output-pdf "Evince"))))
 
 ;;; Note, no (provide 'neo-latex) here, extensions are loaded not required.
