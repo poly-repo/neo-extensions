@@ -102,7 +102,7 @@
   "Turn TITLE into a short, human-readable git-safe slug."
   (let* ((max-words (or max-words 6))
          (s (downcase title)))
-    (setq s (replace-regexp-in-string "[^a-z0-9 ]" "" s))
+    (setq s (replace-regexp-in-string "[^a-z0-9 _-]" "" s))
     (setq s (split-string s "[[:space:]]+" t))
     (setq s (seq-remove
              (lambda (w) (member w neo/git-branch-stop-words))
