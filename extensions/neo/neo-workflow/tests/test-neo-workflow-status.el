@@ -613,7 +613,7 @@
       (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
         (neo--hack issue)
         (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-                "mav/9-fix-the-thing" "/tmp/worktrees/r_mav--9-fix-the-thing")))
+                "mav/9-fix-the-thing" "/tmp/worktrees/r_9-fix-the-thing")))
 
     (it "creates the worktree before activating the perspective (ordering regression)"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
@@ -680,6 +680,19 @@
   (it "flattens every slash in the slug, not just the first"
     (expect (neo--workflow-worktree-directory-name "omega" "a/b/c")
             :to-equal "omega_a--b--c")))
+
+(describe "neo--workflow-strip-username-prefix"
+  (it "strips a leading \"username/\" from the slug"
+    (expect (neo--workflow-strip-username-prefix "mav/9-fix-the-thing" "mav")
+            :to-equal "9-fix-the-thing"))
+
+  (it "leaves the slug alone when it has no matching username prefix"
+    (expect (neo--workflow-strip-username-prefix "9-fix-the-thing" "mav")
+            :to-equal "9-fix-the-thing"))
+
+  (it "only strips the prefix, not any later occurrence of the username"
+    (expect (neo--workflow-strip-username-prefix "mav/mav-utils" "mav")
+            :to-equal "mav-utils")))
 
 (describe "neo--workflow-default-base-ref"
   (it "uses origin's default branch when it can be determined"

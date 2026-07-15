@@ -737,9 +737,23 @@ not valid in git ref names."
   "Return the worktree directory basename for REPO-NAME and FINAL-SLUG.
 Matches the repo-wide `{repo}_{slug}' convention used by
 `neo--projects-new-worktree-directory' (neo-projects.el) -- FINAL-SLUG's
-slashes (e.g. \"username/branch-slug\") are flattened to \"--\" first,
-since a worktree directory can't itself contain a path separator."
+slashes are flattened to \"--\" first, since a worktree directory can't
+itself contain a path separator. Callers must strip any leading
+\"username/\" qualifier from FINAL-SLUG first (see
+`neo--workflow-strip-username-prefix') -- the repo-wide convention has no
+per-user segment, unlike branch names."
   (format "%s_%s" repo-name (string-replace "/" "--" final-slug)))
+
+(defun neo--workflow-strip-username-prefix (slug username)
+  "Strip a leading \"USERNAME/\" from SLUG, if present.
+Branch names are qualified with the author's username (e.g.
+\"maurizio-vitale/9-foo\") to disambiguate branches across users, but
+worktree *directory* names follow the repo-wide `{repo}_{slug}'
+convention (see `neo--projects-new-worktree-directory'), which has no
+per-user segment -- so the username must be dropped before building the
+directory name."
+  (let ((prefix (concat username "/")))
+    (if (string-prefix-p prefix slug) (substring slug (length prefix)) slug)))
 
 (defun neo--workflow-default-base-ref ()
   "Return \"origin/<default-branch>\" for the current repo, falling back
@@ -787,7 +801,8 @@ reporting success and leaving the beads issue claimed with no branch."
                      (let ((worktree-path
                             (expand-file-name
                              (neo--workflow-worktree-directory-name
-                              (neo-project-repo project) final-slug)
+                              (neo-project-repo project)
+                              (neo--workflow-strip-username-prefix final-slug username))
                              neo/workflow-worktrees-directory)))
                        (unless (file-exists-p worktree-path)
                          (make-directory (file-name-directory worktree-path) t)
