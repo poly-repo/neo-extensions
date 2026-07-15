@@ -436,22 +436,20 @@ behavior."
 
 (defun neo--bazel-clangd-path ()
   "Build `//:clangd` via Bazel and return the full path to the resulting binary."
-  ;; (let* ((project-root (or (locate-dominating-file default-directory "WORKSPACE.bazel")
-  ;;                          (locate-dominating-file default-directory "MODULE.bazel"))))
-  ;; TODO compute project-root from project.el
-  (let* ((project-root "~/Projects/uno")
-	 (bazel-bin (format "%s/tools/bazel" project-root)))
+  (let ((project-root (or (locate-dominating-file default-directory "MODULE.bazel")
+                           (locate-dominating-file default-directory "WORKSPACE.bazel"))))
     (unless project-root
-      (error "Could not find WORKSPACE.bazel or MODULE.bazel"))
-    (let ((default-directory project-root))
-      (let* ((build-result (shell-command-to-string (format "%s build //:clangd 2>&1" bazel-bin)))
-             (_ (unless (string-match "Build completed successfully" build-result)
-                  (error "Failed to build //:clangd: %s" build-result)))
-             (bin-dir (string-trim (shell-command-to-string (format "%s info bazel-bin  2>/dev/null" bazel-bin))))
-             (clangd-path (expand-file-name "clangd" bin-dir)))
-        (unless (file-executable-p clangd-path)
-          (error "clangd not found at expected location: %s" clangd-path))
-        clangd-path))))
+      (error "Could not find MODULE.bazel or WORKSPACE.bazel"))
+    (let* ((bazel-bin (expand-file-name "tools/bazel" project-root))
+           (default-directory project-root)
+           (build-result (shell-command-to-string (format "%s build //:clangd 2>&1" bazel-bin)))
+           (_ (unless (string-match "Build completed successfully" build-result)
+                (error "Failed to build //:clangd: %s" build-result)))
+           (bin-dir (string-trim (shell-command-to-string (format "%s info bazel-bin  2>/dev/null" bazel-bin))))
+           (clangd-path (expand-file-name "clangd" bin-dir)))
+      (unless (file-executable-p clangd-path)
+        (error "clangd not found at expected location: %s" clangd-path))
+      clangd-path)))
 
 ;; (add-hook 'c++-mode-hook
 ;;           (lambda ()
