@@ -216,6 +216,31 @@
       (expect (neo-repository-visibility repo) :to-equal "private")
       (expect (neo-repository-default-branch repo) :to-equal "main"))))
 
+(describe "neo--workflow-repo-name-from-remote-url"
+  (it "strips the .git suffix and the path down to SSH-scp-style URLs"
+    (expect (neo--workflow-repo-name-from-remote-url
+             "poly-repo.github.com:poly-repo/omega.git")
+            :to-equal "omega"))
+
+  (it "handles HTTPS URLs without a .git suffix"
+    (expect (neo--workflow-repo-name-from-remote-url
+             "https://github.com/poly-repo/omega")
+            :to-equal "omega")))
+
+(describe "neo--workflow-repo-name"
+  (it "prefers the origin remote's name over the checkout directory's basename"
+    ;; A worktree checked out at .../omega_neo14 is still repo `omega' --
+    ;; the directory basename is an unreliable name for the repo itself.
+    (spy-on 'neo--workflow-git-query :and-return-value
+            "poly-repo.github.com:poly-repo/omega.git")
+    (expect (neo--workflow-repo-name "/home/user/.local/share/wtrees/omega_neo14")
+            :to-equal "omega"))
+
+  (it "falls back to the directory basename when there is no origin remote"
+    (spy-on 'neo--workflow-git-query :and-throw-error 'error)
+    (expect (neo--workflow-repo-name "/home/user/projects/myrepo")
+            :to-equal "myrepo")))
+
 (describe "neo--workflow-beads-workspace-as-project"
   (it "resolves worktree-path from the code repo root, not the .beads parent dir"
     ;; The Beads workspace can live in a companion repo entirely separate

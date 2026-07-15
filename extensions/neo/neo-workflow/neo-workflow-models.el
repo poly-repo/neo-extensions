@@ -371,12 +371,34 @@ worktree's own root, which is all git operations (including creating a
 sibling worktree) need."
   (ignore-errors (neo/workflow-git-root-directory)))
 
+(defun neo--workflow-repo-name-from-remote-url (url)
+  "Extract a short repo name from remote URL (SSH or HTTPS form).
+Mirrors `neo--projects-repo-name-from-remote-url' (neo-projects.el)."
+  (replace-regexp-in-string
+   "\\.git\\'" ""
+   (car (last (split-string url "/" t)))))
+
+(defun neo--workflow-repo-name (root)
+  "Return the short repo name for the git repo at ROOT.
+
+Prefers the `origin' remote's URL, which is stable regardless of what
+the current worktree's own directory happens to be named -- a worktree
+checked out at .../omega_neo14 is still repo `omega', not `omega_neo14'.
+Falls back to ROOT's own directory basename when there is no `origin'
+remote."
+  (let* ((default-directory root)
+         (url (ignore-errors
+                (neo--workflow-git-query "config" "--get" "remote.origin.url"))))
+    (if (and url (not (string-empty-p url)))
+        (neo--workflow-repo-name-from-remote-url url)
+      (file-name-nondirectory (directory-file-name root)))))
+
 (defun neo--workflow-beads-workspace-as-project ()
   "Return a `neo-project' struct for the current beads workspace, or nil."
   (when-let* ((info (beads-client--workspace-info))
               (beads-dir-path (alist-get 'path info))
               (root (neo--workflow-code-repo-root)))
-    (let* ((name (file-name-nondirectory (directory-file-name root)))
+    (let* ((name (neo--workflow-repo-name root))
            (id (expand-file-name root)))
       (make-neo-project
        :id id
