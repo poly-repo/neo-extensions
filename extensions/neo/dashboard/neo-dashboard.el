@@ -28,6 +28,51 @@ Falls back to the stock `dashboard-init--info' startup message when the
       (string-join (process-lines "fortune" "-s") "\n")
     (and (fboundp 'dashboard-init--info) (dashboard-init--info))))
 
+(defcustom neo/dashboard-fortune-refresh-interval 30
+  "Seconds between automatic fortune refreshes while the dashboard is
+showing. Nil disables the automatic refresh timer."
+  :type '(choice (const :tag "Disabled" nil) number)
+  :group 'neo-ui)
+
+(defvar-local neo/dashboard--fortune-timer nil
+  "Timer that periodically refreshes this dashboard buffer's fortune line.
+Cancelled once the buffer stops being shown; see
+`neo/dashboard--fortune-tick'.")
+
+(defun neo/dashboard--cancel-fortune-timer ()
+  "Cancel the periodic dashboard fortune-refresh timer, if any."
+  (when (timerp neo/dashboard--fortune-timer)
+    (cancel-timer neo/dashboard--fortune-timer))
+  (setq neo/dashboard--fortune-timer nil))
+
+(defun neo/dashboard--fortune-tick ()
+  "Refresh the dashboard's fortune, or stop once it is no longer shown."
+  (let ((buffer (get-buffer (neo/dashboard--buffer-name))))
+    (if (eq buffer (window-buffer (selected-window)))
+        (with-current-buffer buffer
+          (dashboard-refresh-buffer))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (neo/dashboard--cancel-fortune-timer))))))
+
+(defun neo/dashboard--start-fortune-timer ()
+  "Start (or restart) the periodic dashboard fortune-refresh timer.
+No-op when `neo/dashboard-fortune-refresh-interval' is nil. Registers a
+buffer-local `kill-buffer-hook' so the timer is cancelled once the
+dashboard buffer is killed."
+  (neo/dashboard--cancel-fortune-timer)
+  (when neo/dashboard-fortune-refresh-interval
+    (setq neo/dashboard--fortune-timer
+          (run-with-timer neo/dashboard-fortune-refresh-interval
+                           neo/dashboard-fortune-refresh-interval
+                           #'neo/dashboard--fortune-tick)))
+  (add-hook 'kill-buffer-hook #'neo/dashboard--cancel-fortune-timer nil t))
+
+(defun neo/dashboard-new-fortune ()
+  "Refresh the dashboard immediately with a new fortune."
+  (interactive)
+  (dashboard-refresh-buffer))
+
 (defun neo--setup-banner ()
   (if (file-readable-p neo--hacker-image)
       (progn
@@ -340,7 +385,6 @@ return to whatever was active before the dashboard took over."
   (neo/dashboard))
 
 (neo/use-package dashboard
-  :after dashboard-hackernews
   :config
   (neo--setup-banner)
   (add-to-list 'dashboard-item-generators
@@ -350,8 +394,7 @@ return to whatever was active before the dashboard took over."
   (setq dashboard-items '((neo-applications . 20)
                                   (neo-environment . 9)
 				  (projects . 5)
-				  (agenda .5)
-				  (hackernews . 10)))
+				  (agenda .5)))
 
   (dashboard-setup-startup-hook)
   (advice-add 'dashboard-open :after #'neo/dashboard--ensure-current-buffer-added)
@@ -361,10 +404,6 @@ return to whatever was active before the dashboard took over."
   (add-hook 'neo/after-perspective-restore-hook #'neo/dashboard-land-after-restore)
   :custom
   (dashboard-hide-cursor t)
-  ;; (dashboard-items
-  ;;          '((recent . 5)
-  ;;            (agenda . 10)
-  ;;            (hackernews . 5)))
   (dashboard-set-heading-icons t)
   (dashboard-set-file-icons t)
   (dashboard-icon-type 'all-the-icons)
@@ -372,21 +411,19 @@ return to whatever was active before the dashboard took over."
   (dashboard-project-switch-function #'projectile-switch-project)
   (initial-buffer-choice nil)
   (dashboard-init-info #'neo/dashboard--fortune-line)
+  (dashboard-startupify-list
+   '(dashboard-insert-banner
+     dashboard-insert-newline
+     dashboard-insert-banner-title
+     dashboard-insert-newline
+     dashboard-insert-init-info
+     dashboard-insert-items
+     dashboard-insert-newline))
   :bind
   (:map dashboard-mode-map
-        ("q" . neo/dashboard-quit))
+        ("q" . neo/dashboard-quit)
+        ("SPC" . neo/dashboard-new-fortune))
   :hook
   (neo/after-framework-bootstrap . dashboard-insert-startupify-lists)
-  (neo/after-framework-bootstrap . dashboard-initialize))
-
-;; Declared *after* the `dashboard' use-package block, not before: this
-;; package's own source does `(require 'dashboard)' at its top level, and
-;; its package metadata also lists `dashboard' as a dependency. If this were
-;; enqueued first, Elpaca would auto-resolve+activate `dashboard' as part of
-;; that dependency graph, then our own explicit `dashboard' declaration above
-;; would create a second, independent queue entry for the same package --
-;; racing the first and tripping Elpaca's "loaded before Elpaca activation"
-;; warning when its activation step finds the feature already provided (the
-;; same duplicate-declaration race documented in neo-better-git.el's NOTE
-;; about `transient').
-(neo/use-package dashboard-hackernews)
+  (neo/after-framework-bootstrap . dashboard-initialize)
+  (dashboard-mode . neo/dashboard--start-fortune-timer))
