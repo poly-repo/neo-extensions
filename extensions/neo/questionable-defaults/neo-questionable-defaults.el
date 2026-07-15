@@ -148,3 +148,5 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   (ediff-split-window-function 'split-window-horizontally)
   (ediff-merge-split-window-function 'split-window-horizontally))
 
+(neo/use-package envrc
+  :hook (after-init . envrc-global-mode))
