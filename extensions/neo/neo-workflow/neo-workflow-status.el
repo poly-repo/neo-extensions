@@ -776,8 +776,14 @@ reporting success and leaving the beads issue claimed with no branch."
                      (let ((default-directory repo-path))
                        (neo--workflow-choose-workspace-strategy)))))
     (if (and issue repo-path strategy)
+        ;; No numeric issue-id prefix here: beads IDs (e.g. "omega-9") are
+        ;; already the durable handle back to the issue, so the branch/
+        ;; worktree name only needs to be human-readable, not another
+        ;; lookup key. Contrast `neo--workflow-stack-name' (models.el),
+        ;; which *does* prefix with a number -- that one is load-bearing,
+        ;; used to match a stack's live git branch back to its epic.
         (let* ((base-slug (neo-issue-title-to-slug
-                           (neo-issue-number issue) (neo-issue-title issue)))
+                           nil (neo-issue-title issue)))
                (username (let ((sanitized (neo--workflow-sanitize-branch-component
                                             (neo--get-current-username))))
                            (if (string-empty-p sanitized) "user" sanitized)))

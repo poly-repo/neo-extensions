@@ -608,6 +608,11 @@
       (expect 'neo--workflow-activate-perspective :to-have-been-called-with
               "mav/9-fix-the-thing" "/repo/root"))
 
+    (it "builds the slug from the title only, without the issue number as a prefix"
+      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
+      (neo--hack issue)
+      (expect 'neo-issue-title-to-slug :to-have-been-called-with nil "Fix the thing"))
+
     (it "activates the perspective with the worktree path when strategy is 'worktree"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
       (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
