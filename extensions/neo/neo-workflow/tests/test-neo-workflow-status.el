@@ -613,7 +613,7 @@
       (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
         (neo--hack issue)
         (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-                "mav/9-fix-the-thing" "/tmp/worktrees/mav--9-fix-the-thing")))
+                "mav/9-fix-the-thing" "/tmp/worktrees/r_mav--9-fix-the-thing")))
 
     (it "creates the worktree before activating the perspective (ordering regression)"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
@@ -669,6 +669,17 @@
         (expect (neo--hack issue) :to-throw 'user-error))
       (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
       (expect 'beads-client-update :not :to-have-been-called))))
+
+(describe "neo--workflow-worktree-directory-name"
+  (it "prefixes the flattened slug with the repo name, matching the repo-wide {repo}_{slug} convention"
+    (expect (neo--workflow-worktree-directory-name
+             "omega" "maurizio-vitale/14-manually-verify-leetcode-extension-after")
+            :to-equal
+            "omega_maurizio-vitale--14-manually-verify-leetcode-extension-after"))
+
+  (it "flattens every slash in the slug, not just the first"
+    (expect (neo--workflow-worktree-directory-name "omega" "a/b/c")
+            :to-equal "omega_a--b--c")))
 
 (describe "neo--workflow-default-base-ref"
   (it "uses origin's default branch when it can be determined"

@@ -733,6 +733,14 @@ not valid in git ref names."
   (or (ignore-errors (neo--workflow-git-query "config" "--get" "user.name"))
       "user"))
 
+(defun neo--workflow-worktree-directory-name (repo-name final-slug)
+  "Return the worktree directory basename for REPO-NAME and FINAL-SLUG.
+Matches the repo-wide `{repo}_{slug}' convention used by
+`neo--projects-new-worktree-directory' (neo-projects.el) -- FINAL-SLUG's
+slashes (e.g. \"username/branch-slug\") are flattened to \"--\" first,
+since a worktree directory can't itself contain a path separator."
+  (format "%s_%s" repo-name (string-replace "/" "--" final-slug)))
+
 (defun neo--workflow-default-base-ref ()
   "Return \"origin/<default-branch>\" for the current repo, falling back
 to \"origin/main\" when the remote HEAD can't be determined.
@@ -777,8 +785,10 @@ reporting success and leaving the beads issue claimed with no branch."
           (let ((final-root
                  (if (eq strategy 'worktree)
                      (let ((worktree-path
-                            (expand-file-name (string-replace "/" "--" final-slug)
-                                              neo/workflow-worktrees-directory)))
+                            (expand-file-name
+                             (neo--workflow-worktree-directory-name
+                              (neo-project-repo project) final-slug)
+                             neo/workflow-worktrees-directory)))
                        (unless (file-exists-p worktree-path)
                          (make-directory (file-name-directory worktree-path) t)
                          (let ((default-directory repo-path))
