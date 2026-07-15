@@ -8,6 +8,25 @@
 (defconst neo--hacker-image
   (expand-file-name "hacker.png" (file-name-directory (or load-file-name byte-compile-current-file))))
 
+(defface neo/dashboard-env-key-face
+  '((t :foreground "sea green"))
+  "Face for key labels (e.g. \"Instance:\") in the dashboard's
+Neo Environment section."
+  :group 'neo-ui)
+
+(defface neo/dashboard-conflict-count-face
+  '((t :inherit error :weight bold))
+  "Face for a non-zero `neo/use-package' merge-conflict count in the
+dashboard's Neo Environment section."
+  :group 'neo-ui)
+
+(defun neo/dashboard--fortune-line ()
+  "Return a random fortune-cookie string for the dashboard's startup line.
+Falls back to the stock `dashboard-init--info' startup message when the
+`fortune' binary is not installed."
+  (if (executable-find "fortune")
+      (string-join (process-lines "fortune" "-s") "\n")
+    (and (fboundp 'dashboard-init--info) (dashboard-init--info))))
 
 (defun neo--setup-banner ()
   (if (file-readable-p neo--hacker-image)
@@ -82,16 +101,20 @@
    (t (format "%s [missing]" path))))
 
 (defun neo/dashboard--registry-state (registry-name)
-  "Return a one-line status string for REGISTRY-NAME."
+  "Return a one-line status value (no REGISTRY-NAME prefix) for
+REGISTRY-NAME, or nil when REGISTRY-NAME is unknown."
   (when-let* ((registry (alist-get registry-name neo/extension-registry-alist
                                    nil nil #'string=)))
     (if-let* ((override (neo--extension-registry-override registry)))
-        (format "%s: local %s" registry-name override)
+        (format "local %s" override)
       (let* ((cache-dir (neo/cache-file-path (format "extensions/%s/" registry-name)))
              (manifest-path (expand-file-name "extensions-current.el" cache-dir)))
-        (format "%s: cached %s"
-                registry-name
-                (neo/dashboard--format-path-status manifest-path))))))
+        (format "cached %s" (neo/dashboard--format-path-status manifest-path))))))
+
+(defun neo/dashboard--env-line (key value)
+  "Format \"KEY: VALUE\" for the Neo Environment section, with KEY in
+`neo/dashboard-env-key-face'."
+  (format "%s: %s" (propertize key 'face 'neo/dashboard-env-key-face) value))
 
 (defun neo/dashboard--extension-state (slug table)
   "Return yes/no for whether SLUG exists in hash TABLE."
@@ -100,7 +123,10 @@
     "no"))
 
 (defun neo/dashboard--debug-lines ()
-  "Return a list of environment lines for dashboard debugging."
+  "Return a list of (LABEL . COMMAND) conses for the Neo Environment section.
+COMMAND is nil for purely informational lines; when non-nil, activating
+the line in the dashboard calls it interactively (see
+`neo/dashboard-insert-neo-environment')."
   (let* ((framework (neo/dashboard--framework))
          (available (and framework (neo-framework-available-extensions framework)))
          (installed (and framework (neo-framework-installed-extensions framework)))
@@ -112,32 +138,55 @@
             "cached release"))
          (config-db (if (fboundp 'neo/config-db-path)
                         (neo/config-db-path)
-                      "unavailable")))
+                      "unavailable"))
+         (conflict-count (if (fboundp 'neo/package-conflict-count)
+                              (neo/package-conflict-count)
+                            0))
+         (neo-registry (neo/dashboard--registry-state "neo"))
+         (mav-registry (neo/dashboard--registry-state "mav")))
     (delq nil
           (list
-           (format "Instance: %s" (neo/get-emacs-instance-name))
-           (format "Extension source: %s" extension-source)
-           (format "User dir: %s" user-emacs-directory)
+           (cons (neo/dashboard--env-line "Instance" (neo/get-emacs-instance-name)) nil)
+           (when (fboundp 'dashboard-init--info)
+             (cons (neo/dashboard--env-line "Startup" (dashboard-init--info)) nil))
+           (cons (neo/dashboard--env-line "Extension source" extension-source) nil)
+           (cons (neo/dashboard--env-line "User dir" user-emacs-directory) nil)
            (when (boundp 'neo/cache-directory)
-             (format "Cache dir: %s" neo/cache-directory))
+             (cons (neo/dashboard--env-line "Cache dir" neo/cache-directory) nil))
            (when (fboundp 'neo/data-directory)
-             (format "Data dir: %s" (neo/data-directory)))
-           (format "Config DB: %s" (neo/dashboard--format-path-status config-db))
-           (format "Enabled roots: %s" enabled-roots)
+             (cons (neo/dashboard--env-line "Data dir" (neo/data-directory)) nil))
+           (cons (neo/dashboard--env-line "Config DB" (neo/dashboard--format-path-status config-db)) nil)
+           (cons (neo/dashboard--env-line "Enabled roots" enabled-roots) nil)
            (when framework
-             (format "Framework: %d available / %d installed"
-                     (hash-table-count available)
-                     (hash-table-count installed)))
+             (cons (neo/dashboard--env-line
+                    "Framework"
+                    (format "%d available / %d installed"
+                            (hash-table-count available)
+                            (hash-table-count installed)))
+                   nil))
            (when framework
-             (format "neo:full-monty available=%s installed=%s"
-                     (neo/dashboard--extension-state "neo:full-monty" available)
-                     (neo/dashboard--extension-state "neo:full-monty" installed)))
+             (cons (format "%s available=%s installed=%s"
+                           (propertize "neo:full-monty" 'face 'neo/dashboard-env-key-face)
+                           (neo/dashboard--extension-state "neo:full-monty" available)
+                           (neo/dashboard--extension-state "neo:full-monty" installed))
+                   nil))
            (when framework
-             (format "neo:haskell available=%s installed=%s"
-                     (neo/dashboard--extension-state "neo:haskell" available)
-                     (neo/dashboard--extension-state "neo:haskell" installed)))
-           (neo/dashboard--registry-state "neo")
-           (neo/dashboard--registry-state "mav")))))
+             (cons (format "%s available=%s installed=%s"
+                           (propertize "neo:haskell" 'face 'neo/dashboard-env-key-face)
+                           (neo/dashboard--extension-state "neo:haskell" available)
+                           (neo/dashboard--extension-state "neo:haskell" installed))
+                   nil))
+           (when neo-registry (cons (neo/dashboard--env-line "neo" neo-registry) nil))
+           (when mav-registry (cons (neo/dashboard--env-line "mav" mav-registry) nil))
+           (cons (neo/dashboard--env-line
+                  "Package conflicts"
+                  (concat (if (> conflict-count 0)
+                              (propertize (number-to-string conflict-count)
+                                          'face 'neo/dashboard-conflict-count-face)
+                            (number-to-string conflict-count))
+                          (if (> conflict-count 0) " (RET for details)" "")))
+                 (and (fboundp 'neo/package-conflicts-summary)
+                      #'neo/package-conflicts-summary))))))
 
 (defun neo/dashboard-insert-neo-environment (_list-size)
   "Insert Neo environment diagnostics into the dashboard."
@@ -148,8 +197,9 @@
      (length lines)
      'neo-environment
      nil
-     `(lambda (&rest _))
-     el)))
+     (lambda (&rest _)
+       (when (cdr el) (call-interactively (cdr el))))
+     (car el))))
 
 (defun neo/dashboard--application-entries ()
   "Return a list of (LABEL . COMMAND) for registered Neo applications."
@@ -299,7 +349,6 @@ return to whatever was active before the dashboard took over."
                '(neo-applications . neo/dashboard-insert-applications))
   (setq dashboard-items '((neo-applications . 20)
                                   (neo-environment . 9)
-                                  (recents . 5)
 				  (projects . 5)
 				  (agenda .5)
 				  (hackernews . 10)))
@@ -322,6 +371,7 @@ return to whatever was active before the dashboard took over."
   (dashboard-projects-backend 'projectile)
   (dashboard-project-switch-function #'projectile-switch-project)
   (initial-buffer-choice nil)
+  (dashboard-init-info #'neo/dashboard--fortune-line)
   :bind
   (:map dashboard-mode-map
         ("q" . neo/dashboard-quit))
