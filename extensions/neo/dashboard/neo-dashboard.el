@@ -34,38 +34,45 @@ showing. Nil disables the automatic refresh timer."
   :type '(choice (const :tag "Disabled" nil) number)
   :group 'neo-ui)
 
-(defvar-local neo/dashboard--fortune-timer nil
-  "Timer that periodically refreshes this dashboard buffer's fortune line.
-Cancelled once the buffer stops being shown; see
-`neo/dashboard--fortune-tick'.")
+(defvar neo/dashboard--fortune-timers (make-hash-table :test 'eq :weakness 'key)
+  "Hash table mapping a dashboard buffer to its pending fortune-refresh
+timer. Keyed by buffer object rather than a buffer-local variable
+because `define-derived-mode' calls `kill-all-local-variables' *before*
+running `dashboard-mode-hook' -- and `dashboard-refresh-buffer' always
+re-runs `dashboard-mode' on every refresh -- so a buffer-local timer
+variable would be silently wiped out from under
+`neo/dashboard--start-fortune-timer' before it could cancel the
+previous timer, leaking one extra live timer per refresh.")
 
 (defun neo/dashboard--cancel-fortune-timer ()
-  "Cancel the periodic dashboard fortune-refresh timer, if any."
-  (when (timerp neo/dashboard--fortune-timer)
-    (cancel-timer neo/dashboard--fortune-timer))
-  (setq neo/dashboard--fortune-timer nil))
+  "Cancel the current buffer's pending fortune-refresh timer, if any."
+  (when-let* ((timer (gethash (current-buffer) neo/dashboard--fortune-timers)))
+    (cancel-timer timer))
+  (remhash (current-buffer) neo/dashboard--fortune-timers))
 
-(defun neo/dashboard--fortune-tick ()
-  "Refresh the dashboard's fortune, or stop once it is no longer shown."
-  (let ((buffer (get-buffer (neo/dashboard--buffer-name))))
-    (if (eq buffer (window-buffer (selected-window)))
-        (with-current-buffer buffer
-          (dashboard-refresh-buffer))
-      (when (buffer-live-p buffer)
-        (with-current-buffer buffer
-          (neo/dashboard--cancel-fortune-timer))))))
+(defun neo/dashboard--fortune-tick (buffer)
+  "Refresh BUFFER's fortune, or stop once it is no longer shown."
+  (if (and (buffer-live-p buffer)
+           (eq buffer (window-buffer (selected-window))))
+      (with-current-buffer buffer
+        (dashboard-refresh-buffer))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (neo/dashboard--cancel-fortune-timer)))
+    (remhash buffer neo/dashboard--fortune-timers)))
 
 (defun neo/dashboard--start-fortune-timer ()
-  "Start (or restart) the periodic dashboard fortune-refresh timer.
-No-op when `neo/dashboard-fortune-refresh-interval' is nil. Registers a
-buffer-local `kill-buffer-hook' so the timer is cancelled once the
-dashboard buffer is killed."
+  "Start (or restart) the periodic dashboard fortune-refresh timer for the
+current buffer. No-op when `neo/dashboard-fortune-refresh-interval' is
+nil. Registers a buffer-local `kill-buffer-hook' so the timer is
+cancelled once the dashboard buffer is killed."
   (neo/dashboard--cancel-fortune-timer)
   (when neo/dashboard-fortune-refresh-interval
-    (setq neo/dashboard--fortune-timer
-          (run-with-timer neo/dashboard-fortune-refresh-interval
-                           neo/dashboard-fortune-refresh-interval
-                           #'neo/dashboard--fortune-tick)))
+    (puthash (current-buffer)
+             (run-with-timer neo/dashboard-fortune-refresh-interval
+                              neo/dashboard-fortune-refresh-interval
+                              #'neo/dashboard--fortune-tick (current-buffer))
+             neo/dashboard--fortune-timers))
   (add-hook 'kill-buffer-hook #'neo/dashboard--cancel-fortune-timer nil t))
 
 (defun neo/dashboard-new-fortune ()
