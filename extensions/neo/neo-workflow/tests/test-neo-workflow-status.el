@@ -592,6 +592,8 @@
       (spy-on 'neo--workflow-activate-perspective)
       (spy-on 'neo/workflow-git-branch-exists :and-return-value nil)
       (spy-on 'neo/workflow-git-create-branch :and-return-value t)
+      (spy-on 'neo/workflow-git-fetch)
+      (spy-on 'neo/workflow-git-origin-head :and-return-value "main")
       (spy-on 'neo--workflow-git-run :and-return-value t)
       (spy-on 'neo-issue-title-to-slug :and-return-value "9-fix-the-thing")
       (spy-on 'neo--resolve-branch-conflict :and-call-fake (lambda (_repo slug _strategy _rename) slug))
@@ -632,6 +634,27 @@
       (expect 'neo--workflow-activate-perspective :to-have-been-called-with
               "maurizio-vitale/9-fix-the-thing" "/repo/root"))
 
+    (it "fetches origin and creates the branch off origin/<default-branch>"
+      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
+      (neo--hack issue)
+      (expect 'neo/workflow-git-fetch :to-have-been-called)
+      (expect 'neo/workflow-git-create-branch :to-have-been-called-with
+              "mav/9-fix-the-thing" "origin/main"))
+
+    (it "falls back to origin/main when the remote HEAD can't be determined"
+      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
+      (spy-on 'neo/workflow-git-origin-head :and-return-value nil)
+      (neo--hack issue)
+      (expect 'neo/workflow-git-create-branch :to-have-been-called-with
+              "mav/9-fix-the-thing" "origin/main"))
+
+    (it "does not fetch or recreate the branch when it already exists"
+      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
+      (spy-on 'neo/workflow-git-branch-exists :and-return-value t)
+      (neo--hack issue)
+      (expect 'neo/workflow-git-fetch :not :to-have-been-called)
+      (expect 'neo/workflow-git-create-branch :not :to-have-been-called))
+
     (it "signals a user-error and does not activate when branch creation fails"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
       (spy-on 'neo/workflow-git-create-branch :and-return-value nil)
@@ -646,6 +669,15 @@
         (expect (neo--hack issue) :to-throw 'user-error))
       (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
       (expect 'beads-client-update :not :to-have-been-called))))
+
+(describe "neo--workflow-default-base-ref"
+  (it "uses origin's default branch when it can be determined"
+    (spy-on 'neo/workflow-git-origin-head :and-return-value "develop")
+    (expect (neo--workflow-default-base-ref) :to-equal "origin/develop"))
+
+  (it "falls back to origin/main when origin's default branch is unknown"
+    (spy-on 'neo/workflow-git-origin-head :and-return-value nil)
+    (expect (neo--workflow-default-base-ref) :to-equal "origin/main")))
 
 (describe "neo--workflow-sanitize-branch-component"
   (it "lowercases and replaces spaces with a single dash"

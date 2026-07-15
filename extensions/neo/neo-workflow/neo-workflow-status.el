@@ -17,8 +17,10 @@
   "Neo Workflow board UI."
   :group 'neo-workflow)
 
-(defcustom neo/workflow-worktrees-directory "~/Projects/worktrees"
-  "Directory to store git worktrees."
+(defcustom neo/workflow-worktrees-directory "~/.local/share/wtrees"
+  "Directory to store git worktrees.
+Matches the repo-wide worktree convention used by
+`neo--projects-new-worktree-directory' (neo-projects.el)."
   :type 'directory
   :group 'neo-workflow-status)
 
@@ -731,6 +733,14 @@ not valid in git ref names."
   (or (ignore-errors (neo--workflow-git-query "config" "--get" "user.name"))
       "user"))
 
+(defun neo--workflow-default-base-ref ()
+  "Return \"origin/<default-branch>\" for the current repo, falling back
+to \"origin/main\" when the remote HEAD can't be determined.
+Mirrors `neo/magit-worktree-create''s origin/main default (better-git),
+so new branches/worktrees created via `neo--hack' start from an
+up-to-date base rather than whatever happened to be checked out."
+  (format "origin/%s" (or (neo/workflow-git-origin-head) "main")))
+
 (defun neo--hack (object)
   "Create and switch to a full development context for OBJECT (issue or stack).
 Signals `user-error' if branch or worktree creation fails, instead of
@@ -753,10 +763,12 @@ reporting success and leaving the beads issue claimed with no branch."
                (final-slug (neo--resolve-branch-conflict repo-path slug strategy t))
                (branch-name final-slug))
 
-          ;; Create branch if it doesn't exist
+          ;; Create branch off an up-to-date origin/<default-branch> if it
+          ;; doesn't already exist.
           (let ((default-directory repo-path))
             (unless (neo/workflow-git-branch-exists branch-name)
-              (unless (neo/workflow-git-create-branch branch-name "HEAD")
+              (neo/workflow-git-fetch nil)
+              (unless (neo/workflow-git-create-branch branch-name (neo--workflow-default-base-ref))
                 (user-error "neo-workflow: failed to create branch %s" branch-name))))
 
           ;; Create worktree (if the strategy calls for it) and determine the

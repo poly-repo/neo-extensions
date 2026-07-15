@@ -358,11 +358,24 @@ Searches nested child stacks as well as top-level ones."
 ;; Project discovery from BEADS_DIR workspace
 ;; ============================================================
 
+(defun neo--workflow-code-repo-root ()
+  "Return the git repository root for the current context, or nil.
+
+Deliberately independent of the Beads workspace location: `.beads' may
+live in a separate companion repository (e.g. when `BEADS_DIR' points
+outside the code repo, as with a dedicated issue-tracking repo), in
+which case the parent of `.beads' is not the code repo at all. Resolved
+via git itself instead, so it follows worktree indirection correctly --
+running from inside any worktree of the repo still resolves to that
+worktree's own root, which is all git operations (including creating a
+sibling worktree) need."
+  (ignore-errors (neo/workflow-git-root-directory)))
+
 (defun neo--workflow-beads-workspace-as-project ()
   "Return a `neo-project' struct for the current beads workspace, or nil."
   (when-let* ((info (beads-client--workspace-info))
               (beads-dir-path (alist-get 'path info))
-              (root (beads-client--project-root)))
+              (root (neo--workflow-code-repo-root)))
     (let* ((name (file-name-nondirectory (directory-file-name root)))
            (id (expand-file-name root)))
       (make-neo-project

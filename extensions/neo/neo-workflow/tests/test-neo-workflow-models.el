@@ -216,6 +216,29 @@
       (expect (neo-repository-visibility repo) :to-equal "private")
       (expect (neo-repository-default-branch repo) :to-equal "main"))))
 
+(describe "neo--workflow-beads-workspace-as-project"
+  (it "resolves worktree-path from the code repo root, not the .beads parent dir"
+    ;; The Beads workspace can live in a companion repo entirely separate
+    ;; from the code repo (e.g. BEADS_DIR pointed at a dedicated
+    ;; issue-tracking repo) -- worktree-path must come from git, not from
+    ;; wherever `.beads' happens to be.
+    (spy-on 'beads-client--workspace-info :and-return-value
+            '((path . "/home/user/omega-beads/.beads")))
+    (spy-on 'neo--workflow-code-repo-root :and-return-value "/home/user/omega")
+    (let ((project (neo--workflow-beads-workspace-as-project)))
+      (expect (neo-project-worktree-path project) :to-equal "/home/user/omega")
+      (expect (neo-project-repo project) :to-equal "omega")))
+
+  (it "returns nil when the code repo root can't be resolved"
+    (spy-on 'beads-client--workspace-info :and-return-value
+            '((path . "/home/user/omega-beads/.beads")))
+    (spy-on 'neo--workflow-code-repo-root :and-return-value nil)
+    (expect (neo--workflow-beads-workspace-as-project) :to-equal nil))
+
+  (it "returns nil when there is no beads workspace"
+    (spy-on 'beads-client--workspace-info :and-return-value nil)
+    (expect (neo--workflow-beads-workspace-as-project) :to-equal nil)))
+
 ;; ============================================================
 ;; Phase 3: stacks are beads epics
 ;; ============================================================
