@@ -197,9 +197,13 @@
 
 ;; TODO: anaconda has a pythonic-activate thingy. Would be cool if it could be made to use one of the bazel venvs.
 
-;; NOTE: :if/:unless/:disable don't seem to work. Could be related to
-;; the fact that neo/use-package does expand the use-package itself at
-;; some potentially unexpected time.
+;; NOTE: this used to gate on the Elisp `unless' above out of distrust of
+;; `use-package''s own :if/:unless/:disabled, believed broken. That belief
+;; was stale: the breakage was in `neo/use-package''s cross-extension merge
+;; (fixed in omega-11sv.13.5, see `neo--merge-use-package-condition-section'
+;; in core/neo-use-package.el), not in single-extension use, which already
+;; worked correctly. The Elisp `unless' wrapper here is left as-is since
+;; it's equally valid and unrelated to that bug.
 (unless (neo/extensionp "neo:programming-foundation")
   (neo/use-package anaconda-mode
     :hook

@@ -102,9 +102,14 @@ extension's own `require` chain starting from its entry file.
    "complete NEO experience" bundle) requires `neo:neo-workflow`, not
    `neo:workflow`. Recommend deleting the whole directory (14 non-test files +
    its own `tests/`). See [workflow vs neo-workflow](#workflow-vs-neo-workflow).
-5. **`neo/use-package`'s
-   `:if`/`:unless`/:disable`keywords don't work**, per an explicit code comment in`neo/python/neo-python.el:200-202`, likely because of the deferred-replay timing. This is a gap in the core macro itself, not an individual extension's fault — worth a dedicated look, since any extension relying on conditional `use-package`
-   guards is silently getting the wrong behavior. See
+5. **RESOLVED (omega-11sv.13.5): `neo/use-package`'s `:if`/`:unless`/`:disable`
+   keywords didn't survive cross-extension merging.** A single extension's own
+   `:if`/`:when`/`:unless`/`:disabled` always worked; the bug was in
+   `neo--merge-use-package-declarations` treating them as a naive
+   concatenate-and-dedup list section, which produced a malformed
+   `:if COND1 COND2` when two extensions declared the same package with
+   different conditions. Fixed with a dedicated merge strategy in
+   `core/neo-use-package.el`. See
    [neo/use-package gap](#neouse-package-gap-ifunlessdisable).
 
 ## Cross-cutting patterns
@@ -289,10 +294,10 @@ here rather than listed as clean.)
 
 ### `neo/python`
 
-| Location                | Kind                    | Touches                  | Verdict    | Note                                                                                                                                                        |
-| ----------------------- | ----------------------- | ------------------------ | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `neo-python.el:12`      | outside-eval-after-load | `project.el` (builtin)   | legitimate | Correctly deferred, adds `pyproject.toml` as a root marker.                                                                                                 |
-| `neo-python.el:200-202` | comment/finding         | `neo/use-package` itself | n/a        | Explicit code comment: `:if`/`:unless`/`:disable` "don't seem to work", likely tied to `neo/use-package`'s deferred-replay timing — see priority finding 5. |
+| Location                | Kind                    | Touches                  | Verdict    | Note                                                                                                                                                                       |
+| ----------------------- | ----------------------- | ------------------------ | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `neo-python.el:12`      | outside-eval-after-load | `project.el` (builtin)   | legitimate | Correctly deferred, adds `pyproject.toml` as a root marker.                                                                                                                |
+| `neo-python.el:200-202` | comment/finding         | `neo/use-package` itself | resolved   | Comment claiming `:if`/`:unless`/`:disable` "don't seem to work" was stale; root cause was a cross-extension merge bug, fixed in omega-11sv.13.5 — see priority finding 5. |
 
 ### `neo/leetcode`
 
@@ -337,15 +342,26 @@ a package whose own metadata lists it as a dependency" Elpaca-race gotcha as
 No raw `(use-package ...)` calls exist anywhere in this batch of 15 extensions
 (only two harmless commented-out ones, in `session` and `python`).
 
-## `neo/use-package` gap: `:if`/`:unless`/`:disable`
+## `neo/use-package` gap: `:if`/`:unless`/`:disable` (RESOLVED, omega-11sv.13.5)
 
-`neo/python/neo-python.el:200-202` carries an explicit code comment that these
-`use-package` keywords "don't seem to work," speculating it's related to
+`neo/python/neo-python.el:200-202` carried an explicit code comment that these
+`use-package` keywords "don't seem to work," speculating it was related to
 `neo/use-package` expanding the underlying `use-package` form at a potentially
-unexpected (deferred-replay) time. This is a gap in `core/neo-use-package.el`
-itself, not any individual extension's fault — worth a dedicated investigation,
-since any extension author reaching for conditional `use-package` guards is
-silently getting the wrong behavior today, with no error to signal it.
+unexpected (deferred-replay) time. That theory was wrong: a single extension's
+own `:if`/`:when`/`:unless`/`:disabled` already worked correctly. The real gap
+was in `neo--merge-use-package-declarations` (`core/neo-use-package.el`), which
+treated these four keywords as an ordinary concatenate-and-dedup list section
+(like `:hook`/`:config`). When two extensions declared the same package with
+different conditions, this produced a malformed
+`(use-package NAME :if COND1 COND2 ...)` — `use-package`'s `:if` takes exactly
+one form — which threw a parse error at replay time and silently dropped that
+package's config for every contributing extension. Fixed with a dedicated merge
+strategy (`neo--merge-use-package-condition-section`) that unaliases
+`:when`/`:unless` into `:if` per source, AND-combines distinct real conditions
+(matching native `use-package`'s own repeated-`:if` semantics), and records a
+`neo-merge-conflict` when a merge silently overrides an unconditional source's
+expectation. See `core/neo-use-package-test.el`'s
+`neo/merge-use-package-declarations-if-*`/`-disabled-*` tests for coverage.
 
 ## Suggested follow-ups
 
@@ -360,7 +376,8 @@ Roughly in priority order:
    `neo-workflow/`).
 4. Fix the duplicate `neo--eglot-format-if-supported` definition and fold the
    stray `before-save-hook` into the `eglot` block in `programming-foundation`.
-5. Investigate why `neo/use-package`'s `:if`/`:unless`/`:disable` don't work.
+5. ~~Investigate why `neo/use-package`'s `:if`/`:unless`/`:disable` don't work~~
+   — **done**: cross-extension merge bug, fixed in omega-11sv.13.5.
 6. Confirm `extensions/extensions/neo/mlody/` (superseded by `mlody-mode`) has
    no remaining real-world enablers, then delete it — same disposition as
    `workflow/`, just not yet promoted to a priority finding since nothing
