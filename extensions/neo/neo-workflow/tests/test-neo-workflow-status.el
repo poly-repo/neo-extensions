@@ -591,8 +591,8 @@
       (spy-on 'beads-client-update)
       (spy-on 'neo--workflow-activate-perspective)
       (spy-on 'neo/workflow-git-branch-exists :and-return-value nil)
-      (spy-on 'neo/workflow-git-create-branch)
-      (spy-on 'neo--workflow-git-run)
+      (spy-on 'neo/workflow-git-create-branch :and-return-value t)
+      (spy-on 'neo--workflow-git-run :and-return-value t)
       (spy-on 'neo-issue-title-to-slug :and-return-value "9-fix-the-thing")
       (spy-on 'neo--resolve-branch-conflict :and-call-fake (lambda (_repo slug _strategy _rename) slug))
       (spy-on 'neo--get-current-username :and-return-value "mav")
@@ -617,13 +617,52 @@
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
       (let* ((calls nil))
         (spy-on 'neo--workflow-git-run :and-call-fake
-                (lambda (&rest args) (push (cons 'worktree-add args) calls) nil))
+                (lambda (&rest args) (push (cons 'worktree-add args) calls) t))
         (spy-on 'neo--workflow-activate-perspective :and-call-fake
                 (lambda (&rest args) (push (cons 'activate args) calls) nil))
         (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
           (neo--hack issue))
         (setq calls (nreverse calls))
-        (expect (mapcar #'car calls) :to-equal '(worktree-add activate))))))
+        (expect (mapcar #'car calls) :to-equal '(worktree-add activate))))
+
+    (it "sanitizes a username containing spaces into a valid branch component"
+      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
+      (spy-on 'neo--get-current-username :and-return-value "Maurizio Vitale")
+      (neo--hack issue)
+      (expect 'neo--workflow-activate-perspective :to-have-been-called-with
+              "maurizio-vitale/9-fix-the-thing" "/repo/root"))
+
+    (it "signals a user-error and does not activate when branch creation fails"
+      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
+      (spy-on 'neo/workflow-git-create-branch :and-return-value nil)
+      (expect (neo--hack issue) :to-throw 'user-error)
+      (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
+      (expect 'beads-client-update :not :to-have-been-called))
+
+    (it "signals a user-error and does not activate when worktree creation fails"
+      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
+      (spy-on 'neo--workflow-git-run :and-return-value nil)
+      (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
+        (expect (neo--hack issue) :to-throw 'user-error))
+      (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
+      (expect 'beads-client-update :not :to-have-been-called))))
+
+(describe "neo--workflow-sanitize-branch-component"
+  (it "lowercases and replaces spaces with a single dash"
+    (expect (neo--workflow-sanitize-branch-component "Maurizio Vitale")
+            :to-equal "maurizio-vitale"))
+
+  (it "collapses runs of invalid characters into one dash"
+    (expect (neo--workflow-sanitize-branch-component "Smoke   Test!!")
+            :to-equal "smoke-test"))
+
+  (it "trims leading and trailing dashes produced by leading/trailing punctuation"
+    (expect (neo--workflow-sanitize-branch-component "-Al Green-")
+            :to-equal "al-green"))
+
+  (it "leaves an already git-safe string unchanged"
+    (expect (neo--workflow-sanitize-branch-component "mav")
+            :to-equal "mav")))
 
 ;; ============================================================
 ;; Board ordering: epics as headers with nested child issues

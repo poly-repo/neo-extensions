@@ -709,14 +709,32 @@ Returns the resolved branch name."
               branch-name)))
       branch-name)))
 
+(defun neo--workflow-sanitize-branch-component (s)
+  "Turn S into a single git-ref-safe branch-name component.
+Lowercases S, replaces every run of characters outside [a-z0-9._-]
+with a single dash, and trims leading/trailing dashes. Unlike
+`neo-issue-title-to-slug', this never drops or truncates words --
+callers use it on identifiers like usernames, not free-text titles,
+so every distinguishing character should survive."
+  (string-trim
+   (replace-regexp-in-string
+    "-\\{2,\\}" "-"
+    (replace-regexp-in-string "[^a-z0-9._-]+" "-" (downcase s)))
+   "-+" "-+"))
+
 (defun neo--get-current-username ()
-  "Return the current user name (from git config)."
+  "Return the current user name (from git config), unsanitized.
+Callers building a branch name from this must sanitize it with
+`neo--workflow-sanitize-branch-component' first -- raw git config
+values commonly contain spaces (e.g. \"Maurizio Vitale\"), which are
+not valid in git ref names."
   (or (ignore-errors (neo--workflow-git-query "config" "--get" "user.name"))
       "user"))
 
 (defun neo--hack (object)
   "Create and switch to a full development context for OBJECT (issue or stack).
-Phase 4 note: write-path (branch creation, beads-client-update) is stubbed."
+Signals `user-error' if branch or worktree creation fails, instead of
+reporting success and leaving the beads issue claimed with no branch."
   (interactive)
   (let* ((issue (when (neo-issue-p object) object))
          (repo-id (when issue (neo-issue-repository-id issue)))
@@ -728,7 +746,9 @@ Phase 4 note: write-path (branch creation, beads-client-update) is stubbed."
     (if (and issue repo-path strategy)
         (let* ((base-slug (neo-issue-title-to-slug
                            (neo-issue-number issue) (neo-issue-title issue)))
-               (username (neo--get-current-username))
+               (username (let ((sanitized (neo--workflow-sanitize-branch-component
+                                            (neo--get-current-username))))
+                           (if (string-empty-p sanitized) "user" sanitized)))
                (slug (format "%s/%s" username base-slug))
                (final-slug (neo--resolve-branch-conflict repo-path slug strategy t))
                (branch-name final-slug))
@@ -736,7 +756,8 @@ Phase 4 note: write-path (branch creation, beads-client-update) is stubbed."
           ;; Create branch if it doesn't exist
           (let ((default-directory repo-path))
             (unless (neo/workflow-git-branch-exists branch-name)
-              (neo/workflow-git-create-branch branch-name "HEAD")))
+              (unless (neo/workflow-git-create-branch branch-name "HEAD")
+                (user-error "neo-workflow: failed to create branch %s" branch-name))))
 
           ;; Create worktree (if the strategy calls for it) and determine the
           ;; final root BEFORE switching perspective/treemacs, so they land on
@@ -749,7 +770,8 @@ Phase 4 note: write-path (branch creation, beads-client-update) is stubbed."
                        (unless (file-exists-p worktree-path)
                          (make-directory (file-name-directory worktree-path) t)
                          (let ((default-directory repo-path))
-                           (neo--workflow-git-run "worktree" "add" worktree-path branch-name)))
+                           (unless (neo--workflow-git-run "worktree" "add" worktree-path branch-name)
+                             (user-error "neo-workflow: failed to create worktree at %s" worktree-path))))
                        (message "Switched to worktree: %s" worktree-path)
                        worktree-path)
                    repo-path)))
