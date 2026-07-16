@@ -596,9 +596,8 @@
       (spy-on 'neo/workflow-git-fetch)
       (spy-on 'neo/workflow-git-origin-head :and-return-value "main")
       (spy-on 'neo--workflow-git-run :and-return-value t)
-      (spy-on 'neo-issue-title-to-slug :and-return-value "9-fix-the-thing")
+      (spy-on 'neo-issue-title-to-slug :and-return-value "fix-the-thing")
       (spy-on 'neo--resolve-branch-conflict :and-call-fake (lambda (_repo slug _strategy _rename) slug))
-      (spy-on 'neo--get-current-username :and-return-value "mav")
       (spy-on 'neo--workflow-beads-workspace-as-project :and-return-value
               (make-neo-project :id "p" :repo "r" :type "beads" :pr-number nil
                                 :worktree-path "/repo/root" :stacks nil)))
@@ -607,7 +606,7 @@
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
       (neo--hack issue)
       (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-              "mav/9-fix-the-thing" "/repo/root"))
+              "r/fix-the-thing" "/repo/root"))
 
     (it "builds the slug from the title only, without the issue number as a prefix"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
@@ -622,8 +621,8 @@
               (let ((neo/workflow-worktrees-directory temp-root))
                 (neo--hack issue)
                 (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-                        "mav/9-fix-the-thing"
-                        (expand-file-name "r_9-fix-the-thing" temp-root))))
+                        "r/fix-the-thing"
+                        (expand-file-name "r_fix-the-thing" temp-root))))
           (delete-directory temp-root t))))
 
     (it "writes `.codex/bead.json' into the activated worktree"
@@ -632,7 +631,7 @@
             (progn
               (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
               (let* ((neo/workflow-worktrees-directory temp-root)
-                     (worktree-root (expand-file-name "r_9-fix-the-thing" temp-root))
+                     (worktree-root (expand-file-name "r_fix-the-thing" temp-root))
                      (binding-path (expand-file-name ".codex/bead.json" worktree-root)))
                 (neo--hack issue)
                 (expect (file-exists-p binding-path) :to-be-truthy)
@@ -647,7 +646,7 @@
                   (expect (alist-get 'status binding) :to-equal "in_progress")
                   (expect (alist-get 'repo_root binding) :to-equal "/repo/root")
                   (expect (alist-get 'worktree_root binding) :to-equal worktree-root)
-                  (expect (alist-get 'branch binding) :to-equal "mav/9-fix-the-thing")
+                  (expect (alist-get 'branch binding) :to-equal "r/fix-the-thing")
                   (expect selected-at :to-match "^[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}T"))))
           (delete-directory temp-root t))))
 
@@ -679,26 +678,25 @@
               (expect (mapcar #'car calls) :to-equal '(worktree-add activate)))
           (delete-directory temp-root t))))
 
-    (it "sanitizes a username containing spaces into a valid branch component"
+    (it "uses the repo name rather than any username in the branch name"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
-      (spy-on 'neo--get-current-username :and-return-value "Maurizio Vitale")
       (neo--hack issue)
       (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-              "maurizio-vitale/9-fix-the-thing" "/repo/root"))
+              "r/fix-the-thing" "/repo/root"))
 
     (it "fetches origin and creates the branch off origin/<default-branch>"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
       (neo--hack issue)
       (expect 'neo/workflow-git-fetch :to-have-been-called)
       (expect 'neo/workflow-git-create-branch :to-have-been-called-with
-              "mav/9-fix-the-thing" "origin/main"))
+              "r/fix-the-thing" "origin/main"))
 
     (it "falls back to origin/main when the remote HEAD can't be determined"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
       (spy-on 'neo/workflow-git-origin-head :and-return-value nil)
       (neo--hack issue)
       (expect 'neo/workflow-git-create-branch :to-have-been-called-with
-              "mav/9-fix-the-thing" "origin/main"))
+              "r/fix-the-thing" "origin/main"))
 
     (it "does not fetch or recreate the branch when it already exists"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
@@ -777,26 +775,20 @@
 (describe "neo--workflow-worktree-directory-name"
   (it "prefixes the flattened slug with the repo name, matching the repo-wide {repo}_{slug} convention"
     (expect (neo--workflow-worktree-directory-name
-             "omega" "maurizio-vitale/14-manually-verify-leetcode-extension-after")
+             "omega" "fallback-to-cached-extensions-manifest")
             :to-equal
-            "omega_maurizio-vitale--14-manually-verify-leetcode-extension-after"))
+            "omega_fallback-to-cached-extensions-manifest"))
 
   (it "flattens every slash in the slug, not just the first"
     (expect (neo--workflow-worktree-directory-name "omega" "a/b/c")
             :to-equal "omega_a--b--c")))
 
-(describe "neo--workflow-strip-username-prefix"
-  (it "strips a leading \"username/\" from the slug"
-    (expect (neo--workflow-strip-username-prefix "mav/9-fix-the-thing" "mav")
-            :to-equal "9-fix-the-thing"))
-
-  (it "leaves the slug alone when it has no matching username prefix"
-    (expect (neo--workflow-strip-username-prefix "9-fix-the-thing" "mav")
-            :to-equal "9-fix-the-thing"))
-
-  (it "only strips the prefix, not any later occurrence of the username"
-    (expect (neo--workflow-strip-username-prefix "mav/mav-utils" "mav")
-            :to-equal "mav-utils")))
+(describe "neo--workflow-worktree-branch-name"
+  (it "prefixes the slug with the repo name"
+    (expect (neo--workflow-worktree-branch-name
+             "omega" "fallback-to-cached-extensions-manifest")
+            :to-equal
+            "omega/fallback-to-cached-extensions-manifest")))
 
 (describe "neo--workflow-default-base-ref"
   (it "uses origin's default branch when it can be determined"
@@ -806,23 +798,6 @@
   (it "falls back to origin/main when origin's default branch is unknown"
     (spy-on 'neo/workflow-git-origin-head :and-return-value nil)
     (expect (neo--workflow-default-base-ref) :to-equal "origin/main")))
-
-(describe "neo--workflow-sanitize-branch-component"
-  (it "lowercases and replaces spaces with a single dash"
-    (expect (neo--workflow-sanitize-branch-component "Maurizio Vitale")
-            :to-equal "maurizio-vitale"))
-
-  (it "collapses runs of invalid characters into one dash"
-    (expect (neo--workflow-sanitize-branch-component "Smoke   Test!!")
-            :to-equal "smoke-test"))
-
-  (it "trims leading and trailing dashes produced by leading/trailing punctuation"
-    (expect (neo--workflow-sanitize-branch-component "-Al Green-")
-            :to-equal "al-green"))
-
-  (it "leaves an already git-safe string unchanged"
-    (expect (neo--workflow-sanitize-branch-component "mav")
-            :to-equal "mav")))
 
 ;; ============================================================
 ;; Board ordering: epics as headers with nested child issues

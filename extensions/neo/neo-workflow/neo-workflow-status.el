@@ -712,49 +712,17 @@ Returns the resolved branch name."
               branch-name)))
       branch-name)))
 
-(defun neo--workflow-sanitize-branch-component (s)
-  "Turn S into a single git-ref-safe branch-name component.
-Lowercases S, replaces every run of characters outside [a-z0-9._-]
-with a single dash, and trims leading/trailing dashes. Unlike
-`neo-issue-title-to-slug', this never drops or truncates words --
-callers use it on identifiers like usernames, not free-text titles,
-so every distinguishing character should survive."
-  (string-trim
-   (replace-regexp-in-string
-    "-\\{2,\\}" "-"
-    (replace-regexp-in-string "[^a-z0-9._-]+" "-" (downcase s)))
-   "-+" "-+"))
-
-(defun neo--get-current-username ()
-  "Return the current user name (from git config), unsanitized.
-Callers building a branch name from this must sanitize it with
-`neo--workflow-sanitize-branch-component' first -- raw git config
-values commonly contain spaces (e.g. \"Maurizio Vitale\"), which are
-not valid in git ref names."
-  (or (ignore-errors (neo--workflow-git-query "config" "--get" "user.name"))
-      "user"))
-
-(defun neo--workflow-worktree-directory-name (repo-name final-slug)
-  "Return the worktree directory basename for REPO-NAME and FINAL-SLUG.
+(defun neo--workflow-worktree-directory-name (repo-name slug)
+  "Return the worktree directory basename for REPO-NAME and SLUG.
 Matches the repo-wide `{repo}_{slug}' convention used by
-`neo--projects-new-worktree-directory' (neo-projects.el) -- FINAL-SLUG's
-slashes are flattened to \"--\" first, since a worktree directory can't
-itself contain a path separator. Callers must strip any leading
-\"username/\" qualifier from FINAL-SLUG first (see
-`neo--workflow-strip-username-prefix') -- the repo-wide convention has no
-per-user segment, unlike branch names."
-  (format "%s_%s" repo-name (string-replace "/" "--" final-slug)))
+`neo--projects-new-worktree-directory' (neo-projects.el) -- any slashes in
+SLUG are flattened to \"--\" first, since a worktree directory can't itself
+contain a path separator."
+  (format "%s_%s" repo-name (string-replace "/" "--" slug)))
 
-(defun neo--workflow-strip-username-prefix (slug username)
-  "Strip a leading \"USERNAME/\" from SLUG, if present.
-Branch names are qualified with the author's username (e.g.
-\"maurizio-vitale/9-foo\") to disambiguate branches across users, but
-worktree *directory* names follow the repo-wide `{repo}_{slug}'
-convention (see `neo--projects-new-worktree-directory'), which has no
-per-user segment -- so the username must be dropped before building the
-directory name."
-  (let ((prefix (concat username "/")))
-    (if (string-prefix-p prefix slug) (substring slug (length prefix)) slug)))
+(defun neo--workflow-worktree-branch-name (repo-name slug)
+  "Return the worktree branch name for REPO-NAME and SLUG."
+  (format "%s/%s" repo-name slug))
 
 (defun neo--workflow-default-base-ref ()
   "Return \"origin/<default-branch>\" for the current repo, falling back
@@ -816,12 +784,14 @@ reporting success and leaving the beads issue claimed with no branch."
         ;; used to match a stack's live git branch back to its epic.
         (let* ((base-slug (neo-issue-title-to-slug
                            nil (neo-issue-title issue)))
-               (username (let ((sanitized (neo--workflow-sanitize-branch-component
-                                            (neo--get-current-username))))
-                           (if (string-empty-p sanitized) "user" sanitized)))
-               (slug (format "%s/%s" username base-slug))
-               (final-slug (neo--resolve-branch-conflict repo-path slug strategy t))
-               (branch-name final-slug))
+               (repo-name (neo-project-repo project))
+               (slug base-slug)
+               (branch-name
+                (neo--resolve-branch-conflict
+                 repo-path
+                 (neo--workflow-worktree-branch-name repo-name slug)
+                 strategy
+                 t)))
 
           ;; Create branch off an up-to-date origin/<default-branch> if it
           ;; doesn't already exist.
@@ -839,8 +809,8 @@ reporting success and leaving the beads issue claimed with no branch."
                       (let ((worktree-path
                              (expand-file-name
                               (neo--workflow-worktree-directory-name
-                               (neo-project-repo project)
-                               (neo--workflow-strip-username-prefix final-slug username))
+                               repo-name
+                               slug)
                               neo/workflow-worktrees-directory)))
                         (unless (file-exists-p worktree-path)
                           (make-directory (file-name-directory worktree-path) t)
@@ -859,7 +829,7 @@ reporting success and leaving the beads issue claimed with no branch."
                      (message "neo-workflow: could not claim issue %s: %s"
                               (neo-issue-id issue) (cadr err))
                      (or (neo-issue-status issue) "open")))))
-            (neo--workflow-activate-perspective final-slug final-root)
+            (neo--workflow-activate-perspective branch-name final-root)
             (when (eq strategy 'worktree)
               (neo--workflow-write-bead-binding
                issue repo-path final-root branch-name binding-status))
