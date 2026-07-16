@@ -163,6 +163,19 @@ REGISTRY-NAME, or nil when REGISTRY-NAME is unknown."
              (manifest-path (expand-file-name "extensions-current.el" cache-dir)))
         (format "cached %s" (neo/dashboard--format-path-status manifest-path))))))
 
+(defun neo/dashboard--version-cache-size ()
+  "Return the on-disk size of this Emacs version's compiled-artifact caches
+\(elpaca builds + eln-cache, see `neo/emacs-version-key'), human-readable
+via `du -shc', or nil when `du' is unavailable or neither directory exists
+yet."
+  (let ((dirs (seq-filter #'file-directory-p
+                          (delq nil (list (bound-and-true-p elpaca-builds-directory)
+                                          (bound-and-true-p neo/eln-cache-directory))))))
+    (when (and dirs (executable-find "du"))
+      (with-temp-buffer
+        (when (zerop (apply #'call-process "du" nil t nil "-shc" dirs))
+          (car (split-string (car (last (split-string (buffer-string) "\n" t))) "\t")))))))
+
 (defun neo/dashboard--env-line (key value)
   "Format \"KEY: VALUE\" for the Neo Environment section, with KEY in
 `neo/dashboard-env-key-face'."
@@ -205,6 +218,8 @@ the line in the dashboard calls it interactively (see
            (cons (neo/dashboard--env-line "User dir" user-emacs-directory) nil)
            (when (boundp 'neo/cache-directory)
              (cons (neo/dashboard--env-line "Cache dir" neo/cache-directory) nil))
+           (when-let* ((cache-size (neo/dashboard--version-cache-size)))
+             (cons (neo/dashboard--env-line "Version cache size" cache-size) nil))
            (when (fboundp 'neo/data-directory)
              (cons (neo/dashboard--env-line "Data dir" (neo/data-directory)) nil))
            (cons (neo/dashboard--env-line "Config DB" (neo/dashboard--format-path-status config-db)) nil)
