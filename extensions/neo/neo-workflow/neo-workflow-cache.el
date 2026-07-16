@@ -147,23 +147,27 @@ so existing alist-consuming helpers (`neo--workflow-stacks-from-issues',
 Kept separate from \"the list is nil\" so an empty workspace (zero issues)
 is still a legitimate cache hit.")
 
-(defun neo-workflow-cache-get-beads (repository-id)
-  "Return the cached list of `neo-bead' structs for REPOSITORY-ID.
-On a cache miss (never populated, explicitly invalidated, or a different
-REPOSITORY-ID), fetches via `beads-client-list', populates the cache, and
-starts the file-notify watch.  Returns nil (without caching) on error,
-mirroring the degrade-gracefully behavior of the callers this replaces.
+(defun neo-workflow-cache--fetch-beads ()
+  "Fetch every issue in the current beads workspace as `neo-bead' structs.
 
 Passes `:limit 0' explicitly: `bd list'/`beads-client-list' otherwise
 default to capping results at 50 issues, which silently drops issues (in
 particular low-priority ones, since the default sort puts them last) from
 a board that is supposed to show the whole workspace."
+  (mapcar #'neo--beads-alist-to-bead (append (beads-client-list '(:limit 0)) nil)))
+
+(defun neo-workflow-cache-get-beads (repository-id)
+  "Return the cached list of `neo-bead' structs for REPOSITORY-ID.
+On a cache miss (never populated, explicitly invalidated, or a different
+REPOSITORY-ID), fetches via `neo-workflow-cache--fetch-beads', populates
+the cache, and starts the file-notify watch.  Returns nil (without
+caching) on error, mirroring the degrade-gracefully behavior of the
+callers this replaces."
   (if (and neo-workflow-cache--valid
            (equal neo-workflow-cache--repository-id repository-id))
       neo-workflow-cache--beads
     (condition-case err
-        (let ((beads (mapcar #'neo--beads-alist-to-bead
-                              (append (beads-client-list '(:limit 0)) nil))))
+        (let ((beads (neo-workflow-cache--fetch-beads)))
           (setq neo-workflow-cache--beads beads)
           (setq neo-workflow-cache--repository-id repository-id)
           (setq neo-workflow-cache--valid t)
@@ -173,14 +177,14 @@ a board that is supposed to show the whole workspace."
        (message "neo-workflow-cache: beads fetch failed: %s" (error-message-string err))
        nil))))
 
-(defun neo-workflow-cache-invalidate ()
-  "Mark the cache stale without discarding the last-known bead list.
-Any file-notify burst invalidates unconditionally -- there is no diffing
-of old vs. new beads to see whether anything user-visible actually
-changed.  Simpler and safe: worst case is one harmless extra re-fetch, and
-the debounce in `neo-workflow-cache--handle-event' already collapses
-bursts, so the cost is bounded to one re-fetch per logical write."
-  (setq neo-workflow-cache--valid nil))
+(defun neo-workflow-cache--beads-list-equal (a b)
+  "Return non-nil when bead lists A and B represent the same workspace
+state, ignoring element order (`beads-client-list' does not guarantee a
+stable order across calls)."
+  (cl-flet ((by-id (beads)
+              (sort (copy-sequence beads)
+                    (lambda (x y) (string< (neo-bead-id x) (neo-bead-id y))))))
+    (equal (by-id a) (by-id b))))
 
 (defun neo-workflow-cache-clear ()
   "Fully reset the cache, discarding the last-known bead list too."
@@ -222,7 +226,7 @@ checkout.  When `prefix' is unavailable (e.g. workspace resolved via the
 `beads-dir'/BEADS_DIR filesystem-discovery path, which never learns
 `prefix'), falls back to watching `database_path' itself -- broader
 scope (could see sibling-workspace writes), but never a correctness bug
-given `neo-workflow-cache-invalidate' is cheap and idempotent."
+given `neo-workflow-cache--debounced-invalidate' is cheap and idempotent."
   (when-let* ((info (beads-client--workspace-info))
               (db-path (alist-get 'database_path info)))
     (let ((prefix (alist-get 'prefix info)))
@@ -256,10 +260,28 @@ directly from a test with a synthetic event -- no real inotify needed."
                          #'neo-workflow-cache--debounced-invalidate)))
 
 (defun neo-workflow-cache--debounced-invalidate ()
-  "Timer callback: invalidate the cache and run `neo-workflow-refresh-hook'."
+  "Timer callback: re-fetch beads and redraw only when something changed.
+
+Fetches fresh data itself, rather than merely marking the cache stale and
+letting the next reader refetch, so it can compare against the
+last-known list before deciding whether to update the cache and run
+`neo-workflow-refresh-hook'.  Dolt writes its own bookkeeping files on
+every read too, so most file-notify bursts do not correspond to any
+user-visible change -- redrawing (and resetting point, previously) on
+every one of them made the board unusable while beads was busy nearby.
+When the cache isn't valid to begin with (never populated, or cleared by
+`neo-workflow-cache-clear'), there is nothing to compare against, so the
+hook always runs and the next reader repopulates the cache as usual."
   (setq neo-workflow-cache--debounce-timer nil)
-  (neo-workflow-cache-invalidate)
-  (run-hooks 'neo-workflow-refresh-hook))
+  (if (not neo-workflow-cache--valid)
+      (run-hooks 'neo-workflow-refresh-hook)
+    (condition-case err
+        (let ((fresh (neo-workflow-cache--fetch-beads)))
+          (unless (neo-workflow-cache--beads-list-equal fresh neo-workflow-cache--beads)
+            (setq neo-workflow-cache--beads fresh)
+            (run-hooks 'neo-workflow-refresh-hook)))
+      (error
+       (message "neo-workflow-cache: beads fetch failed: %s" (error-message-string err))))))
 
 (defun neo-workflow-cache--file-notify-callback (event)
   "Handle a raw `file-notify' EVENT on the watched Dolt tree.

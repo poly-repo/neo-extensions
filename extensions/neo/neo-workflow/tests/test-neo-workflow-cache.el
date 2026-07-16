@@ -135,11 +135,11 @@ real `file-notify-rm-watch'/`cancel-timer' calls would choke on."
     (neo-workflow-cache-get-beads "repo-b")
     (expect 'beads-client-list :to-have-been-called-times 2))
 
-  (it "re-fetches after an explicit invalidate"
+  (it "re-fetches once the cache has been marked stale"
     (spy-on 'beads-client-list :and-return-value
             (vector (neo--test-cache-alist "omega-1")))
     (neo-workflow-cache-get-beads "repo-a")
-    (neo-workflow-cache-invalidate)
+    (setq neo-workflow-cache--valid nil)
     (neo-workflow-cache-get-beads "repo-a")
     (expect 'beads-client-list :to-have-been-called-times 2))
 
@@ -150,20 +150,8 @@ real `file-notify-rm-watch'/`cancel-timer' calls would choke on."
     (expect 'beads-client-list :to-have-been-called-times 2)))
 
 ;; ============================================================
-;; neo-workflow-cache-invalidate / neo-workflow-cache-clear
+;; neo-workflow-cache-clear
 ;; ============================================================
-
-(describe "neo-workflow-cache-invalidate"
-  (before-each (neo--test-cache-reset))
-  (after-each (neo--test-cache-reset))
-
-  (it "keeps the last-known bead list around after invalidation"
-    (spy-on 'beads-client-list :and-return-value
-            (vector (neo--test-cache-alist "omega-1")))
-    (neo-workflow-cache-get-beads "repo-a")
-    (neo-workflow-cache-invalidate)
-    (expect neo-workflow-cache--beads :not :to-equal nil)
-    (expect neo-workflow-cache--valid :to-equal nil)))
 
 (describe "neo-workflow-cache-clear"
   (before-each (neo--test-cache-reset))
@@ -206,17 +194,69 @@ real `file-notify-rm-watch'/`cancel-timer' calls would choke on."
     (remove-hook 'neo-workflow-refresh-hook #'neo--test-cache-refresh-spy)
     (neo--test-cache-reset))
 
-  (it "invalidates the cache and runs neo-workflow-refresh-hook once"
+  (it "does not run the hook or touch the cache when the fetched beads are unchanged"
     (spy-on 'beads-client-list :and-return-value
             (vector (neo--test-cache-alist "omega-1")))
     (neo-workflow-cache-get-beads "repo-a")
     (spy-on 'neo--test-cache-refresh-spy)
     (add-hook 'neo-workflow-refresh-hook #'neo--test-cache-refresh-spy)
     (neo-workflow-cache--debounced-invalidate)
-    (expect 'neo--test-cache-refresh-spy :to-have-been-called-times 1)
-    ;; The cache is now invalid, so a subsequent get re-hits beads-client-list.
+    (expect 'neo--test-cache-refresh-spy :not :to-have-been-called)
+    (expect neo-workflow-cache--valid :to-be-truthy)
+    ;; Cache is still valid and unchanged, so a subsequent get does not refetch.
     (neo-workflow-cache-get-beads "repo-a")
-    (expect 'beads-client-list :to-have-been-called-times 2)))
+    (expect 'beads-client-list :to-have-been-called-times 2))
+
+  (it "ignores element order when comparing -- reordered-but-identical beads do not redraw"
+    (spy-on 'beads-client-list :and-return-value
+            (vector (neo--test-cache-alist "omega-1") (neo--test-cache-alist "omega-2")))
+    (neo-workflow-cache-get-beads "repo-a")
+    (spy-on 'beads-client-list :and-return-value
+            (vector (neo--test-cache-alist "omega-2") (neo--test-cache-alist "omega-1")))
+    (spy-on 'neo--test-cache-refresh-spy)
+    (add-hook 'neo-workflow-refresh-hook #'neo--test-cache-refresh-spy)
+    (neo-workflow-cache--debounced-invalidate)
+    (expect 'neo--test-cache-refresh-spy :not :to-have-been-called))
+
+  (it "updates the cache in place and runs the hook once when beads actually changed"
+    (let ((call-count 0))
+      (spy-on 'beads-client-list :and-call-fake
+              (lambda (&rest _)
+                (cl-incf call-count)
+                (if (= call-count 1)
+                    (vector (neo--test-cache-alist "omega-1"))
+                  (vector (neo--test-cache-alist "omega-1" '(status . "closed")))))))
+    (neo-workflow-cache-get-beads "repo-a")
+    (spy-on 'neo--test-cache-refresh-spy)
+    (add-hook 'neo-workflow-refresh-hook #'neo--test-cache-refresh-spy)
+    (neo-workflow-cache--debounced-invalidate)
+    (expect 'neo--test-cache-refresh-spy :to-have-been-called-times 1)
+    (expect (neo-bead-status (car neo-workflow-cache--beads)) :to-equal "closed")
+    ;; The cache was updated in place (still valid), so a subsequent get
+    ;; does not need to refetch again.
+    (neo-workflow-cache-get-beads "repo-a")
+    (expect 'beads-client-list :to-have-been-called-times 2))
+
+  (it "always runs the hook when the cache was not valid to begin with"
+    (spy-on 'beads-client-list :and-return-value
+            (vector (neo--test-cache-alist "omega-1")))
+    (spy-on 'neo--test-cache-refresh-spy)
+    (add-hook 'neo-workflow-refresh-hook #'neo--test-cache-refresh-spy)
+    (neo-workflow-cache--debounced-invalidate)
+    (expect 'neo--test-cache-refresh-spy :to-have-been-called-times 1)
+    (expect 'beads-client-list :not :to-have-been-called))
+
+  (it "logs and does not run the hook when the comparison fetch errors"
+    (spy-on 'beads-client-list :and-return-value
+            (vector (neo--test-cache-alist "omega-1")))
+    (neo-workflow-cache-get-beads "repo-a")
+    (spy-on 'beads-client-list :and-throw-error 'error)
+    (spy-on 'message)
+    (spy-on 'neo--test-cache-refresh-spy)
+    (add-hook 'neo-workflow-refresh-hook #'neo--test-cache-refresh-spy)
+    (neo-workflow-cache--debounced-invalidate)
+    (expect 'neo--test-cache-refresh-spy :not :to-have-been-called)
+    (expect 'message :to-have-been-called)))
 
 ;; ============================================================
 ;; Recursive watch registration / teardown

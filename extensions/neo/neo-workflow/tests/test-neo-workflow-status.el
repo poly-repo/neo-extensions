@@ -675,6 +675,55 @@
       (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
       (expect 'beads-client-update :not :to-have-been-called))))
 
+(describe "neo--save-workflow-context"
+  (it "repositions onto the same logical bead by id after a rebuild, even when its row/instance changed"
+    (with-temp-buffer
+      (insert "old header\nold row\n")
+      (put-text-property (point-min) (1+ (point-min)) 'repo-name "repo-a")
+      (goto-char (point-min))
+      (let* ((old-object (neo--make-mock-issue))
+             ;; Same id as OLD-OBJECT but otherwise distinct (different
+             ;; title), simulating a freshly rebuilt vtable row -- proves the
+             ;; match is by id via `neo--objects-match-p', not by `equal'/`eq'
+             ;; on the whole struct or by the old line position.
+             (new-object (let ((issue (neo--make-mock-issue)))
+                           (setf (neo-issue-title issue) "Rebuilt Issue")
+                           issue))
+             (fake-table 'the-table)
+             (neo--repo-info-alist nil))
+        (spy-on 'vtable-current-table :and-return-value fake-table)
+        (spy-on 'vtable-current-object :and-return-value old-object)
+        (spy-on 'vtable-objects :and-return-value (list new-object))
+        (spy-on 'vtable-goto-table)
+        (spy-on 'vtable-goto-object)
+        (neo--save-workflow-context
+          (erase-buffer)
+          (insert "rebuilt header\nrebuilt row\n")
+          (setq neo--repo-info-alist (list (cons "repo-a" (list fake-table (point-min) (point-max))))))
+        (expect 'vtable-goto-table :to-have-been-called-with fake-table)
+        (expect 'vtable-goto-object :to-have-been-called-with new-object))))
+
+  (it "falls back to the repo's start position when the saved bead is gone after the rebuild"
+    (with-temp-buffer
+      (insert "old header\nold row\n")
+      (put-text-property (point-min) (1+ (point-min)) 'repo-name "repo-a")
+      (goto-char (point-min))
+      (let* ((old-object (neo--make-mock-issue))
+             (fake-table 'the-table)
+             (neo--repo-info-alist nil)
+             (start-pos nil))
+        (spy-on 'vtable-current-table :and-return-value fake-table)
+        (spy-on 'vtable-current-object :and-return-value old-object)
+        (spy-on 'vtable-objects :and-return-value nil) ; the bead was closed/removed
+        (spy-on 'vtable-goto-object)
+        (neo--save-workflow-context
+          (erase-buffer)
+          (insert "rebuilt header\nrebuilt row\n")
+          (setq start-pos (point-min))
+          (setq neo--repo-info-alist (list (cons "repo-a" (list fake-table start-pos (point-max))))))
+        (expect 'vtable-goto-object :not :to-have-been-called)
+        (expect (point) :to-equal start-pos)))))
+
 (describe "neo--workflow-worktree-directory-name"
   (it "prefixes the flattened slug with the repo name, matching the repo-wide {repo}_{slug} convention"
     (expect (neo--workflow-worktree-directory-name

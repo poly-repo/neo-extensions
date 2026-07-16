@@ -1125,63 +1125,78 @@ perspective, and records the choice in the in-memory context store."
 ;; Main refresh
 ;; ============================================================
 
+(defun neo--workflow-rebuild-buffer ()
+  "Erase and repopulate the current buffer's repo headers/vtables.
+Populates `neo--repo-info-alist' as a side effect. Does not move point or
+touch narrowing -- callers position point afterward; see
+`neo/workflow-refresh'. Must be called with the workflow buffer current."
+  (setq neo--repo-info-alist nil)
+  (let ((inhibit-read-only t)
+        (global-filter (neo-workflow-get-global-filter)))
+    (widen)
+    (erase-buffer)
+    (dolist (repo (neo-load-all-repositories))
+      (let* ((repo-name (neo-repository-full-name repo))
+             (show-repo
+              (cond
+               ((eq global-filter 'active)
+                (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
+                  (seq-some #'neo--issue-active-p issues)))
+               ((eq global-filter 'open)
+                (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
+                  (seq-some (lambda (i) (eq (neo-issue-state i) 'open)) issues)))
+               (t t))))
+
+        (when show-repo
+          (let ((start (point)))
+            (neo--insert-repo-header repo)
+
+            (cl-letf (((symbol-function #'vtable--insert-header-line)
+                       (if neo/workflow-show-column-header
+                           (symbol-function #'vtable--insert-header-line)
+                         (lambda (_table _width _spacer)))))
+              (let* ((table (neo/workflow-make-vtable
+                             (lambda () (neo--get-sorted-issues-for-repo repo)))))
+                (let ((end (point)))
+                  (setf (alist-get repo-name neo--repo-info-alist) (list table start end)))
+                (goto-char (point-max))
+                (add-text-properties start (point) `(repo-name ,repo-name))
+                (insert "\n")))))))))
+
 (defun neo/workflow-refresh (&optional target-repo-name target-issue-id)
   "Refresh the workflow status buffer.
-If TARGET-REPO-NAME and TARGET-ISSUE-ID are provided, position point on that issue."
+
+When TARGET-REPO-NAME and TARGET-ISSUE-ID are both given, point is
+positioned on that specific issue afterward (e.g. after creating one).
+Otherwise point is restored to the same logical bead it was on before
+the redraw, by identity via `neo--save-workflow-context' -- not by its
+old line number, which can shift between redraws -- falling back to the
+top of the buffer when nothing was selected or the previously-selected
+bead no longer exists."
   (interactive)
   (when-let* ((buffer (get-buffer "*NEO Workflow*")))
     (with-current-buffer buffer
-      (setq neo--repo-info-alist nil)
-      (let ((inhibit-read-only t)
-            (global-filter (neo-workflow-get-global-filter)))
-        (widen)
-        (erase-buffer)
-        (dolist (repo (neo-load-all-repositories))
-          (let* ((repo-name (neo-repository-full-name repo))
-                 (show-repo
-                  (cond
-                   ((eq global-filter 'active)
-                    (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
-                      (seq-some #'neo--issue-active-p issues)))
-                   ((eq global-filter 'open)
-                    (let ((issues (neo-db-get-issues-for-repo (neo-repository-id repo))))
-                      (seq-some (lambda (i) (eq (neo-issue-state i) 'open)) issues)))
-                   (t t))))
-
-            (when show-repo
-              (let ((start (point)))
-                (neo--insert-repo-header repo)
-
-                (cl-letf (((symbol-function #'vtable--insert-header-line)
-                           (if neo/workflow-show-column-header
-                               (symbol-function #'vtable--insert-header-line)
-                             (lambda (_table _width _spacer)))))
-                  (let* ((table (neo/workflow-make-vtable
-                                 (lambda () (neo--get-sorted-issues-for-repo repo)))))
-                    (let ((end (point)))
-                      (setf (alist-get repo-name neo--repo-info-alist) (list table start end)))
-                    (goto-char (point-max))
-                    (add-text-properties start (point) `(repo-name ,repo-name))
-                    (insert "\n")))))))
-
       (if (and target-repo-name target-issue-id)
-          (let ((info (assoc-string target-repo-name neo--repo-info-alist)))
-            (if info
-                (let* ((table (nth 1 info))
-                       (target-object
-                        (seq-find (lambda (obj)
-                                    (and (neo-issue-p obj)
-                                         (equal (neo-issue-id obj) target-issue-id)))
-                                  (vtable-objects table))))
-                  (if target-object
-                      (progn
-                        (vtable-goto-table table)
-                        (vtable-goto-object target-object)
-                        (redisplay)
-                        (hl-line-highlight))
-                    (goto-char (point-min))))
-              (goto-char (point-min))))
-        (goto-char (point-min)))))))
+          (progn
+            (neo--workflow-rebuild-buffer)
+            (let ((info (assoc-string target-repo-name neo--repo-info-alist)))
+              (if info
+                  (let* ((table (nth 1 info))
+                         (target-object
+                          (seq-find (lambda (obj)
+                                      (and (neo-issue-p obj)
+                                           (equal (neo-issue-id obj) target-issue-id)))
+                                    (vtable-objects table))))
+                    (if target-object
+                        (progn
+                          (vtable-goto-table table)
+                          (vtable-goto-object target-object)
+                          (redisplay)
+                          (hl-line-highlight))
+                      (goto-char (point-min))))
+                (goto-char (point-min)))))
+        (neo--save-workflow-context
+          (neo--workflow-rebuild-buffer))))))
 
 ;; ============================================================
 ;; Sync (beads is authoritative; a refresh re-reads everything)
