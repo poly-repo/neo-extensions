@@ -253,6 +253,192 @@ Does not prompt in the minibuffer."
                (eshell-mode)
                (current-buffer))))))))
 
+(defgroup neo/terminal nil
+  "Terminal customizations for NEO."
+  :group 'applications)
+
+(defcustom neo/terminal-vterm-enable-codex-links t
+  "When non-nil, let vterm open Codex-style file references.
+
+This adds a removable layer on top of vterm:
+- `mouse-2' opens a reference under the click
+- `C-c C-o' opens a reference at point
+
+Set this to nil to disable the behavior without removing the code."
+  :type 'boolean
+  :group 'neo/terminal)
+
+(defconst neo--terminal-vterm-markdown-link-regexp
+  (concat
+   "\\(\\[[^]\n]+\\](\\(?:<\\([^>\n]+\\)>\\|\\([^)\n]+\\)\\))\\)")
+  "Regexp matching Markdown links that may contain file targets.")
+
+(defconst neo--terminal-vterm-plain-reference-regexp
+  "\\(?:~?/\\|[[:alnum:]_.-]+/\\)[^][(){}<>\"' \t\n]+"
+  "Regexp matching plain file references in terminal output.")
+
+(defun neo--terminal-vterm-trim-reference (reference)
+  "Trim wrapper punctuation from REFERENCE."
+  (string-trim reference "[[(<]+" "[]>),.;]+"))
+
+(defun neo--terminal-vterm-existing-file (path)
+  "Return an existing expanded file name for PATH, or nil."
+  (when (and path (not (string-empty-p path)))
+    (let* ((root (ignore-errors (neo/project-root)))
+           (candidates
+            (delete-dups
+             (delq nil
+                   (list
+                    (expand-file-name path default-directory)
+                    (when root (expand-file-name path root))
+                    (and (file-name-absolute-p path)
+                         (expand-file-name path)))))))
+      (seq-find #'file-exists-p candidates))))
+
+(defun neo--terminal-vterm-resolve-reference (reference)
+  "Resolve REFERENCE into a plist describing a file location."
+  (let* ((trimmed (neo--terminal-vterm-trim-reference reference))
+         (direct (neo--terminal-vterm-existing-file trimmed)))
+    (cond
+     (direct
+      (list :file direct :line nil :column nil))
+     ((string-match "\\`\\(.+\\):\\([0-9]+\\):\\([0-9]+\\)\\'" trimmed)
+      (when-let ((file (neo--terminal-vterm-existing-file (match-string 1 trimmed))))
+        (list :file file
+              :line (string-to-number (match-string 2 trimmed))
+              :column (string-to-number (match-string 3 trimmed)))))
+     ((string-match "\\`\\(.+\\):\\([0-9]+\\)\\'" trimmed)
+      (when-let ((file (neo--terminal-vterm-existing-file (match-string 1 trimmed))))
+        (list :file file
+              :line (string-to-number (match-string 2 trimmed))
+              :column nil)))
+     ((string-match "\\`\\(.+\\)#L\\([0-9]+\\)C\\([0-9]+\\)\\'" trimmed)
+      (when-let ((file (neo--terminal-vterm-existing-file (match-string 1 trimmed))))
+        (list :file file
+              :line (string-to-number (match-string 2 trimmed))
+              :column (string-to-number (match-string 3 trimmed)))))
+     ((string-match "\\`\\(.+\\)#L\\([0-9]+\\)\\'" trimmed)
+      (when-let ((file (neo--terminal-vterm-existing-file (match-string 1 trimmed))))
+        (list :file file
+              :line (string-to-number (match-string 2 trimmed))
+              :column nil))))))
+
+(defun neo--terminal-vterm-logical-line-beginning (&optional position)
+  "Return the start of the logical vterm line at POSITION."
+  (save-excursion
+    (when position
+      (goto-char position))
+    (beginning-of-line)
+    (while (and (not (bobp))
+                (get-text-property (1- (point)) 'vterm-line-wrap))
+      (forward-char -1)
+      (beginning-of-line))
+    (point)))
+
+(defun neo--terminal-vterm-logical-line-end (&optional position)
+  "Return the end of the logical vterm line at POSITION."
+  (save-excursion
+    (when position
+      (goto-char position))
+    (end-of-line)
+    (while (get-text-property (point) 'vterm-line-wrap)
+      (forward-char)
+      (end-of-line))
+    (point)))
+
+(defun neo--terminal-vterm-logical-line-context (position)
+  "Return normalized logical-line text and index for POSITION.
+
+The returned plist contains the visible logical line text under `:text'
+and the matching index for POSITION under `:position'."
+  (let ((line-beg (neo--terminal-vterm-logical-line-beginning position))
+        (line-end (neo--terminal-vterm-logical-line-end position))
+        (parts nil)
+        (text-index 0)
+        (position-index nil))
+    (save-excursion
+      (goto-char line-beg)
+      (while (< (point) line-end)
+        (when (and (null position-index)
+                   (= (point) position))
+          (setq position-index text-index))
+        (unless (get-text-property (point) 'vterm-line-wrap)
+          (push (char-to-string (char-after)) parts)
+          (setq text-index (1+ text-index)))
+        (forward-char 1)))
+    (when (null position-index)
+      (setq position-index text-index))
+    (list :text (apply #'concat (nreverse parts))
+          :position position-index)))
+
+(defun neo--terminal-vterm-reference-at-position (position)
+  "Return the Codex file reference at POSITION, or nil."
+  (let* ((context (neo--terminal-vterm-logical-line-context position))
+         (text (plist-get context :text))
+         (text-position (plist-get context :position))
+         (match-start 0))
+    (or
+     (catch 'match
+       (while (and (< match-start (length text))
+                   (string-match neo--terminal-vterm-markdown-link-regexp
+                                 text
+                                 match-start))
+         (when (and (<= (match-beginning 1) text-position)
+                    (< text-position (match-end 1)))
+           (let ((target (or (match-string-no-properties 2 text)
+                             (match-string-no-properties 3 text))))
+             (when-let ((location (neo--terminal-vterm-resolve-reference target)))
+               (throw 'match location))))
+         (setq match-start (match-end 1))))
+     (catch 'match
+       (setq match-start 0)
+       (while (and (< match-start (length text))
+                   (string-match neo--terminal-vterm-plain-reference-regexp
+                                 text
+                                 match-start))
+         (when (and (<= (match-beginning 0) text-position)
+                    (< text-position (match-end 0)))
+           (when-let ((location
+                       (neo--terminal-vterm-resolve-reference
+                        (match-string-no-properties 0 text))))
+             (throw 'match location)))
+         (setq match-start (match-end 0)))))))
+
+(defun neo--terminal-vterm-visit-location (location)
+  "Visit LOCATION in the current Emacs session."
+  (let ((file (plist-get location :file))
+        (line (plist-get location :line))
+        (column (plist-get location :column)))
+    (find-file file)
+    (when line
+      (goto-char (point-min))
+      (forward-line (1- line))
+      (when column
+        (move-to-column (1- column))))))
+
+(defun neo/terminal-vterm-visit-codex-reference-at-point (&optional position)
+  "Open the Codex file reference at POSITION or point."
+  (interactive)
+  (unless neo/terminal-vterm-enable-codex-links
+    (user-error "Codex vterm link opening is disabled"))
+  (let ((location
+         (neo--terminal-vterm-reference-at-position (or position (point)))))
+    (unless location
+      (user-error "No Codex file reference at point"))
+    (neo--terminal-vterm-visit-location location)))
+
+(defun neo/terminal-vterm-visit-codex-reference-at-mouse (event)
+  "Open the Codex file reference at mouse EVENT, or move point."
+  (interactive "e")
+  (let ((position (posn-point (event-end event))))
+    (if (and neo/terminal-vterm-enable-codex-links
+             (integer-or-marker-p position))
+        (let ((location (neo--terminal-vterm-reference-at-position position)))
+          (if location
+              (neo--terminal-vterm-visit-location location)
+            (vterm-mouse-set-point event)))
+      (vterm-mouse-set-point event))))
+
 ;; (defun neo/toggle-eshell ()
 ;;   "Toggle Eshell.
 ;; If called from a non-Eshell buffer, open or switch to Eshell.
@@ -285,10 +471,13 @@ Does not prompt in the minibuffer."
 ;;   :bind
 ;;   ("s-`" . eshell-toggle))
 
-;(neo/use-package vterm
-;  :custom
-;  (vterm-max-scrollback 100000)
-;  )
+(neo/use-package vterm
+  :custom
+  (vterm-max-scrollback 100000)
+  :bind
+  (:map vterm-mode-map
+        ("C-c C-o" . neo/terminal-vterm-visit-codex-reference-at-point)
+        ([mouse-2] . neo/terminal-vterm-visit-codex-reference-at-mouse)))
 
 ;(neo/use-package vterm-toggle
 ;  :bind
