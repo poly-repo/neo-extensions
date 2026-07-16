@@ -1192,8 +1192,10 @@ If TARGET-REPO-NAME and TARGET-ISSUE-ID are provided, position point on that iss
 REPO-NAME and ISSUE-ID are used to position point after refresh."
   (interactive)
   (message "neo-workflow: refreshing from beads...")
-  ;; Invalidate the beads workspace cache so we get fresh data.
+  ;; Invalidate both the beads workspace cache and the in-memory issue
+  ;; cache so we get fresh data.
   (beads-client-clear-cache)
+  (neo-workflow-cache-clear)
   (neo/workflow-refresh repo-name issue-id))
 
 ;; ============================================================
@@ -1208,6 +1210,12 @@ REPO-NAME and ISSUE-ID are used to position point after refresh."
     (pop-to-buffer buffer)
     (with-current-buffer buffer
       (neo-workflow-status-mode)
+      ;; Redraw when the file-notify-driven cache invalidates itself
+      ;; (idempotent: `add-hook' dedups repeat calls across re-opens).
+      (add-hook 'neo-workflow-refresh-hook #'neo/workflow-refresh)
+      ;; Buffer-local + local hook: stop watching when this buffer goes
+      ;; away, so no file-notify descriptors leak past its lifetime.
+      (add-hook 'kill-buffer-hook #'neo-workflow-cache-stop-watching nil t)
       (neo/workflow-refresh))))
 
 (neo/application "Neo Workflow"

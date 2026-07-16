@@ -126,7 +126,8 @@ Returns nil when `bd' is unavailable or cannot resolve a workspace."
                   (when-let* ((beads-dir (alist-get 'path info))
                              (db-path (alist-get 'database_path info)))
                     `((path . ,(expand-file-name beads-dir))
-                      (database_path . ,(expand-file-name db-path)))))
+                      (database_path . ,(expand-file-name db-path))
+                      (prefix . ,(alist-get 'prefix info)))))
               (json-error nil))))))))
 
 (defun beads-client--workspace-info ()

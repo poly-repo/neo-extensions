@@ -15,6 +15,7 @@
 ;;; Modules:
 ;;;   neo-workflow-slug.el      ;; branch-slug helpers (copied from workflow/)
 ;;;   neo-workflow-git.el       ;; git worktrees / branch state
+;;;   neo-workflow-cache.el     ;; in-memory beads cache + file-notify invalidation
 ;;;   neo-workflow-models.el    ;; cl-structs + beads/git loaders
 ;;;   neo-workflow-db.el        ;; public API names, in-memory/beads bodies
 ;;;   neo-workflow-context.el   ;; workspace strategy via git state (no magit)
@@ -33,6 +34,7 @@
 
 (require 'neo-workflow-slug)
 (require 'neo-workflow-git)
+(require 'neo-workflow-cache)
 (require 'neo-workflow-models)
 (require 'neo-workflow-db)
 (require 'neo-workflow-context)

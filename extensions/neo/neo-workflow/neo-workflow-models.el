@@ -9,6 +9,7 @@
 (require 'beads-client)
 (require 'neo-workflow-git)
 (require 'neo-workflow-slug)
+(require 'neo-workflow-cache)
 
 ;; ============================================================
 ;; Core CL structs (shape-compatible with old workflow/)
@@ -327,11 +328,13 @@ nested child stack instead of a top-level entry."
 
 (defun neo--workflow-all-stacks (repository-id)
   "Return the top-level `neo-stack' tree for REPOSITORY-ID from beads.
-Performs a single `beads-client-list' and assembles the epic tree
+Reads issues via `neo-workflow-cache-get-beads' (a single `beads-client-list'
+on a cache miss, cached thereafter) and assembles the epic tree
 client-side.  Returns nil on error."
   (condition-case err
       (neo--workflow-stacks-from-issues
-       (append (beads-client-list) nil) repository-id)
+       (mapcar #'neo--bead-to-alist (neo-workflow-cache-get-beads repository-id))
+       repository-id)
     (error
      (message "neo-workflow: stack fetch failed: %s" (error-message-string err))
      nil)))
@@ -449,12 +452,13 @@ Returns an empty string when no workspace can be resolved."
 
 (defun neo-db-get-issues-for-repo (repository-id)
   "Return non-epic issues for REPOSITORY-ID as `neo-issue' structs.
-Performs a single `beads-client-list'.  Epics are surfaced as stacks (see
+Reads via `neo-workflow-cache-get-beads' (a single `beads-client-list' on a
+cache miss, cached thereafter).  Epics are surfaced as stacks (see
 `neo-db-get-stacks-for-repo') and excluded here.  Each issue whose beads
 `parent' is an epic gets that epic's `neo-stack' attached on its `stack'
 slot, so the board can nest issues under their stack."
   (condition-case err
-      (let* ((raw (append (beads-client-list) nil))
+      (let* ((raw (mapcar #'neo--bead-to-alist (neo-workflow-cache-get-beads repository-id)))
              (stacks (neo--workflow-stacks-from-issues raw repository-id))
              (stack-by-id (make-hash-table :test #'equal)))
         (dolist (stack (neo--workflow-flatten-stacks stacks))
