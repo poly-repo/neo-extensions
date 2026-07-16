@@ -152,13 +152,18 @@ is still a legitimate cache hit.")
 On a cache miss (never populated, explicitly invalidated, or a different
 REPOSITORY-ID), fetches via `beads-client-list', populates the cache, and
 starts the file-notify watch.  Returns nil (without caching) on error,
-mirroring the degrade-gracefully behavior of the callers this replaces."
+mirroring the degrade-gracefully behavior of the callers this replaces.
+
+Passes `:limit 0' explicitly: `bd list'/`beads-client-list' otherwise
+default to capping results at 50 issues, which silently drops issues (in
+particular low-priority ones, since the default sort puts them last) from
+a board that is supposed to show the whole workspace."
   (if (and neo-workflow-cache--valid
            (equal neo-workflow-cache--repository-id repository-id))
       neo-workflow-cache--beads
     (condition-case err
         (let ((beads (mapcar #'neo--beads-alist-to-bead
-                              (append (beads-client-list) nil))))
+                              (append (beads-client-list '(:limit 0)) nil))))
           (setq neo-workflow-cache--beads beads)
           (setq neo-workflow-cache--repository-id repository-id)
           (setq neo-workflow-cache--valid t)
