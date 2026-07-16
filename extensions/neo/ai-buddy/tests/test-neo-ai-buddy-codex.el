@@ -91,15 +91,6 @@
         (neo--ai-buddy-codex-side-window-action))
       (expect called :to-equal nil)))
 
-  (it "opens the project Codex session and sends /work"
-    (let (calls)
-      (cl-letf (((symbol-function 'neo--ai-buddy-codex-open-project-session)
-                 (lambda () (push 'open calls)))
-                ((symbol-function 'neo--ai-buddy-codex-send-prompt-string)
-                 (lambda (prompt) (push prompt calls))))
-        (neo/ai-buddy-codex-work))
-      (expect (nreverse calls) :to-equal '(open "/work"))))
-
   (it "toggles an existing session without prompting"
     (let (called)
       (cl-letf (((symbol-function 'require) (lambda (feature &rest _) feature))

@@ -2,6 +2,7 @@
 
 (require 'buttercup)
 (require 'cl-lib)
+(require 'json)
 
 ;; Mock beads-client so tests run without the sibling extension on the load-path.
 (unless (featurep 'beads-client)
@@ -614,23 +615,69 @@
       (expect 'neo-issue-title-to-slug :to-have-been-called-with nil "Fix the thing"))
 
     (it "activates the perspective with the worktree path when strategy is 'worktree"
-      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
-      (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
-        (neo--hack issue)
-        (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-                "mav/9-fix-the-thing" "/tmp/worktrees/r_9-fix-the-thing")))
+      (let ((temp-root (make-temp-file "neo-workflow-worktrees-" t)))
+        (unwind-protect
+            (progn
+              (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
+              (let ((neo/workflow-worktrees-directory temp-root))
+                (neo--hack issue)
+                (expect 'neo--workflow-activate-perspective :to-have-been-called-with
+                        "mav/9-fix-the-thing"
+                        (expand-file-name "r_9-fix-the-thing" temp-root))))
+          (delete-directory temp-root t))))
+
+    (it "writes `.codex/bead.json' into the activated worktree"
+      (let ((temp-root (make-temp-file "neo-workflow-worktrees-" t)))
+        (unwind-protect
+            (progn
+              (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
+              (let* ((neo/workflow-worktrees-directory temp-root)
+                     (worktree-root (expand-file-name "r_9-fix-the-thing" temp-root))
+                     (binding-path (expand-file-name ".codex/bead.json" worktree-root)))
+                (neo--hack issue)
+                (expect (file-exists-p binding-path) :to-be-truthy)
+                (let* ((binding (json-parse-string
+                                 (with-temp-buffer
+                                   (insert-file-contents binding-path)
+                                   (buffer-string))
+                                 :object-type 'alist))
+                       (selected-at (alist-get 'selected_at binding)))
+                  (expect (alist-get 'id binding) :to-equal "omega-9")
+                  (expect (alist-get 'title binding) :to-equal "Fix the thing")
+                  (expect (alist-get 'status binding) :to-equal "in_progress")
+                  (expect (alist-get 'repo_root binding) :to-equal "/repo/root")
+                  (expect (alist-get 'worktree_root binding) :to-equal worktree-root)
+                  (expect (alist-get 'branch binding) :to-equal "mav/9-fix-the-thing")
+                  (expect selected-at :to-match "^[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}T"))))
+          (delete-directory temp-root t))))
+
+    (it "does not write `.codex/bead.json' when activation stays in the primary repo"
+      (let ((temp-root (make-temp-file "neo-workflow-repo-" t)))
+        (unwind-protect
+            (progn
+              (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
+              (spy-on 'neo--workflow-beads-workspace-as-project :and-return-value
+                      (make-neo-project :id "p" :repo "r" :type "beads" :pr-number nil
+                                        :worktree-path temp-root :stacks nil))
+              (neo--hack issue)
+              (expect (file-exists-p (expand-file-name ".codex/bead.json" temp-root))
+                      :to-be nil))
+          (delete-directory temp-root t))))
 
     (it "creates the worktree before activating the perspective (ordering regression)"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
-      (let* ((calls nil))
-        (spy-on 'neo--workflow-git-run :and-call-fake
-                (lambda (&rest args) (push (cons 'worktree-add args) calls) t))
-        (spy-on 'neo--workflow-activate-perspective :and-call-fake
-                (lambda (&rest args) (push (cons 'activate args) calls) nil))
-        (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
-          (neo--hack issue))
-        (setq calls (nreverse calls))
-        (expect (mapcar #'car calls) :to-equal '(worktree-add activate))))
+      (let ((temp-root (make-temp-file "neo-workflow-worktrees-" t)))
+        (unwind-protect
+            (let* ((calls nil))
+              (spy-on 'neo--workflow-git-run :and-call-fake
+                      (lambda (&rest args) (push (cons 'worktree-add args) calls) t))
+              (spy-on 'neo--workflow-activate-perspective :and-call-fake
+                      (lambda (&rest args) (push (cons 'activate args) calls) nil))
+              (let ((neo/workflow-worktrees-directory temp-root))
+                (neo--hack issue))
+              (setq calls (nreverse calls))
+              (expect (mapcar #'car calls) :to-equal '(worktree-add activate)))
+          (delete-directory temp-root t))))
 
     (it "sanitizes a username containing spaces into a valid branch component"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
@@ -670,8 +717,11 @@
     (it "signals a user-error and does not activate when worktree creation fails"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
       (spy-on 'neo--workflow-git-run :and-return-value nil)
-      (let ((neo/workflow-worktrees-directory "/tmp/worktrees"))
-        (expect (neo--hack issue) :to-throw 'user-error))
+      (let ((temp-root (make-temp-file "neo-workflow-worktrees-" t)))
+        (unwind-protect
+            (let ((neo/workflow-worktrees-directory temp-root))
+              (expect (neo--hack issue) :to-throw 'user-error))
+          (delete-directory temp-root t)))
       (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
       (expect 'beads-client-update :not :to-have-been-called))))
 

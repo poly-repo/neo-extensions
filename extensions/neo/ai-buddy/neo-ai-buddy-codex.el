@@ -12,9 +12,6 @@
 (defvar neo--ai-buddy-codex-direnv-guard nil
   "Prevent nested Codex startup commands from re-running `direnv allow`.")
 
-(defconst neo--ai-buddy-codex-work-prompt-command "/work"
-  "Prompt command sent to Codex for bead-aware work handoff.")
-
 (defun neo--ai-buddy-vterm-build-command ()
   "Return the shell command used to compile `vterm-module'."
   (mapconcat #'identity
@@ -105,14 +102,6 @@ Signals `user-error' when no project root is active."
       (codex-cli-toggle)
     (codex-cli-start)))
 
-(defun neo--ai-buddy-codex-send-prompt-string (prompt)
-  "Send PROMPT to the active Codex session."
-  (minibuffer-with-setup-hook
-      (lambda ()
-        (insert prompt)
-        (exit-minibuffer))
-    (call-interactively #'codex-cli-send-prompt)))
-
 (defun neo--ai-buddy-codex-side-window-action ()
   "Open or toggle a Codex CLI session for the current project.
 Registered as the weak `neo/dispatch-side' action for the right side: only
@@ -135,13 +124,6 @@ create a session -- a missing session is started outright."
   (neo/register-side-action 'right #'neo--ai-buddy-codex-side-window-action 'weak))
 
 ;;;###autoload
-(defun neo/ai-buddy-codex-work ()
-  "Open the active project Codex session and send the `/work' prompt."
-  (interactive)
-  (neo--ai-buddy-codex-open-project-session)
-  (neo--ai-buddy-codex-send-prompt-string
-   neo--ai-buddy-codex-work-prompt-command))
-
 (defun neo--ai-buddy-vterm-build-in-directory (directory)
   "Compile `vterm-module' in DIRECTORY."
   (let ((default-directory directory)
@@ -194,7 +176,6 @@ create a session -- a missing session is started outright."
 	 ("C-c c p" . codex-cli-send-prompt)
 	 ("C-c c r" . codex-cli-send-region)
 	 ("C-c c f" . codex-cli-send-file)
-	 ("C-c c w" . neo/ai-buddy-codex-work)
 	 ;; Show-all layout + paging
 	 ("C-c c a" . codex-cli-toggle-all)
 	 ("C-c c n" . codex-cli-toggle-all-next-page)

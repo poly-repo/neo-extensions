@@ -4,6 +4,7 @@
 ;; Data comes from beads + git; no SQLite, no GitHub.
 
 (require 'cl-lib)
+(require 'json)
 (require 'seq)
 (require 'neo-workflow-slug)
 (require 'neo-workflow-models)
@@ -763,6 +764,37 @@ so new branches/worktrees created via `neo--hack' start from an
 up-to-date base rather than whatever happened to be checked out."
   (format "origin/%s" (or (neo/workflow-git-origin-head) "main")))
 
+(defun neo--workflow-bead-binding-path (worktree-root)
+  "Return the worktree-local `.codex/bead.json' path for WORKTREE-ROOT."
+  (expand-file-name ".codex/bead.json"
+                    (directory-file-name (expand-file-name worktree-root))))
+
+(defun neo--workflow-bead-binding-data (issue repo-root worktree-root branch-name status)
+  "Return the bead binding payload for ISSUE.
+REPO-ROOT is the primary repository root, WORKTREE-ROOT is the active
+worktree checkout, BRANCH-NAME is the activated branch, and STATUS is the
+current beads status string to persist."
+  `((id . ,(neo-issue-id issue))
+    (title . ,(neo-issue-title issue))
+    (status . ,status)
+    (repo_root . ,(directory-file-name (expand-file-name repo-root)))
+    (worktree_root . ,(directory-file-name (expand-file-name worktree-root)))
+    (branch . ,branch-name)
+    (selected_at . ,(format-time-string "%FT%T%:z"))))
+
+(defun neo--workflow-write-bead-binding (issue repo-root worktree-root branch-name status)
+  "Write a worktree-local bead binding for ISSUE.
+REPO-ROOT is the main repository checkout, WORKTREE-ROOT is the active
+worktree root, BRANCH-NAME is the activated branch, and STATUS is the beads
+status recorded in the binding."
+  (let ((binding-path (neo--workflow-bead-binding-path worktree-root)))
+    (make-directory (file-name-directory binding-path) t)
+    (with-temp-file binding-path
+      (insert (json-encode
+               (neo--workflow-bead-binding-data
+                issue repo-root worktree-root branch-name status)))
+      (insert "\n"))))
+
 (defun neo--hack (object)
   "Create and switch to a full development context for OBJECT (issue or stack).
 Signals `user-error' if branch or worktree creation fails, instead of
@@ -802,34 +834,39 @@ reporting success and leaving the beads issue claimed with no branch."
           ;; Create worktree (if the strategy calls for it) and determine the
           ;; final root BEFORE switching perspective/treemacs, so they land on
           ;; the right directory instead of whatever was current before.
-          (let ((final-root
-                 (if (eq strategy 'worktree)
-                     (let ((worktree-path
-                            (expand-file-name
-                             (neo--workflow-worktree-directory-name
-                              (neo-project-repo project)
-                              (neo--workflow-strip-username-prefix final-slug username))
-                             neo/workflow-worktrees-directory)))
-                       (unless (file-exists-p worktree-path)
-                         (make-directory (file-name-directory worktree-path) t)
-                         (let ((default-directory repo-path))
-                           (unless (neo--workflow-git-run "worktree" "add" worktree-path branch-name)
-                             (user-error "neo-workflow: failed to create worktree at %s" worktree-path))))
-                       (message "Switched to worktree: %s" worktree-path)
-                       worktree-path)
-                   repo-path)))
-            (neo--workflow-activate-perspective final-slug final-root))
-
-          ;; Claim the issue in beads (mark it in progress) now that work started.
-          (condition-case err
-              (beads-client-update (neo-issue-id issue) :status "in_progress")
-            (beads-client-error
-             (message "neo-workflow: could not claim issue %s: %s"
-                      (neo-issue-id issue) (cadr err))))
-          (message "Activated issue %s on branch %s"
-                   (neo-issue-id issue) branch-name)
-          (neo/workflow-refresh (neo--workflow-get-repo-full-name-by-id repo-id)
-                                (neo-issue-id issue)))
+          (let* ((final-root
+                  (if (eq strategy 'worktree)
+                      (let ((worktree-path
+                             (expand-file-name
+                              (neo--workflow-worktree-directory-name
+                               (neo-project-repo project)
+                               (neo--workflow-strip-username-prefix final-slug username))
+                              neo/workflow-worktrees-directory)))
+                        (unless (file-exists-p worktree-path)
+                          (make-directory (file-name-directory worktree-path) t)
+                          (let ((default-directory repo-path))
+                            (unless (neo--workflow-git-run "worktree" "add" worktree-path branch-name)
+                              (user-error "neo-workflow: failed to create worktree at %s" worktree-path))))
+                        (message "Switched to worktree: %s" worktree-path)
+                        worktree-path)
+                    repo-path))
+                 (binding-status
+                 (condition-case err
+                      (progn
+                        (beads-client-update (neo-issue-id issue) :status "in_progress")
+                        "in_progress")
+                    (beads-client-error
+                     (message "neo-workflow: could not claim issue %s: %s"
+                              (neo-issue-id issue) (cadr err))
+                     (or (neo-issue-status issue) "open")))))
+            (neo--workflow-activate-perspective final-slug final-root)
+            (when (eq strategy 'worktree)
+              (neo--workflow-write-bead-binding
+               issue repo-path final-root branch-name binding-status))
+            (message "Activated issue %s on branch %s"
+                     (neo-issue-id issue) branch-name)
+            (neo/workflow-refresh (neo--workflow-get-repo-full-name-by-id repo-id)
+                                  (neo-issue-id issue))))
       (message "Cannot activate: project root not found"))))
 
 (defun neo--workflow-create-stack-branch (name)
