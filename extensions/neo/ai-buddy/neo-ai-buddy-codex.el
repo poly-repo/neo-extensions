@@ -12,6 +12,17 @@
 (defvar neo--ai-buddy-codex-direnv-guard nil
   "Prevent nested Codex startup commands from re-running `direnv allow`.")
 
+(defconst neo--ai-buddy-codex-work-prompt-command "/work"
+  "Prompt command sent to Codex for bead-aware work handoff.")
+
+(defconst neo--ai-buddy-codex-extension-directory
+  (file-name-directory
+   (or load-file-name
+       (and (boundp 'byte-compile-current-file) byte-compile-current-file)
+       (locate-library "neo-ai-buddy-codex")
+       default-directory))
+  "Directory containing `neo-ai-buddy-codex' and its repo-owned assets.")
+
 (defun neo--ai-buddy-vterm-build-command ()
   "Return the shell command used to compile `vterm-module'."
   (mapconcat #'identity
@@ -92,6 +103,50 @@
     (unless (advice-member-p #'neo--ai-buddy-codex-run-with-direnv command)
       (advice-add command :around #'neo--ai-buddy-codex-run-with-direnv))))
 
+(defun neo--ai-buddy-codex-work-prompt-source ()
+  "Return the repo-owned source path for the Codex `/work' prompt."
+  (expand-file-name "prompts/work.md"
+                    neo--ai-buddy-codex-extension-directory))
+
+(defun neo--ai-buddy-codex-prompts-directory ()
+  "Return the user-level Codex prompts directory."
+  (expand-file-name "prompts" (expand-file-name ".codex" (expand-file-name "~"))))
+
+(defun neo--ai-buddy-codex-work-prompt-destination ()
+  "Return the installed destination path for the Codex `/work' prompt."
+  (expand-file-name "work.md" (neo--ai-buddy-codex-prompts-directory)))
+
+(defun neo--ai-buddy-codex-copy-work-prompt (&optional announce)
+  "Copy the repo-owned Codex `/work' prompt into `~/.codex/prompts'.
+When ANNOUNCE is non-nil, emit a success message after copying."
+  (let ((source (neo--ai-buddy-codex-work-prompt-source))
+        (target (neo--ai-buddy-codex-work-prompt-destination)))
+    (unless (file-exists-p source)
+      (user-error "NEO: missing Codex work prompt source at %s" source))
+    (make-directory (file-name-directory target) t)
+    (copy-file source target t)
+    (when announce
+      (message "Installed Codex /work prompt to %s" target))
+    target))
+
+(defun neo--ai-buddy-codex-open-project-session ()
+  "Open or toggle the Codex session for the active project.
+Signals `user-error' when no project root is active."
+  (require 'codex-cli)
+  (unless (ignore-errors (codex-cli-project-root))
+    (user-error "NEO: no active project; not starting Codex CLI"))
+  (if (codex-cli--project-session-buffers)
+      (codex-cli-toggle)
+    (codex-cli-start)))
+
+(defun neo--ai-buddy-codex-send-prompt-string (prompt)
+  "Send PROMPT to the active Codex session."
+  (minibuffer-with-setup-hook
+      (lambda ()
+        (insert prompt)
+        (exit-minibuffer))
+    (call-interactively #'codex-cli-send-prompt)))
+
 (defun neo--ai-buddy-codex-side-window-action ()
   "Open or toggle a Codex CLI session for the current project.
 Registered as the weak `neo/dispatch-side' action for the right side: only
@@ -104,16 +159,29 @@ create a session -- a missing session is started outright."
   ;; own autoloaded commands first). Since this action may be the very
   ;; first thing to touch Codex CLI in a session, force the require so the
   ;; function exists instead of silently no-op'ing via `ignore-errors'.
-  (require 'codex-cli)
-  (if (ignore-errors (codex-cli-project-root))
-      (if (codex-cli--project-session-buffers)
-          (codex-cli-toggle)
-        (codex-cli-start))
-    (message "NEO: no active project; not starting Codex CLI")))
+  (condition-case err
+      (neo--ai-buddy-codex-open-project-session)
+    (user-error
+     (message "%s" (cadr err)))))
 
 (defun neo--ai-buddy-codex-register-side-action ()
   "Register Codex CLI as the weak `right' side-window fallback action."
   (neo/register-side-action 'right #'neo--ai-buddy-codex-side-window-action 'weak))
+
+;;;###autoload
+(defun neo/ai-buddy-codex-install-work-prompt ()
+  "Install the repo-owned Codex `/work' prompt into `~/.codex/prompts'."
+  (interactive)
+  (neo--ai-buddy-codex-copy-work-prompt t))
+
+;;;###autoload
+(defun neo/ai-buddy-codex-work ()
+  "Open the active project Codex session and send the `/work' prompt."
+  (interactive)
+  (neo--ai-buddy-codex-copy-work-prompt)
+  (neo--ai-buddy-codex-open-project-session)
+  (neo--ai-buddy-codex-send-prompt-string
+   neo--ai-buddy-codex-work-prompt-command))
 
 (defun neo--ai-buddy-vterm-build-in-directory (directory)
   "Compile `vterm-module' in DIRECTORY."
@@ -167,6 +235,7 @@ create a session -- a missing session is started outright."
 	 ("C-c c p" . codex-cli-send-prompt)
 	 ("C-c c r" . codex-cli-send-region)
 	 ("C-c c f" . codex-cli-send-file)
+	 ("C-c c w" . neo/ai-buddy-codex-work)
 	 ;; Show-all layout + paging
 	 ("C-c c a" . codex-cli-toggle-all)
 	 ("C-c c n" . codex-cli-toggle-all-next-page)

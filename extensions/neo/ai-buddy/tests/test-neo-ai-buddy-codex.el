@@ -77,6 +77,31 @@
       (expect calls
               :to-equal '((right neo--ai-buddy-codex-side-window-action weak)))))
 
+  (it "resolves the repo-owned /work prompt from the extension directory"
+    (let ((neo--ai-buddy-codex-extension-directory "/tmp/neo-ai-buddy/"))
+      (expect (neo--ai-buddy-codex-work-prompt-source)
+              :to-equal "/tmp/neo-ai-buddy/prompts/work.md")))
+
+  (it "installs the repo-owned /work prompt into ~/.codex/prompts"
+    (let (made copied)
+      (cl-letf (((symbol-function 'neo--ai-buddy-codex-work-prompt-source)
+                 (lambda () "/tmp/repo/work.md"))
+                ((symbol-function 'neo--ai-buddy-codex-work-prompt-destination)
+                 (lambda () "/tmp/home/.codex/prompts/work.md"))
+                ((symbol-function 'file-exists-p)
+                 (lambda (path) (string= path "/tmp/repo/work.md")))
+                ((symbol-function 'make-directory)
+                 (lambda (dir parents) (setq made (list dir parents))))
+                ((symbol-function 'copy-file)
+                 (lambda (source target ok-if-exists)
+                   (setq copied (list source target ok-if-exists)))))
+        (neo/ai-buddy-codex-install-work-prompt))
+      (expect made :to-equal '("/tmp/home/.codex/prompts/" t))
+      (expect copied
+              :to-equal '("/tmp/repo/work.md"
+                          "/tmp/home/.codex/prompts/work.md"
+                          t))))
+
   (it "does nothing when no project is active"
     (let (called)
       (cl-letf (((symbol-function 'require) (lambda (feature &rest _) feature))
@@ -90,6 +115,17 @@
                  (lambda (&optional _session) (push 'start called))))
         (neo--ai-buddy-codex-side-window-action))
       (expect called :to-equal nil)))
+
+  (it "opens the project Codex session and sends /work"
+    (let (calls)
+      (cl-letf (((symbol-function 'neo--ai-buddy-codex-copy-work-prompt)
+                 (lambda (&optional _announce) (push 'install calls)))
+                ((symbol-function 'neo--ai-buddy-codex-open-project-session)
+                 (lambda () (push 'open calls)))
+                ((symbol-function 'neo--ai-buddy-codex-send-prompt-string)
+                 (lambda (prompt) (push prompt calls))))
+        (neo/ai-buddy-codex-work))
+      (expect (nreverse calls) :to-equal '(install open "/work"))))
 
   (it "toggles an existing session without prompting"
     (let (called)
