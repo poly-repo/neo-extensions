@@ -53,13 +53,20 @@
 (unless (fboundp 'neo--workflow-choose-workspace-strategy)
   (defun neo--workflow-choose-workspace-strategy (&optional _dir) 'repo))
 
-;; Mock persp-switch / neo/treemacs-show-only-project so
-;; `neo--workflow-activate-perspective' can be exercised without loading
-;; `perspective'/`treemacs' in batch.
+;; Mock persp-switch / neo/treemacs-show-only-project so project-switch
+;; helpers can be exercised without loading `perspective'/`treemacs' in batch.
 (unless (fboundp 'persp-switch)
   (defun persp-switch (_name) nil))
 (unless (fboundp 'neo/treemacs-show-only-project)
   (defun neo/treemacs-show-only-project (_root _name) nil))
+
+;; Mock neo/switch-to-project (neo-better-git.el) / projectile-project-name
+;; (Projectile) so `neo--hack'/`neo/workflow-switch-context' can be exercised
+;; without loading `neo-better-git'/`projectile' in batch.
+(unless (fboundp 'neo/switch-to-project)
+  (defun neo/switch-to-project (_path) nil))
+(unless (fboundp 'projectile-project-name)
+  (defun projectile-project-name (&optional project) (and project (file-name-nondirectory (directory-file-name project)))))
 
 ;; Mock neo-workflow-async.
 (unless (featurep 'neo-workflow-async)
@@ -481,88 +488,36 @@
     (clrhash neo--workflow-contexts)
     (spy-on 'neo--workflow-resolve-stack-root :and-return-value nil))
 
-  (it "records the chosen stack's context (no perspective library in batch)"
+  (it "records the chosen stack's context, keyed by the Projectile project name"
     (spy-on 'neo-db-get-all-stacks :and-return-value
             '((:id "omega-100" :name "100-parent" :repository-id "repo-x" :title "Parent")))
     (spy-on 'completing-read :and-return-value "Parent (100-parent)")
+    (spy-on 'neo--workflow-resolve-stack-root :and-return-value "/worktrees/100-parent")
     (neo/workflow-switch-context)
     (let ((ctx (neo/workflow-db-get-context "repo-x")))
       (expect (plist-get ctx :stack-id) :to-equal "omega-100")
       (expect (plist-get ctx :perspective) :to-equal "100-parent")))
 
-  (it "resolves the stack root and activates the perspective with it"
+  (it "resolves the stack root and switches to it via neo/switch-to-project"
     (spy-on 'neo-db-get-all-stacks :and-return-value
             '((:id "omega-100" :name "100-parent" :repository-id "repo-x" :title "Parent")))
     (spy-on 'completing-read :and-return-value "Parent (100-parent)")
     (spy-on 'neo--workflow-resolve-stack-root :and-return-value "/worktrees/100-parent")
-    (spy-on 'neo--workflow-activate-perspective)
+    (spy-on 'neo/switch-to-project)
     (neo/workflow-switch-context)
     (expect 'neo--workflow-resolve-stack-root :to-have-been-called-with "omega-100")
-    (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-            "100-parent" "/worktrees/100-parent"))
+    (expect 'neo/switch-to-project :to-have-been-called-with "/worktrees/100-parent"))
 
   (it "errors when there are no stacks"
     (spy-on 'neo-db-get-all-stacks :and-return-value nil)
+    (expect (neo/workflow-switch-context) :to-throw 'user-error))
+
+  (it "errors when the chosen stack has no resolvable root"
+    (spy-on 'neo-db-get-all-stacks :and-return-value
+            '((:id "omega-100" :name "100-parent" :repository-id "repo-x" :title "Parent")))
+    (spy-on 'completing-read :and-return-value "Parent (100-parent)")
+    (spy-on 'neo--workflow-resolve-stack-root :and-return-value nil)
     (expect (neo/workflow-switch-context) :to-throw 'user-error)))
-
-;; ============================================================
-;; Perspective/project sync (treemacs + scratch buffer + persp-switch)
-;; ============================================================
-
-(describe "neo--ensure-stack-scratch"
-  (it "sets default-directory to ROOT on a freshly created buffer"
-    (let ((buf-name "*scratch* (fresh-stack)"))
-      (when (get-buffer buf-name) (kill-buffer buf-name))
-      (unwind-protect
-          (progn
-            (neo--ensure-stack-scratch "fresh-stack" "/tmp/root-a")
-            (expect default-directory :to-equal (file-name-as-directory
-                                                  (expand-file-name "/tmp/root-a"))))
-        (when (get-buffer buf-name) (kill-buffer buf-name)))))
-
-  (it "resets default-directory on an already-existing buffer with a stale directory"
-    (let ((buf-name "*scratch* (stale-stack)"))
-      (when (get-buffer buf-name) (kill-buffer buf-name))
-      (unwind-protect
-          (progn
-            (neo--ensure-stack-scratch "stale-stack" "/tmp/root-a")
-            (neo--ensure-stack-scratch "stale-stack" "/tmp/root-b")
-            (expect default-directory :to-equal (file-name-as-directory
-                                                  (expand-file-name "/tmp/root-b"))))
-        (when (get-buffer buf-name) (kill-buffer buf-name))))))
-
-(describe "neo--workflow-activate-perspective"
-  (before-each
-    (spy-on 'persp-switch)
-    (spy-on 'neo/treemacs-show-only-project)
-    (spy-on 'neo--ensure-stack-scratch))
-
-  (it "does nothing when `perspective' is not loaded"
-    (let ((orig-featurep (symbol-function 'featurep)))
-      (cl-letf (((symbol-function 'featurep)
-                 (lambda (f) (if (eq f 'perspective) nil (funcall orig-featurep f)))))
-        (neo--workflow-activate-perspective "my-persp" "/tmp/root")
-        (expect 'persp-switch :not :to-have-been-called))))
-
-  (it "switches perspective, syncs treemacs, and resets the scratch buffer's directory"
-    (let ((orig-featurep (symbol-function 'featurep)))
-      (cl-letf (((symbol-function 'featurep)
-                 (lambda (f) (if (eq f 'perspective) t (funcall orig-featurep f)))))
-        (neo--workflow-activate-perspective "my-persp" "/tmp/root/")
-        (expect 'persp-switch :to-have-been-called-with "my-persp")
-        (expect 'neo/treemacs-show-only-project :to-have-been-called-with "/tmp/root/" "root")
-        (expect 'neo--ensure-stack-scratch :to-have-been-called-with "my-persp" "/tmp/root/"))))
-
-  (it "skips the treemacs sync when neo/treemacs-show-only-project is unavailable"
-    (let ((orig-featurep (symbol-function 'featurep))
-          (orig-fboundp (symbol-function 'fboundp)))
-      (cl-letf (((symbol-function 'featurep)
-                 (lambda (f) (if (eq f 'perspective) t (funcall orig-featurep f))))
-                ((symbol-function 'fboundp)
-                 (lambda (f) (if (eq f 'neo/treemacs-show-only-project) nil (funcall orig-fboundp f)))))
-        (neo--workflow-activate-perspective "my-persp" "/tmp/root/")
-        (expect 'neo/treemacs-show-only-project :not :to-have-been-called)
-        (expect 'neo--ensure-stack-scratch :to-have-been-called-with "my-persp" "/tmp/root/")))))
 
 (describe "neo--workflow-resolve-stack-root"
   (it "prefers the live worktree path recorded on the stack's branch"
@@ -590,7 +545,7 @@
     (before-each
       (spy-on 'neo/workflow-refresh)
       (spy-on 'beads-client-update)
-      (spy-on 'neo--workflow-activate-perspective)
+      (spy-on 'neo/switch-to-project)
       (spy-on 'neo/workflow-git-branch-exists :and-return-value nil)
       (spy-on 'neo/workflow-git-create-branch :and-return-value t)
       (spy-on 'neo/workflow-git-fetch)
@@ -602,26 +557,24 @@
               (make-neo-project :id "p" :repo "r" :type "beads" :pr-number nil
                                 :worktree-path "/repo/root" :stacks nil)))
 
-    (it "activates the perspective with repo-path when strategy is 'repo"
+    (it "switches to the project at repo-path when strategy is 'repo"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
       (neo--hack issue)
-      (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-              "r/fix-the-thing" "/repo/root"))
+      (expect 'neo/switch-to-project :to-have-been-called-with "/repo/root"))
 
     (it "builds the slug from the title only, without the issue number as a prefix"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
       (neo--hack issue)
       (expect 'neo-issue-title-to-slug :to-have-been-called-with nil "Fix the thing"))
 
-    (it "activates the perspective with the worktree path when strategy is 'worktree"
+    (it "switches to the worktree path when strategy is 'worktree"
       (let ((temp-root (make-temp-file "neo-workflow-worktrees-" t)))
         (unwind-protect
             (progn
               (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
               (let ((neo/workflow-worktrees-directory temp-root))
                 (neo--hack issue)
-                (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-                        "r/fix-the-thing"
+                (expect 'neo/switch-to-project :to-have-been-called-with
                         (expand-file-name "r_fix-the-thing" temp-root))))
           (delete-directory temp-root t))))
 
@@ -663,26 +616,20 @@
                       :to-be nil))
           (delete-directory temp-root t))))
 
-    (it "creates the worktree before activating the perspective (ordering regression)"
+    (it "creates the worktree before switching to the project (ordering regression)"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'worktree)
       (let ((temp-root (make-temp-file "neo-workflow-worktrees-" t)))
         (unwind-protect
             (let* ((calls nil))
               (spy-on 'neo--workflow-git-run :and-call-fake
                       (lambda (&rest args) (push (cons 'worktree-add args) calls) t))
-              (spy-on 'neo--workflow-activate-perspective :and-call-fake
+              (spy-on 'neo/switch-to-project :and-call-fake
                       (lambda (&rest args) (push (cons 'activate args) calls) nil))
               (let ((neo/workflow-worktrees-directory temp-root))
                 (neo--hack issue))
               (setq calls (nreverse calls))
               (expect (mapcar #'car calls) :to-equal '(worktree-add activate)))
           (delete-directory temp-root t))))
-
-    (it "uses the repo name rather than any username in the branch name"
-      (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
-      (neo--hack issue)
-      (expect 'neo--workflow-activate-perspective :to-have-been-called-with
-              "r/fix-the-thing" "/repo/root"))
 
     (it "fetches origin and creates the branch off origin/<default-branch>"
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
@@ -709,7 +656,7 @@
       (spy-on 'neo--workflow-choose-workspace-strategy :and-return-value 'repo)
       (spy-on 'neo/workflow-git-create-branch :and-return-value nil)
       (expect (neo--hack issue) :to-throw 'user-error)
-      (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
+      (expect 'neo/switch-to-project :not :to-have-been-called)
       (expect 'beads-client-update :not :to-have-been-called))
 
     (it "signals a user-error and does not activate when worktree creation fails"
@@ -720,7 +667,7 @@
             (let ((neo/workflow-worktrees-directory temp-root))
               (expect (neo--hack issue) :to-throw 'user-error))
           (delete-directory temp-root t)))
-      (expect 'neo--workflow-activate-perspective :not :to-have-been-called)
+      (expect 'neo/switch-to-project :not :to-have-been-called)
       (expect 'beads-client-update :not :to-have-been-called))))
 
 (describe "neo--save-workflow-context"

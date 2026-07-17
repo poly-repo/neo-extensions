@@ -41,6 +41,8 @@ content (icons, indentation) and the header row just eats vertical space."
   "The current workflow context object (neo-context struct).")
 
 (declare-function neo/treemacs-show-only-project "neo-projects")
+(declare-function neo/switch-to-project "neo-better-git")
+(declare-function projectile-project-name "projectile")
 
 ;; ============================================================
 ;; Mode definitions
@@ -667,33 +669,6 @@ For an epic (a `neo-stack') this shows or hides its nested child issues."
 ;; Stack/context operations (Phase 4 stubs)
 ;; ============================================================
 
-(defun neo--ensure-stack-scratch (stack-name root)
-  "Switch to the standard scratch buffer for STACK-NAME, rooted at ROOT.
-Always resets the buffer's `default-directory' to ROOT — including on an
-already-existing buffer — so a stale scratch buffer from before ROOT
-existed doesn't keep pointing at the wrong directory."
-  (let ((scratch-name (format "*scratch* (%s)" stack-name))
-        (dir (and root (file-name-as-directory (expand-file-name root)))))
-    (with-current-buffer (get-buffer-create scratch-name)
-      (lisp-interaction-mode)
-      (when dir (setq default-directory dir))
-      (when (= (buffer-size) 0)
-        (insert (format ";; Scratch buffer for stack: %s\n;; Working directory: %s\n\n"
-                        stack-name (or dir default-directory)))))
-    (switch-to-buffer scratch-name)))
-
-(defun neo--workflow-activate-perspective (name root)
-  "Switch to perspective NAME with working context ROOT.
-Mirrors `neo/projectile-update-treemacs': switches perspective, tells
-treemacs to show only ROOT as a project, and points the perspective's
-scratch buffer at ROOT.  No-op when `perspective' isn't loaded."
-  (when (featurep 'perspective)
-    (persp-switch name)
-    (when (and root (fboundp 'neo/treemacs-show-only-project))
-      (neo/treemacs-show-only-project
-       root (file-name-nondirectory (directory-file-name root))))
-    (neo--ensure-stack-scratch name root)))
-
 (defun neo--resolve-branch-conflict (repo-path branch-name strategy can-rename &optional _default-branch)
   "Resolve conflict if BRANCH-NAME is checked out in main repo at REPO-PATH.
 Returns the resolved branch name."
@@ -829,7 +804,7 @@ reporting success and leaving the beads issue claimed with no branch."
                      (message "neo-workflow: could not claim issue %s: %s"
                               (neo-issue-id issue) (cadr err))
                      (or (neo-issue-status issue) "open")))))
-            (neo--workflow-activate-perspective branch-name final-root)
+            (neo/switch-to-project final-root)
             (when (eq strategy 'worktree)
               (neo--workflow-write-bead-binding
                issue repo-path final-root branch-name binding-status))
@@ -912,8 +887,11 @@ checked out for that branch (the 'repo strategy, or never activated)."
 
 (defun neo/workflow-switch-context ()
   "Switch to an existing workflow context: a stack and its perspective.
-Prompts for one of the known stacks, switches to its `perspective.el'
-perspective, and records the choice in the in-memory context store."
+Prompts for one of the known stacks and switches to it via
+`neo/switch-to-project' (registers the Projectile project, selects/creates
+its perspective, and prefers Magit status over `*scratch*'), the same path
+used when switching projects via `C-x C-p p' or the Magit worktree section.
+Records the resulting perspective name in the in-memory context store."
   (interactive)
   (let* ((stacks (neo-db-get-all-stacks))
          (candidates (mapcar (lambda (s)
@@ -927,13 +905,15 @@ perspective, and records the choice in the in-memory context store."
       (let* ((selection (completing-read "Switch to context: " candidates nil t))
              (stack-info (cdr (assoc selection candidates))))
         (when stack-info
-          (let* ((perspective (plist-get stack-info :name))
-                 (repo-id (plist-get stack-info :repository-id))
+          (let* ((repo-id (plist-get stack-info :repository-id))
                  (stack-id (plist-get stack-info :id))
                  (root (neo--workflow-resolve-stack-root stack-id)))
-            (neo--workflow-activate-perspective perspective root)
-            (neo/workflow-db-upsert-context repo-id stack-id perspective)
-            (message "Switched to context: %s" perspective)))))))
+            (unless root
+              (user-error "No worktree or repo root found for this context"))
+            (neo/switch-to-project root)
+            (let ((perspective (projectile-project-name root)))
+              (neo/workflow-db-upsert-context repo-id stack-id perspective)
+              (message "Switched to context: %s" perspective))))))))
 
 ;; ============================================================
 ;; Repo header rendering
