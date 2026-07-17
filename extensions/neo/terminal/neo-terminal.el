@@ -6,6 +6,21 @@
 
 (neo/use-package eat)
 
+;; `key-chord-mode' (neo:questionable-defaults) hijacks `input-method-function'
+;; globally with no buffer-local opt-out of its own, so a chord like ".."
+;; (comment-or-uncomment-region) can misfire from ordinary fast-typed shell
+;; input (e.g. "cd ..") in any terminal-emulator buffer. Clear the variable
+;; buffer-locally in those buffers instead -- it also disables real
+;; multilingual input methods (`C-\') there, which is an acceptable trade-off
+;; since terminal-emulator buffers pass keystrokes straight to the
+;; subprocess anyway.
+(defun neo/terminal-disable-key-chord ()
+  "Disable key-chord processing in the current terminal-emulator buffer."
+  (setq-local input-method-function nil))
+
+(dolist (hook '(eshell-mode-hook eat-mode-hook vterm-mode-hook))
+  (add-hook hook #'neo/terminal-disable-key-chord))
+
 (defun eshell/q ()
   (bury-buffer))
 
