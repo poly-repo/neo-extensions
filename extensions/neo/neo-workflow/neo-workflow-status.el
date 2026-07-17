@@ -41,7 +41,7 @@ content (icons, indentation) and the header row just eats vertical space."
   "The current workflow context object (neo-context struct).")
 
 (declare-function neo/treemacs-show-only-project "neo-projects")
-(declare-function neo/switch-to-project "neo-better-git")
+(declare-function neo/better-git-switch-to-project "neo-better-git")
 (declare-function projectile-project-name "projectile")
 
 ;; ============================================================
@@ -804,7 +804,18 @@ reporting success and leaving the beads issue claimed with no branch."
                      (message "neo-workflow: could not claim issue %s: %s"
                               (neo-issue-id issue) (cadr err))
                      (or (neo-issue-status issue) "open")))))
-            (neo/switch-to-project final-root)
+            ;; Use the Magit-aware wrapper, not the bare `neo/switch-to-project':
+            ;; `projectile-switch-project-by-name' captures "current buffer" at
+            ;; the end of its own `with-temp-buffer' action and unconditionally
+            ;; re-selects it afterward. A perspective switch inside the action
+            ;; can leave that captured buffer as the fresh `*scratch*', which
+            ;; then clobbers the Magit status buffer our own action already
+            ;; displayed via `set-window-buffer'. `neo/better-git-switch-to-project'
+            ;; re-asserts the Magit buffer a second time, after Projectile's
+            ;; temp-buffer machinery has already run, so it sticks -- the same
+            ;; reason the magit worktree `w' key (`neo/magit-worktree-action')
+            ;; doesn't suffer from this reversion.
+            (neo/better-git-switch-to-project final-root)
             (when (eq strategy 'worktree)
               (neo--workflow-write-bead-binding
                issue repo-path final-root branch-name binding-status))

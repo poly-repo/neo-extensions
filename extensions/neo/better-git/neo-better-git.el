@@ -226,6 +226,15 @@ window is available."
            buffer
            (or fallback-window
                (neo--better-git-main-window)))))
+      ;; `set-window-buffer' (used above) only updates the window's displayed
+      ;; buffer, not "current buffer". `projectile-switch-project-by-name'
+      ;; captures `(current-buffer)' at the end of its own action and
+      ;; re-selects it afterward -- without this, that capture still sees
+      ;; whatever a perspective switch earlier in the action last made
+      ;; current (typically a fresh `*scratch*'), which then clobbers this
+      ;; buffer right back off screen.
+      (when (buffer-live-p buffer)
+        (set-buffer buffer))
       buffer)))
 
 (defun neo/better-git-switch-to-project (path)
