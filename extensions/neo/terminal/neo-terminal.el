@@ -21,6 +21,36 @@
 (dolist (hook '(eshell-mode-hook eat-mode-hook vterm-mode-hook))
   (add-hook hook #'neo/terminal-disable-key-chord))
 
+;; `global-corfu-mode' (neo:compsel) is active everywhere, including
+;; terminal-emulator buffers. Corfu's auto-popup runs on every command
+;; regardless of what's happening in the buffer, and can spuriously
+;; trigger on subprocess output; once shown, it rebinds
+;; `completion-in-region-mode''s entry in `minor-mode-overriding-map-alist'
+;; to its own keymap, competing with `eat-eshell-semi-char-mode''s entry in
+;; that same alist for keys like TAB that should instead be forwarded
+;; straight to the subprocess. Suspending `corfu-auto' (rather than
+;; toggling `corfu-mode' itself) sidesteps a re-enable race with
+;; `global-corfu-mode''s own `after-change-major-mode-hook' bookkeeping.
+(defun neo/terminal-disable-corfu-auto ()
+  "Disable `corfu-auto' in the current terminal-emulator buffer."
+  (setq-local corfu-auto nil))
+
+(dolist (hook '(eat-mode-hook vterm-mode-hook))
+  (add-hook hook #'neo/terminal-disable-corfu-auto))
+
+(defun neo/terminal-eshell-process-start ()
+  "Suspend Corfu's auto-popup while a subprocess owns the Eshell buffer's
+keyboard input; see `eat-eshell-exec-hook'."
+  (setq-local corfu-auto nil))
+
+(defun neo/terminal-eshell-process-exit ()
+  "Restore Corfu's auto-popup once the Eshell subprocess exits; see
+`eat-eshell-exit-hook'. Pairs with `neo/terminal-eshell-process-start'."
+  (kill-local-variable 'corfu-auto))
+
+(add-hook 'eat-eshell-exec-hook #'neo/terminal-eshell-process-start)
+(add-hook 'eat-eshell-exit-hook #'neo/terminal-eshell-process-exit)
+
 (defun eshell/q ()
   (bury-buffer))
 
@@ -166,8 +196,16 @@ form that returns a string to be passed to `eshell-parse-command`."
      (concat (eshell/pwd) "\n $ ")))
   :config
   (advice-add 'eshell/cat :override #'aweshell-cat-with-syntax-highlight)
-  :hook
-  (eshell-load . #'eat-eshell-mode))
+  ;; `eshell-load-hook' (formerly used here via `:hook') only ever runs
+  ;; once, inline at the bottom of `eshell.el', at the moment that file is
+  ;; first loaded -- not per Eshell buffer. If anything else on the
+  ;; load-path pulls in `eshell' before this `use-package' form runs, the
+  ;; hook has already fired and `add-hook'ing it here is a silent no-op,
+  ;; leaving `eat-eshell-mode' permanently off with no error. Calling it
+  ;; directly here is safe and idempotent: `use-package' guarantees
+  ;; `eshell' (and, via `:after eat', `eat') are already loaded by the
+  ;; time `:config' runs, regardless of what triggered that load.
+  (eat-eshell-mode 1))
 
 ;;vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
 ;; This part is from a post on reddit, unclear what it does if anything
