@@ -9,6 +9,9 @@
 (defconst neo--ai-buddy-direnv-rc-filenames '(".envrc" ".env")
   "Direnv authorization files to search for before starting Codex.")
 
+(defconst neo--ai-buddy-codex-wrapper-path "repo/o-codex"
+  "Relative path to the repo-local Codex launcher.")
+
 (defvar neo--ai-buddy-codex-direnv-guard nil
   "Prevent nested Codex startup commands from re-running `direnv allow`.")
 
@@ -91,6 +94,18 @@
   (dolist (command '(codex-cli-start codex-cli-toggle codex-cli-toggle-all))
     (unless (advice-member-p #'neo--ai-buddy-codex-run-with-direnv command)
       (advice-add command :around #'neo--ai-buddy-codex-run-with-direnv))))
+
+(defun neo--ai-buddy-codex-executable ()
+  "Return the repo-local Codex launcher for the active project."
+  (let* ((project-root
+          (locate-dominating-file default-directory
+                                  neo--ai-buddy-codex-wrapper-path))
+         (wrapper
+          (and project-root
+               (expand-file-name neo--ai-buddy-codex-wrapper-path project-root))))
+    (if (and wrapper (file-executable-p wrapper))
+        wrapper
+      "codex")))
 
 (defun neo--ai-buddy-codex-open-project-session ()
   "Open or toggle the Codex session for the active project.
@@ -181,7 +196,7 @@ create a session -- a missing session is started outright."
 	 ("C-c c n" . codex-cli-toggle-all-next-page)
 	 ("C-c c b" . codex-cli-toggle-all-prev-page))
   :init
-  (setq codex-cli-executable "codex"
+  (setq codex-cli-executable (neo--ai-buddy-codex-executable)
 	codex-cli-terminal-backend 'vterm
 	codex-cli-side 'right
 	codex-cli-width 90)

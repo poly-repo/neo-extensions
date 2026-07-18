@@ -68,6 +68,26 @@
                           (codex-cli-toggle :around neo--ai-buddy-codex-run-with-direnv)
                           (codex-cli-toggle-all :around neo--ai-buddy-codex-run-with-direnv)))))
 
+  (it "prefers the repo-local Codex launcher for active projects"
+    (let ((default-directory "/tmp/project/src/"))
+      (cl-letf (((symbol-function 'locate-dominating-file)
+                 (lambda (directory filename)
+                   (when (and (string= directory "/tmp/project/src/")
+                              (string= filename "repo/o-codex"))
+                     "/tmp/project/")))
+                ((symbol-function 'file-executable-p)
+                 (lambda (path)
+                   (string= path "/tmp/project/repo/o-codex"))))
+        (expect (neo--ai-buddy-codex-executable)
+                :to-equal "/tmp/project/repo/o-codex"))))
+
+  (it "falls back to the plain Codex binary outside repo worktrees"
+    (let ((default-directory "/tmp/project/src/"))
+      (cl-letf (((symbol-function 'locate-dominating-file)
+                 (lambda (&rest _args) nil)))
+        (expect (neo--ai-buddy-codex-executable)
+                :to-equal "codex"))))
+
   (it "registers Codex as the weak right-side fallback action"
     (let (calls)
       (cl-letf (((symbol-function 'neo/register-side-action)
