@@ -36,5 +36,35 @@
       (neo/dispatch-side 'right)
       (expect called :to-equal '(second)))))
 
+(describe "neo/toggle-side-window slot release"
+  (before-each
+    (setq neo/side-actions nil))
+
+  (it "releases the slot for a dismissed transient buffer and dispatches the default action"
+    (let ((buf (generate-new-buffer " *test-help*"))
+          dispatched)
+      (unwind-protect
+          (progn
+            (with-current-buffer buf (setq major-mode 'help-mode))
+            (neo/register-side-action 'right (lambda () (setq dispatched t)) 'weak)
+            (spy-on 'display-buffer)
+            (neo/toggle-side-window 'right)
+            (expect dispatched :to-be-truthy)
+            (expect 'display-buffer :not :to-have-been-called))
+        (kill-buffer buf))))
+
+  (it "resurrects a dismissed persistent buffer instead of dispatching the default action"
+    (let ((buf (generate-new-buffer " *test-treemacs*"))
+          dispatched)
+      (unwind-protect
+          (progn
+            (with-current-buffer buf (setq major-mode 'treemacs-mode))
+            (neo/register-side-action 'left (lambda () (setq dispatched t)) 'weak)
+            (spy-on 'display-buffer)
+            (neo/toggle-side-window 'left)
+            (expect 'display-buffer :to-have-been-called-with buf)
+            (expect dispatched :not :to-be-truthy))
+        (kill-buffer buf)))))
+
 (provide 'test-neo-ui-side-windows)
 ;;; test-neo-ui-side-windows.el ends here

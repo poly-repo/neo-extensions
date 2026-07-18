@@ -45,9 +45,9 @@
 (neo/side-window :mode 'info-mode :include-derived t :side 'right :size 80) ; it is probably Info-mode
 (neo/side-window :regex "^\\*info\\*$" :side 'right :size 80)
 (neo/side-window :mode 'elpaca-info-mode :include-derived t :side 'right :size 80)
-(neo/side-window :mode 'treemacs-mode :side 'left :size 30) ; move to project
+(neo/side-window :mode 'treemacs-mode :side 'left :size 30 :persistent t) ; move to project
 (neo/side-window :regex "^\\*compilation\\*$" :side 'right :size 80) ; move to programming-foundation
-(neo/side-window :mode 'eshell-mode :include-derived t :side 'bottom :size 20)
+(neo/side-window :mode 'eshell-mode :include-derived t :side 'bottom :size 20 :persistent t)
 
 (defvar neo/side-actions nil
   "Alist mapping SIDE to a plist of :strong and :weak actions, run by
@@ -76,7 +76,11 @@ is available."
       (message "NEO: No action registered for and no buffers targeting %s side" side))))
 
 (defun neo/toggle-side-window (side)
-  "Toggle the visibility of the side window at SIDE."
+  "Toggle the visibility of the side window at SIDE.
+When showing, only resurrects an existing buffer if it was registered
+with `neo/side-window' :persistent t (e.g. Treemacs, eshell). Transient
+side buffers (Help, Info, compilation output, ...) release their slot
+once dismissed, and `neo/dispatch-side' runs instead."
   (interactive)
   (if-let* ((window (neo/get-side-window side)))
       (progn
@@ -84,7 +88,7 @@ is available."
         (delete-window window))
     (progn
       (message "Showing side window: %s" side)
-      (if-let* ((buffers (neo/get-side-window-buffers side)))
+      (if-let* ((buffers (neo/get-side-window-buffers side t)))
           (display-buffer (car buffers))
 	(neo/dispatch-side side)))))
 					;  (message "No buffers targeting %s side" side)))))
