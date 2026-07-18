@@ -12,10 +12,36 @@
   "Stub for the real definition in neo-ui, not loaded by this test file."
   nil)
 
+(defvar neo--ai-buddy-test-seen-executable nil
+  "Executable captured by the Codex CLI startup test stub.")
+
+(defun codex-cli-start (&optional _session)
+  "Stub Codex start command used to verify first-run advice wiring."
+  (setq neo--ai-buddy-test-seen-executable codex-cli-executable))
+
+(defun codex-cli-toggle (&optional _session)
+  "Stub Codex toggle command for advice wiring tests."
+  nil)
+
+(defun codex-cli-toggle-all (&optional _session)
+  "Stub Codex toggle-all command for advice wiring tests."
+  nil)
+
 (load-file (expand-file-name "../neo-ai-buddy-codex.el"
                              (file-name-directory (or load-file-name buffer-file-name))))
 
 (describe "neo-ai-buddy-codex"
+  (it "installs startup advice when the extension loads"
+    (expect (null (advice-member-p #'neo--ai-buddy-codex-run-with-startup-context
+                                   'codex-cli-start))
+            :to-be nil)
+    (expect (null (advice-member-p #'neo--ai-buddy-codex-run-with-startup-context
+                                   'codex-cli-toggle))
+            :to-be nil)
+    (expect (null (advice-member-p #'neo--ai-buddy-codex-run-with-startup-context
+                                   'codex-cli-toggle-all))
+            :to-be nil))
+
   (it "finds the nearest direnv authorization file"
     (let ((default-directory "/tmp/project/src/"))
       (cl-letf (((symbol-function 'locate-dominating-file)
@@ -43,7 +69,21 @@
       (expect (nth 4 call) :to-equal '("allow" "/tmp/project/.envrc"))
       (expect (nth 5 call) :to-equal "/tmp/project/")))
 
-  (it "binds the repo-local launcher and allows direnv before starting Codex commands"
+  (it "uses the repo-local launcher on the first autoloaded start"
+    (cl-letf (((symbol-function 'neo--ai-buddy-direnv-allow)
+               (lambda (&optional _directory) nil))
+              ((symbol-function 'neo--ai-buddy-codex-executable)
+               (lambda ()
+                 "/tmp/project/repo/o-codex")))
+      (setq neo--ai-buddy-test-seen-executable nil
+            codex-cli-executable "codex")
+      (codex-cli-start))
+    (expect neo--ai-buddy-test-seen-executable
+            :to-equal "/tmp/project/repo/o-codex")
+    (expect codex-cli-executable
+            :to-equal "/tmp/project/repo/o-codex"))
+
+  (it "persists the repo-local launcher and allows direnv before starting Codex commands"
     (let (events seen-executable)
       (cl-letf (((symbol-function 'neo--ai-buddy-direnv-allow)
                  (lambda (&optional _directory)
@@ -59,7 +99,23 @@
                    'started))
                 :to-equal 'started))
       (expect seen-executable :to-equal "/tmp/project/repo/o-codex")
+      (expect codex-cli-executable :to-equal "/tmp/project/repo/o-codex")
       (expect events :to-equal '(run allow))))
+
+  (it "keeps the resolved launcher for deferred startup work"
+    (let (deferred-check)
+      (cl-letf (((symbol-function 'neo--ai-buddy-direnv-allow)
+                 (lambda (&optional _directory) nil))
+                ((symbol-function 'neo--ai-buddy-codex-executable)
+                 (lambda ()
+                   "/tmp/project/repo/o-codex")))
+        (setq codex-cli-executable "codex")
+        (neo--ai-buddy-codex-run-with-startup-context
+         (lambda ()
+           (setq deferred-check (lambda ()
+                                  codex-cli-executable)))))
+      (expect (funcall deferred-check)
+              :to-equal "/tmp/project/repo/o-codex")))
 
   (it "registers direnv advice for Codex startup commands"
     (let (calls)

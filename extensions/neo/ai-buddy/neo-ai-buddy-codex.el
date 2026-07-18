@@ -14,6 +14,10 @@
 
 (defvar codex-cli-executable)
 
+(autoload 'codex-cli-start "codex-cli" nil t)
+(autoload 'codex-cli-toggle "codex-cli" nil t)
+(autoload 'codex-cli-toggle-all "codex-cli" nil t)
+
 (defvar neo--ai-buddy-codex-direnv-guard nil
   "Prevent nested Codex startup commands from re-running `direnv allow`.")
 
@@ -85,12 +89,16 @@
 
 (defun neo--ai-buddy-codex-run-with-startup-context (fn &rest args)
   "Resolve the active Codex launcher and allow direnv before invoking FN."
-  (let ((codex-cli-executable (neo--ai-buddy-codex-executable)))
-    (if neo--ai-buddy-codex-direnv-guard
-        (apply fn args)
-      (let ((neo--ai-buddy-codex-direnv-guard t))
-        (neo--ai-buddy-direnv-allow)
-        (apply fn args)))))
+  (let ((executable (neo--ai-buddy-codex-executable)))
+    ;; `codex-cli' can re-read this variable after the initial start command
+    ;; returns while the terminal backend is still coming up.
+    (setq codex-cli-executable executable)
+    (let ((codex-cli-executable executable))
+      (if neo--ai-buddy-codex-direnv-guard
+          (apply fn args)
+        (let ((neo--ai-buddy-codex-direnv-guard t))
+          (neo--ai-buddy-direnv-allow)
+          (apply fn args))))))
 
 (defun neo--ai-buddy-codex-enable-direnv-allow ()
   "Allow the active direnv file before running Codex startup commands."
@@ -199,16 +207,20 @@ create a session -- a missing session is started outright."
 	 ("C-c c n" . codex-cli-toggle-all-next-page)
 	 ("C-c c b" . codex-cli-toggle-all-prev-page))
   :init
-  (setq codex-cli-executable "codex"
+  (setq codex-cli-executable "repo/o-codex"
 	codex-cli-terminal-backend 'vterm
 	codex-cli-side 'right
 	codex-cli-width 90)
   (setq codex-cli-toggle-all-min-width 60)
   :config
-  (neo--ai-buddy-codex-enable-direnv-allow)
   ;; Stop any running Codex CLI sessions on exit rather than leaving their
   ;; vterm processes (and the codex subprocesses under them) orphaned.
   (add-hook 'kill-emacs-hook #'codex-cli-stop-all))
+
+;; Installed unconditionally because the first Codex launch often happens
+;; through `codex-cli' autoloads, before the `neo/use-package' config block
+;; above has had a chance to run.
+(neo--ai-buddy-codex-enable-direnv-allow)
 
 ;; Registered unconditionally (not from the `codex-cli' :config block above)
 ;; because that block only runs once `vterm' has actually loaded -- but
