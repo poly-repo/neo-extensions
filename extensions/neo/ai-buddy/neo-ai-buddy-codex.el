@@ -12,6 +12,8 @@
 (defconst neo--ai-buddy-codex-wrapper-path "repo/o-codex"
   "Relative path to the repo-local Codex launcher.")
 
+(defvar codex-cli-executable)
+
 (defvar neo--ai-buddy-codex-direnv-guard nil
   "Prevent nested Codex startup commands from re-running `direnv allow`.")
 
@@ -81,19 +83,20 @@
             (kill-buffer buffer)
           (error "direnv allow failed; see buffer %s" (buffer-name buffer)))))))
 
-(defun neo--ai-buddy-codex-run-with-direnv (fn &rest args)
-  "Allow direnv for the active worktree before invoking FN with ARGS."
-  (if neo--ai-buddy-codex-direnv-guard
-      (apply fn args)
-    (let ((neo--ai-buddy-codex-direnv-guard t))
-      (neo--ai-buddy-direnv-allow)
-      (apply fn args))))
+(defun neo--ai-buddy-codex-run-with-startup-context (fn &rest args)
+  "Resolve the active Codex launcher and allow direnv before invoking FN."
+  (let ((codex-cli-executable (neo--ai-buddy-codex-executable)))
+    (if neo--ai-buddy-codex-direnv-guard
+        (apply fn args)
+      (let ((neo--ai-buddy-codex-direnv-guard t))
+        (neo--ai-buddy-direnv-allow)
+        (apply fn args)))))
 
 (defun neo--ai-buddy-codex-enable-direnv-allow ()
   "Allow the active direnv file before running Codex startup commands."
   (dolist (command '(codex-cli-start codex-cli-toggle codex-cli-toggle-all))
-    (unless (advice-member-p #'neo--ai-buddy-codex-run-with-direnv command)
-      (advice-add command :around #'neo--ai-buddy-codex-run-with-direnv))))
+    (unless (advice-member-p #'neo--ai-buddy-codex-run-with-startup-context command)
+      (advice-add command :around #'neo--ai-buddy-codex-run-with-startup-context))))
 
 (defun neo--ai-buddy-codex-executable ()
   "Return the repo-local Codex launcher for the active project."
@@ -196,7 +199,7 @@ create a session -- a missing session is started outright."
 	 ("C-c c n" . codex-cli-toggle-all-next-page)
 	 ("C-c c b" . codex-cli-toggle-all-prev-page))
   :init
-  (setq codex-cli-executable (neo--ai-buddy-codex-executable)
+  (setq codex-cli-executable "codex"
 	codex-cli-terminal-backend 'vterm
 	codex-cli-side 'right
 	codex-cli-width 90)

@@ -43,16 +43,22 @@
       (expect (nth 4 call) :to-equal '("allow" "/tmp/project/.envrc"))
       (expect (nth 5 call) :to-equal "/tmp/project/")))
 
-  (it "allows direnv before starting Codex commands"
-    (let (events)
+  (it "binds the repo-local launcher and allows direnv before starting Codex commands"
+    (let (events seen-executable)
       (cl-letf (((symbol-function 'neo--ai-buddy-direnv-allow)
                  (lambda (&optional _directory)
-                   (push 'allow events))))
-        (expect (neo--ai-buddy-codex-run-with-direnv
+                   (push 'allow events)))
+                ((symbol-function 'neo--ai-buddy-codex-executable)
                  (lambda ()
+                   "/tmp/project/repo/o-codex")))
+        (setq codex-cli-executable "codex")
+        (expect (neo--ai-buddy-codex-run-with-startup-context
+                 (lambda ()
+                   (setq seen-executable codex-cli-executable)
                    (push 'run events)
                    'started))
                 :to-equal 'started))
+      (expect seen-executable :to-equal "/tmp/project/repo/o-codex")
       (expect events :to-equal '(run allow))))
 
   (it "registers direnv advice for Codex startup commands"
@@ -64,9 +70,9 @@
                    (push (list command where function) calls))))
         (neo--ai-buddy-codex-enable-direnv-allow))
       (expect (nreverse calls)
-              :to-equal '((codex-cli-start :around neo--ai-buddy-codex-run-with-direnv)
-                          (codex-cli-toggle :around neo--ai-buddy-codex-run-with-direnv)
-                          (codex-cli-toggle-all :around neo--ai-buddy-codex-run-with-direnv)))))
+              :to-equal '((codex-cli-start :around neo--ai-buddy-codex-run-with-startup-context)
+                          (codex-cli-toggle :around neo--ai-buddy-codex-run-with-startup-context)
+                          (codex-cli-toggle-all :around neo--ai-buddy-codex-run-with-startup-context)))))
 
   (it "prefers the repo-local Codex launcher for active projects"
     (let ((default-directory "/tmp/project/src/"))
