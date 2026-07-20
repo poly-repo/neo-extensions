@@ -7,6 +7,88 @@
   "Customization options for the org extension."
   :group 'neo-extensions)
 
+(defconst neo--org-fixed-pitch-faces
+  '(org-block
+    org-block-begin-line
+    org-block-end-line
+    org-code
+    org-meta-line
+    org-table
+    org-verbatim)
+  "Org faces that should stay monospaced in variable-pitch buffers.")
+
+(defconst neo--org-code-block-faces
+  '(org-block
+    org-block-begin-line
+    org-block-end-line)
+  "Org faces that should use the code-block remap in variable-pitch buffers.")
+
+(defvar-local neo--org-fixed-pitch-cookies nil
+  "Buffer-local face-remap cookies for Org fixed-pitch faces.")
+
+(defun neo--org-apply-to-live-buffers (function)
+  "Call FUNCTION in each live Org buffer."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (derived-mode-p 'org-mode)
+        (funcall function)))))
+
+(defun neo--org-apply-fill-column ()
+  "Apply the configured fill column to the current Org buffer."
+  (if (integerp neo/org-fill-column)
+      (setq-local fill-column neo/org-fill-column)
+    (kill-local-variable 'fill-column)))
+
+(defun neo--org-refresh-fill-column (symbol value)
+  "Set SYMBOL to VALUE and apply it to live Org buffers."
+  (set-default symbol value)
+  (neo--org-apply-to-live-buffers #'neo--org-apply-fill-column))
+
+(defun neo--org-apply-auto-fill ()
+  "Apply Auto Fill according to `neo/org-auto-fill' in the current Org buffer."
+  (if neo/org-auto-fill
+      (auto-fill-mode 1)
+    (auto-fill-mode -1)))
+
+(defun neo--org-refresh-auto-fill (symbol value)
+  "Set SYMBOL to VALUE and apply it to live Org buffers."
+  (set-default symbol value)
+  (neo--org-apply-to-live-buffers #'neo--org-apply-auto-fill))
+
+(defun neo--org-clear-fixed-pitch-remaps ()
+  "Remove buffer-local fixed-pitch face remaps from the current Org buffer."
+  (dolist (cookie neo--org-fixed-pitch-cookies)
+    (face-remap-remove-relative cookie))
+  (setq neo--org-fixed-pitch-cookies nil))
+
+(defun neo--org-fixed-pitch-face-spec (face)
+  "Return the face-remap spec for Org FACE."
+  (if (and (memq face neo--org-code-block-faces)
+           (numberp neo/org-code-block-font-height))
+      `(:inherit fixed-pitch :height ,neo/org-code-block-font-height)
+    '(:inherit fixed-pitch)))
+
+(defun neo--org-apply-fixed-pitch-remaps ()
+  "Keep code and table faces monospaced in the current Org buffer."
+  (neo--org-clear-fixed-pitch-remaps)
+  (when neo/org-use-variable-pitch
+    (dolist (face neo--org-fixed-pitch-faces)
+      (push (face-remap-add-relative face
+                                     (neo--org-fixed-pitch-face-spec face))
+            neo--org-fixed-pitch-cookies))))
+
+(defun neo--org-apply-variable-pitch ()
+  "Apply variable-pitch typography to the current Org buffer."
+  (if neo/org-use-variable-pitch
+      (variable-pitch-mode 1)
+    (variable-pitch-mode -1))
+  (neo--org-apply-fixed-pitch-remaps))
+
+(defun neo--org-refresh-variable-pitch (symbol value)
+  "Set SYMBOL to VALUE and apply it to live Org buffers."
+  (set-default symbol value)
+  (neo--org-apply-to-live-buffers #'neo--org-apply-variable-pitch))
+
 (defcustom neo/org-directory nil
   "Base directory for Org files.
 When nil, fall back to `org-directory' if it is already set, else `~/org/'."
@@ -53,6 +135,41 @@ Relative paths are resolved under `neo/org-directory'."
   "When non-nil, enable `org-modern' in Org buffers and agendas."
   :type 'boolean
   :group 'neo-org)
+
+(defcustom neo/org-fill-column 100
+  "Fill column for Org prose, or nil to leave it unchanged.
+Applied buffer-locally in Org buffers, so `org-auto-fill-function'
+reflows normal paragraphs at a wider width without changing the
+global default."
+  :type '(choice (const :tag "Leave unchanged" nil) integer)
+  :group 'neo-org
+  :set #'neo--org-refresh-fill-column)
+
+(defcustom neo/org-auto-fill t
+  "When non-nil, enable Auto Fill in Org buffers.
+Org uses `org-auto-fill-function', so this reflows normal prose
+paragraphs while respecting Org syntax such as tables and block
+structure."
+  :type 'boolean
+  :group 'neo-org
+  :set #'neo--org-refresh-auto-fill)
+
+(defcustom neo/org-use-variable-pitch t
+  "When non-nil, render Org prose with `variable-pitch-mode'.
+Tables and code-related faces stay monospaced through buffer-local
+face remapping."
+  :type 'boolean
+  :group 'neo-org
+  :set #'neo--org-refresh-variable-pitch)
+
+(defcustom neo/org-code-block-font-height 0.9
+  "Height scale for Org code-block faces, or nil for no scaling.
+A float multiplies the inherited fixed-pitch height for source block
+contents and their begin/end lines when
+`neo/org-use-variable-pitch' is non-nil."
+  :type '(choice (const :tag "No scaling" nil) number)
+  :group 'neo-org
+  :set #'neo--org-refresh-variable-pitch)
 
 (defcustom neo/org-prettify-haskell-header t
   "When non-nil, display `haskell' as lambda in Org src headers.
@@ -177,6 +294,9 @@ If PATH is relative, resolve it under BASE-DIRECTORY."
 (defun neo--org-mode-setup ()
   "Apply NEO defaults for Org buffers."
   (electric-pair-mode -1)
+  (neo--org-apply-fill-column)
+  (neo--org-apply-auto-fill)
+  (neo--org-apply-variable-pitch)
   (when (or neo/org-prettify-haskell-header
             neo/org-prettify-mlody-header)
     (neo--org-configure-prettify-symbols)))

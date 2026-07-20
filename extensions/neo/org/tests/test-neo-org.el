@@ -95,6 +95,35 @@
               :to-equal
               "src mlody")))
 
+  (it "configures Org prose for 100-column auto-fill with proportional text"
+    (let ((neo/org-fill-column 100)
+          (neo/org-auto-fill t)
+          (neo/org-use-variable-pitch t)
+          (neo/org-code-block-font-height 0.9))
+      (with-temp-buffer
+        (org-mode)
+        (neo--org-mode-setup)
+        (expect fill-column :to-equal 100)
+        (expect auto-fill-function :to-equal #'org-auto-fill-function)
+        (expect (assq 'default face-remapping-alist) :not :to-be nil)
+        (expect (assq 'org-block face-remapping-alist)
+                :to-equal
+                '(org-block (:inherit fixed-pitch :height 0.9) org-block))
+        (expect (assq 'org-table face-remapping-alist)
+                :to-equal
+                '(org-table (:inherit fixed-pitch) org-table))
+        (expect (length neo--org-fixed-pitch-cookies)
+                :to-equal
+                (length neo--org-fixed-pitch-faces)))))
+
+  (it "can keep Org fully fixed-pitch when proportional prose is disabled"
+    (let ((neo/org-use-variable-pitch nil))
+      (with-temp-buffer
+        (org-mode)
+        (neo--org-mode-setup)
+        (expect (assq 'default face-remapping-alist) :to-be nil)
+        (expect neo--org-fixed-pitch-cookies :to-be nil))))
+
   (it "registers the Kaobook LaTeX class for Haskell notebooks"
     (let ((org-latex-classes '(("article" "\\documentclass{article}"))))
       (neo--org-haskell-register-latex-class)
