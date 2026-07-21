@@ -17,6 +17,10 @@
 (defconst neo--org-haskell-cache-directory "neo-org-haskell"
   "Cache subdirectory used for generated notebook source files.")
 
+(defconst neo--org-haskell-main-function-rx
+  (rx line-start "main" (* blank) (or "::" "="))
+  "Regexp matching a top-level Haskell `main' declaration or definition.")
+
 (defcustom neo/org-haskell-temporary-directory temporary-file-directory
   "Base directory for generated notebook artefacts.
 The default is `temporary-file-directory', so tangled Haskell sources and
@@ -123,12 +127,19 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
       "\n\n")
      "\n")))
 
-(defun neo--org-haskell-write-document-file ()
-  "Write the current notebook's Haskell blocks to a generated `.hs' file."
+(defun neo--org-haskell-document-defines-main-p (blocks)
+  "Return non-nil when BLOCKS render a document with a top-level `main'."
+  (string-match-p neo--org-haskell-main-function-rx
+                  (neo--org-haskell-render-document blocks)))
+
+(defun neo--org-haskell-write-document-file (&optional blocks)
+  "Write BLOCKS to the generated notebook `.hs' file.
+When BLOCKS is nil, collect the current notebook's Haskell blocks first."
   (let* ((path (neo--org-haskell-generated-file-path))
          (content
           (neo--org-haskell-render-document
-           (neo--org-haskell-collect-document-blocks))))
+           (or blocks
+               (neo--org-haskell-collect-document-blocks)))))
     (make-directory (file-name-directory path) t)
     (with-temp-file path
       (insert content))
@@ -152,6 +163,11 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
       (user-error "neo-org: notebook REPL is not running"))
     (comint-send-string process string)
     repl-buffer))
+
+(defun neo--org-haskell-show-repl (repl-buffer)
+  "Display REPL-BUFFER the same way notebook REPL switching does."
+  (pop-to-buffer repl-buffer)
+  repl-buffer)
 
 (defun neo--org-haskell-common-prefix (left right)
   "Return the common prefix shared by LEFT and RIGHT."
@@ -220,11 +236,20 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
 (defun neo/org-haskell-load-document ()
   "Tangle the current notebook and load it into the inferior notebook REPL."
   (interactive)
-  (let* ((path (neo/org-haskell-tangle-document))
-         (repl-buffer
-          (neo--org-haskell-send-string
-           (format ":load %S\n" (expand-file-name path)))))
+  (let* ((blocks (neo--org-haskell-collect-document-blocks))
+         (path (neo--org-haskell-write-document-file blocks))
+         (run-main (neo--org-haskell-document-defines-main-p blocks))
+         (repl-buffer (neo--org-haskell-ensure-repl))
+         (process (get-buffer-process repl-buffer)))
+    (unless process
+      (user-error "neo-org: notebook REPL is not running"))
+    (comint-send-string process
+                        (format ":load %S\n" (expand-file-name path)))
+    (when run-main
+      (comint-send-string process ":main\n"))
     (message "neo-org: loaded %s into %s" path (buffer-name repl-buffer))
+    (when (called-interactively-p 'interactive)
+      (neo--org-haskell-show-repl repl-buffer))
     repl-buffer))
 
 ;;;###autoload
@@ -232,7 +257,7 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
   "Switch to the notebook REPL.
 With prefix argument NO-LOAD, switch without reloading the notebook."
   (interactive "P")
-  (pop-to-buffer
+  (neo--org-haskell-show-repl
    (if no-load
        (neo--org-haskell-ensure-repl)
      (neo/org-haskell-load-document))))

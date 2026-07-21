@@ -593,7 +593,8 @@
                         ((symbol-function 'message)
                          (lambda (&rest _args) nil)))
                 (let* ((repl (neo/org-haskell-load-document))
-                       (command (cadar calls))
+                       (sent-calls (nreverse calls))
+                       (command (cadar sent-calls))
                        (path (read (substring command 6 -1)))
                        (generated
                         (with-temp-buffer
@@ -616,7 +617,71 @@
                           :to-match
                           (concat "{-# LINE 7 \"/tmp/notebooks/demo\\.org\" #-}\n"
                                   (regexp-quote "main = print (sort [3, 1, 2])")))
-                  (expect calls :to-equal (list (list 'ghci-process command)))))))
+                  (expect sent-calls
+                          :to-equal
+                          (list (list 'ghci-process command)
+                                (list 'ghci-process ":main\n")))))))
+        (delete-directory temp-dir t)
+        (kill-buffer repl-buffer))))
+
+  (it "does not send :main when the notebook has no top-level main"
+    (let ((calls nil)
+          (repl-buffer (generate-new-buffer " *neo-org-ghci*"))
+          (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
+      (unwind-protect
+          (with-temp-buffer
+            (org-mode)
+            (let ((neo/org-haskell-temporary-directory temp-dir))
+              (setq buffer-file-name "/tmp/notebooks/library.org")
+              (insert "#+begin_src haskell\n  square x = x * x\n#+end_src\n")
+              (cl-letf (((symbol-function 'neo--haskell-ensure-standalone-repl)
+                         (lambda ()
+                           repl-buffer))
+                        ((symbol-function 'get-buffer-process)
+                         (lambda (buffer)
+                           (expect buffer :to-equal repl-buffer)
+                           'ghci-process))
+                        ((symbol-function 'comint-send-string)
+                         (lambda (process string)
+                           (push (list process string) calls)))
+                        ((symbol-function 'message)
+                         (lambda (&rest _args) nil)))
+                (neo/org-haskell-load-document)
+                (expect (length (nreverse calls))
+                        :to-equal 1))))
+        (delete-directory temp-dir t)
+        (kill-buffer repl-buffer))))
+
+  (it "shows the repl after an interactive notebook load"
+    (let ((calls nil)
+          (shown nil)
+          (repl-buffer (generate-new-buffer " *neo-org-ghci*"))
+          (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
+      (unwind-protect
+          (with-temp-buffer
+            (org-mode)
+            (let ((neo/org-haskell-temporary-directory temp-dir))
+              (setq buffer-file-name "/tmp/notebooks/demo.org")
+              (insert "#+begin_src haskell\n  answer = 42\n#+end_src\n")
+              (cl-letf (((symbol-function 'neo--haskell-ensure-standalone-repl)
+                         (lambda ()
+                           repl-buffer))
+                        ((symbol-function 'get-buffer-process)
+                         (lambda (_buffer) 'ghci-process))
+                        ((symbol-function 'comint-send-string)
+                         (lambda (process string)
+                           (push (list process string) calls)))
+                        ((symbol-function 'message)
+                         (lambda (&rest _args) nil))
+                        ((symbol-function 'called-interactively-p)
+                         (lambda (&optional _kind) t))
+                        ((symbol-function 'pop-to-buffer)
+                         (lambda (buffer &rest _args)
+                           (setq shown buffer)
+                           buffer)))
+                (neo/org-haskell-load-document)
+                (expect shown :to-equal repl-buffer)
+                (expect (length (nreverse calls)) :to-equal 1))))
         (delete-directory temp-dir t)
         (kill-buffer repl-buffer))))
 
