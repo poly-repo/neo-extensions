@@ -84,16 +84,28 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
 
 (defun neo--org-haskell-current-block-info ()
   "Return plist metadata for the Haskell source block at point."
-  (let ((info (org-babel-get-src-block-info 'no-eval)))
+  (let ((info (org-babel-get-src-block-info 'no-eval))
+        (src-block (org-element-context)))
     (unless info
       (user-error "neo-org: point is not in an Org source block"))
     (unless (string= (car info) neo--org-haskell-language)
       (user-error "neo-org: point is not in a Haskell source block"))
     (list :body (nth 1 info)
+          :parameters (org-element-property :parameters src-block)
           :line (1+ (line-number-at-pos (nth 5 info))))))
 
+(defun neo--org-haskell-manual-block-p (parameters)
+  "Return non-nil when block PARAMETERS explicitly set `:tangle no'."
+  (let ((tangle
+         (alist-get
+          :tangle
+          (org-babel-parse-header-arguments (or parameters "")))))
+    (and (stringp tangle)
+         (string-equal-ignore-case tangle "no"))))
+
 (defun neo--org-haskell-collect-document-blocks ()
-  "Return the current buffer's Haskell source blocks in document order."
+  "Return tangled Haskell source blocks in document order.
+Blocks marked with `:tangle no' are reserved for manual evaluation."
   (let (blocks)
     (org-element-map (org-element-parse-buffer) 'src-block
       (lambda (src-block)
@@ -103,10 +115,12 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
                           (or (org-in-commented-heading-p)
                               (org-in-archived-heading-p)))))
           (let ((info (org-babel-get-src-block-info 'no-eval src-block)))
-            (push (list :body (nth 1 info)
-                        :line (1+ (line-number-at-pos
-                                   (org-element-property :begin src-block))))
-                  blocks)))))
+            (unless (neo--org-haskell-manual-block-p
+                     (org-element-property :parameters src-block))
+              (push (list :body (nth 1 info)
+                          :line (1+ (line-number-at-pos
+                                     (org-element-property :begin src-block))))
+                    blocks))))))
     (unless blocks
       (user-error "neo-org: no Haskell source blocks found in this buffer"))
     (nreverse blocks)))
@@ -155,12 +169,18 @@ When BLOCKS is nil, collect the current notebook's Haskell blocks first."
       (setq neo--haskell-standalone-repl-source-buffer source-buffer))
     repl-buffer))
 
-(defun neo--org-haskell-send-string (string)
-  "Send STRING to the notebook REPL and return its buffer."
+(defun neo--org-haskell-send-string (string &optional load-context)
+  "Send STRING to the notebook REPL and return its buffer.
+When LOAD-CONTEXT is non-nil, tangle and load the notebook first without
+running its `main' function."
   (let* ((repl-buffer (neo--org-haskell-ensure-repl))
          (process (get-buffer-process repl-buffer)))
     (unless process
       (user-error "neo-org: notebook REPL is not running"))
+    (when load-context
+      (let ((path (neo--org-haskell-write-document-file)))
+        (comint-send-string process
+                            (format ":load %S\n" (expand-file-name path)))))
     (comint-send-string process string)
     repl-buffer))
 
@@ -217,18 +237,21 @@ When BLOCKS is nil, collect the current notebook's Haskell blocks first."
 
 ;;;###autoload
 (defun neo/org-haskell-send-block ()
-  "Send the Haskell source block at point to the inferior notebook REPL."
+  "Send the Haskell source block at point to the inferior notebook REPL.
+For a block marked `:tangle no', load the tangled notebook context first."
   (interactive)
   (let* ((block (neo--org-haskell-current-block-info))
          (repl-buffer
           (neo--org-haskell-send-string
            (neo--org-haskell-format-interactive-snippet
-            (plist-get block :body)))))
+            (plist-get block :body))
+           (neo--org-haskell-manual-block-p
+            (plist-get block :parameters)))))
     (message "neo-org: sent Haskell block to %s" (buffer-name repl-buffer))))
 
 ;;;###autoload
 (defun neo/org-haskell-tangle-document ()
-  "Write all Haskell source blocks in the current notebook to a cache file."
+  "Write tangled Haskell source blocks in this notebook to a cache file."
   (interactive)
   (let ((path (neo--org-haskell-write-document-file)))
     (when (called-interactively-p 'interactive)
@@ -256,14 +279,12 @@ When BLOCKS is nil, collect the current notebook's Haskell blocks first."
     repl-buffer))
 
 ;;;###autoload
-(defun neo/org-haskell-switch-to-repl (&optional no-load)
-  "Switch to the notebook REPL.
-With prefix argument NO-LOAD, switch without reloading the notebook."
-  (interactive "P")
-  (neo--org-haskell-show-repl
-   (if no-load
-       (neo--org-haskell-ensure-repl)
-     (neo/org-haskell-load-document))))
+(defun neo/org-haskell-switch-to-repl ()
+  "Switch to the notebook REPL without loading or running the document.
+Use `neo/org-haskell-load-document' when the notebook should be reloaded and
+its `main' function should run."
+  (interactive)
+  (neo--org-haskell-show-repl (neo--org-haskell-ensure-repl)))
 
 (provide 'neo-org-haskell)
 ;;; neo-org-haskell.el ends here

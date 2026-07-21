@@ -566,6 +566,7 @@
       (org-mode)
       (insert "#+begin_src haskell\none = 1\n#+end_src\n\n"
               "#+begin_src python\nprint('skip')\n#+end_src\n\n"
+              "#+begin_src haskell :tangle no\none + 1\n#+end_src\n\n"
               "#+begin_src haskell\ntwo = one + 1\n#+end_src\n")
       (let ((blocks (neo--org-haskell-collect-document-blocks)))
         (expect (mapcar (lambda (block) (plist-get block :body)) blocks)
@@ -607,6 +608,47 @@
                 (expect calls
                         :to-equal
                         '((ghci-process ":{\nfoo x =\n  x + 1\n:}\n"))))))
+        (kill-buffer repl-buffer))))
+
+  (it "loads notebook context before sending a manual Haskell block"
+    (let ((calls nil)
+          (repl-buffer (generate-new-buffer " *neo-org-ghci*"))
+          (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
+      (unwind-protect
+          (with-temp-buffer
+            (org-mode)
+            (let ((neo/org-haskell-temporary-directory temp-dir))
+              (setq buffer-file-name "/tmp/notebooks/manual.org")
+              (insert "#+begin_src haskell\nanswer = 42\n#+end_src\n\n"
+                      "#+begin_src haskell :tangle no\nanswer + 1\n#+end_src\n")
+              (search-backward "answer + 1")
+              (cl-letf (((symbol-function 'neo--haskell-ensure-standalone-repl)
+                         (lambda () repl-buffer))
+                        ((symbol-function 'get-buffer-process)
+                         (lambda (buffer)
+                           (expect buffer :to-equal repl-buffer)
+                           'ghci-process))
+                        ((symbol-function 'comint-send-string)
+                         (lambda (process string)
+                           (push (list process string) calls)))
+                        ((symbol-function 'message)
+                         (lambda (&rest _args) nil)))
+                (neo/org-haskell-send-block)
+                (let* ((sent-calls (nreverse calls))
+                       (load-command (cadar sent-calls))
+                       (path (read (substring load-command 6 -1)))
+                       (generated
+                        (with-temp-buffer
+                          (insert-file-contents path)
+                          (buffer-string))))
+                  (expect generated :to-match "answer = 42")
+                  (expect generated :not :to-match (regexp-quote "answer + 1"))
+                  (expect sent-calls
+                          :to-equal
+                          (list
+                           (list 'ghci-process load-command)
+                           (list 'ghci-process ":{\nanswer + 1\n:}\n")))))))
+        (delete-directory temp-dir t)
         (kill-buffer repl-buffer))))
 
   (it "tangles and loads all Haskell blocks into the notebook repl"
@@ -725,6 +767,28 @@
                 (expect shown :to-equal repl-buffer)
                 (expect (length (nreverse calls)) :to-equal 1))))
         (delete-directory temp-dir t)
+        (kill-buffer repl-buffer))))
+
+  (it "switches to the notebook repl without loading the document"
+    (let ((calls nil)
+          (repl-buffer (generate-new-buffer " *neo-org-ghci*")))
+      (unwind-protect
+          (cl-letf (((symbol-function 'neo--org-haskell-ensure-repl)
+                     (lambda ()
+                       (push 'ensure-repl calls)
+                       repl-buffer))
+                    ((symbol-function 'neo/org-haskell-load-document)
+                     (lambda ()
+                       (push 'load-document calls)
+                       repl-buffer))
+                    ((symbol-function 'neo--org-haskell-show-repl)
+                     (lambda (buffer)
+                       (push (list 'show-repl buffer) calls)
+                       buffer)))
+            (expect (neo/org-haskell-switch-to-repl) :to-equal repl-buffer)
+            (expect (nreverse calls)
+                    :to-equal
+                    (list 'ensure-repl (list 'show-repl repl-buffer))))
         (kill-buffer repl-buffer))))
 
   (it "deletes the frame after the requested number of capture exits"
