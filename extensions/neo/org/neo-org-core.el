@@ -202,6 +202,8 @@ When nil, the crypt integration stays inert even if enabled."
 
 (defconst neo--org-structure-templates
   '(("h" . "src haskell")
+    ("hs" . "src haskell")
+    ("haskell" . "src haskell")
     ("m" . "src mlody")
     ("sh" . "src sh")
     ("ml" . "src mlody")
@@ -325,10 +327,20 @@ If PATH is relative, resolve it under BASE-DIRECTORY."
           `((:compiler . ,neo/org-babel-cpp-compiler)
             (:flags . ,neo/org-babel-cpp-flags)))))
 
+(declare-function org-tempo-add-templates "org-tempo")
+
+(defun neo--org-set-structure-template (entry)
+  "Install structure template ENTRY, replacing any existing key."
+  (setq org-structure-template-alist
+        (cons entry
+              (assoc-delete-all (car entry) org-structure-template-alist))))
+
 (defun neo--org-configure-structure-templates ()
   "Install additional structure templates for Org blocks."
-  (dolist (entry neo--org-structure-templates)
-    (cl-pushnew entry org-structure-template-alist :test #'equal)))
+  (dolist (entry (reverse neo--org-structure-templates))
+    (neo--org-set-structure-template entry))
+  (when (featurep 'org-tempo)
+    (org-tempo-add-templates)))
 
 (defun neo--org-configure-src-editing ()
   "Teach Org source editing to use Neo's language-specific modes."
