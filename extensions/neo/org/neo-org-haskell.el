@@ -213,6 +213,9 @@ When BLOCKS is nil, collect the current notebook's Haskell blocks first."
   "Major mode for Org buffers that act as Haskell notebooks.")
 
 ;;;###autoload
+(add-to-list 'auto-mode-alist '("\\.orghs\\'" . neo/org-haskell-notebook-mode))
+
+;;;###autoload
 (defun neo/org-haskell-send-block ()
   "Send the Haskell source block at point to the inferior notebook REPL."
   (interactive)

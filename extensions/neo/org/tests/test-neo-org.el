@@ -104,6 +104,10 @@
               :to-equal
               "src haskell")))
 
+  (it "registers .orghs files for the Haskell notebook mode"
+    (expect (assoc-default "demo.orghs" auto-mode-alist #'string-match)
+            :to-equal 'neo/org-haskell-notebook-mode))
+
   (it "adds the Mlody Org tempo shorthand"
     (let (org-structure-template-alist)
       (neo--org-configure-structure-templates)
