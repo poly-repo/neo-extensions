@@ -32,6 +32,28 @@
   (format "\\input{%s}" neo--org-haskell-score-preamble-relative-path)
   "Preamble input included by Haskell notebook LaTeX exports.")
 
+(defconst neo--org-haskell-latex-top-section-command
+  "
+% Notebook top-level headings should read like sections while still using
+% chapter-scoped Kaobook machinery for margin mini-TOCs and numbering.
+\\NewDocumentCommand{\\neohaskelltopsection}{s m}{
+  \\IfBooleanTF{#1}{
+    \\section*{#2}
+  }{
+    \\refstepcounter{chapter}
+    \\section*{\\thechapter\\enspace #2}
+    \\addcontentsline{toc}{section}{\\protect\\numberline{\\thechapter}#2}
+    \\mlodyrecordchaptertocifneeded
+    \\marginpar{\\mlodychaptertoccontents}
+  }
+}
+"
+  "LaTeX command used for top-level notebook headings.")
+
+(defconst neo--org-haskell-latex-sidenote-footnote-command
+  "\\sidenote{%s%s}"
+  "Footnote command used by Haskell notebook LaTeX exports.")
+
 (defconst neo--org-haskell-latex-minted-style-setup
   "
 % Notebook-local code block styling aligned with the-score's palette.
@@ -60,7 +82,7 @@
     secnumdepth=2,        % Numbering depth
     bem=section,          % Start the \"Block Enumeration Matrix\" (if needed)
     numbers=noenddot,
-    %chapterentrydots=true, % Uncomment to output dots from the chapter name to the page number in the table of contents
+   %chapterentrydots=true, % Uncomment to output dots from the chapter name to the page number in the table of contents
 % draft mode is a mess
 %    draft,                      % ...or not
 ]{kaobook}
@@ -68,11 +90,13 @@
 "
    neo--org-haskell-latex-preamble-input
    "\n"
+   neo--org-haskell-latex-top-section-command
+   "\n"
    neo--org-haskell-latex-minted-style-setup)
   "Document class block used for Haskell notebook LaTeX exports.")
 
 (defconst neo--org-haskell-latex-class-sectioning
-  '(("\\chapter{%s}" . "\\chapter*{%s}")
+  '(("\\neohaskelltopsection{%s}" . "\\neohaskelltopsection*{%s}")
     ("\\section{%s}" . "\\section*{%s}")
     ("\\subsection{%s}" . "\\subsection*{%s}")
     ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
@@ -97,12 +121,42 @@
               (assoc-delete-all neo--org-haskell-latex-class-name
                                 org-latex-classes))))
 
+(defun neo--org-haskell-apply-score-book-structure (output)
+  "Insert the-score-like frontmatter and mainmatter commands into OUTPUT."
+  (let ((result output))
+    (unless (string-match-p "\\\\frontmatter\\b" result)
+      (setq result
+            (replace-regexp-in-string
+             "\\\\begin{document}[[:space:]\n]*"
+             "\\\\begin{document}\n\n\\\\frontmatter\n"
+             result nil nil)))
+    (unless (string-match-p "\\\\mainmatter\\b" result)
+      (setq result
+            (cond
+             ((string-match-p "\\\\tableofcontents\\b" result)
+              (replace-regexp-in-string
+               "\\\\tableofcontents\\b"
+               "\\\\tableofcontents\n\n\\\\mainmatter"
+               result nil nil))
+             ((string-match-p "\\\\maketitle\\b" result)
+              (replace-regexp-in-string
+               "\\\\maketitle\\b"
+               "\\\\maketitle\n\n\\\\mainmatter"
+               result nil nil))
+             (t
+              (replace-regexp-in-string
+               "\\\\frontmatter\\b"
+               "\\\\frontmatter\n\\\\mainmatter"
+               result nil nil)))))
+    result))
+
 (defun neo--org-haskell-prefix-final-output (output backend _info)
   "Prefix LaTeX OUTPUT with notebook build-mode boilerplate for BACKEND."
   (if (org-export-derived-backend-p backend 'latex)
-      (if (string-prefix-p neo--org-haskell-latex-build-mode-prefix output)
-          output
-        (concat neo--org-haskell-latex-build-mode-prefix output))
+      (neo--org-haskell-apply-score-book-structure
+       (if (string-prefix-p neo--org-haskell-latex-build-mode-prefix output)
+           output
+         (concat neo--org-haskell-latex-build-mode-prefix output)))
     output))
 
 (defun neo--org-haskell-configure-minted-languages ()
@@ -146,6 +200,8 @@
   "Configure LaTeX export defaults for the current Haskell notebook buffer."
   (setq-local org-latex-default-class neo--org-haskell-latex-class-name)
   (setq-local org-latex-src-block-backend 'minted)
+  (setq-local org-latex-default-footnote-command
+              neo--org-haskell-latex-sidenote-footnote-command)
   (neo--org-haskell-configure-minted-languages)
   ;; Export filters are consumed as a plain function list inside Org's
   ;; export plist, not through the normal hook runner.  Using a local

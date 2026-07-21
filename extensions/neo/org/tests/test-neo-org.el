@@ -151,8 +151,11 @@
                 (regexp-quote neo--org-haskell-latex-preamble-input))
         (expect (cadr entry)
                 :to-match
+                (regexp-quote neo--org-haskell-latex-top-section-command))
+        (expect (cadr entry)
+                :to-match
                 "\\\\newminted\\[neoNotebookHaskellCode\\]{haskell}")
-        (expect (caddr entry) :to-equal '("\\chapter{%s}" . "\\chapter*{%s}")))))
+        (expect (caddr entry) :to-equal '("\\neohaskelltopsection{%s}" . "\\neohaskelltopsection*{%s}")))))
 
   (it "adds the optional Org Roam project template only when configured"
     (let ((neo/org-directory "~/notes")
@@ -284,7 +287,42 @@
         (expect (string-match-p
                  (regexp-quote neo--org-haskell-latex-preamble-input)
                  latex)
-                :not :to-be nil))))
+                :not :to-be nil)
+        (expect latex :to-match "\\\\begin{document}\n\n\\\\frontmatter\n")
+        (expect latex :to-match "\\\\tableofcontents\n\n\\\\mainmatter\n"))))
+
+  (it "exports notebook footnotes as score-style sidenotes"
+    (with-temp-buffer
+      (insert "#+title: Demo\n\n* Section\nFootnote[fn:1]\n\n[fn:1] Side note text.\n")
+      (neo/org-haskell-notebook-mode)
+      (neo--org-haskell-register-latex-class)
+      (neo--org-haskell-configure-export)
+      (let* ((latex (org-export-as 'latex nil nil nil nil))
+             (body (substring latex
+                              (string-match
+                               (regexp-quote "\\begin{document}")
+                               latex))))
+        (expect body :to-match (regexp-quote "\\neohaskelltopsection{Section}"))
+        (expect body :to-match
+                "\\\\frontmatter\n\\\\maketitle\n\\\\tableofcontents\n\n\\\\mainmatter\n\n\\\\neohaskelltopsection{Section}")
+        (expect body :to-match (regexp-quote "\\sidenote{Side note text.}"))
+        (expect body :not :to-match (regexp-quote "\\footnote{")))))
+
+  (it "enters mainmatter before top-level sections even when the global TOC is disabled"
+    (with-temp-buffer
+      (insert "#+title: Demo\n#+options: toc:nil\n\n* Section\n** Subsection\nBody.\n")
+      (neo/org-haskell-notebook-mode)
+      (neo--org-haskell-register-latex-class)
+      (neo--org-haskell-configure-export)
+      (let* ((latex (org-export-as 'latex nil nil nil nil))
+             (body (substring latex
+                              (string-match
+                               (regexp-quote "\\begin{document}")
+                               latex))))
+        (expect body :not :to-match (regexp-quote "\\tableofcontents"))
+        (expect body :to-match
+                "\\\\frontmatter\n\\\\maketitle\n\n\\\\mainmatter\n\\\\neohaskelltopsection{Section}")
+        (expect body :to-match (regexp-quote "\\section{Subsection}")))))
 
   (it "exports Haskell source blocks with notebook shading"
     (with-temp-buffer
