@@ -54,7 +54,7 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
 (neo/use-package emacs
   :doc "Setup questionable defaults"
   :config
-  (auto-revert-mode 1)
+  (global-auto-revert-mode 1)
   (fset 'yes-or-no-p 'y-or-n-p)
   (advice-add 'y-or-n-p :around
               (lambda (orig-func prompt &rest args)
