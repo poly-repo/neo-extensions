@@ -32,6 +32,27 @@
   (format "\\input{%s}" neo--org-haskell-score-preamble-relative-path)
   "Preamble input included by Haskell notebook LaTeX exports.")
 
+(defconst neo--org-haskell-latex-minted-style-setup
+  "
+% Notebook-local code block styling aligned with the-score's palette.
+\\colorlet{neoNotebookCodeBg}{neogrey!6!white}
+\\colorlet{neoNotebookHaskellBg}{neoblue!7!white}
+\\colorlet{neoNotebookMlodyBg}{neoorange!9!white}
+
+\\NewDocumentEnvironment{neoNotebookCode}{O{} m}
+  {\\VerbatimEnvironment\\begin{minted}[bgcolor=neoNotebookCodeBg,#1]{#2}}
+  {\\end{minted}}
+
+\\newminted[neoNotebookHaskellCode]{haskell}{
+  bgcolor=neoNotebookHaskellBg
+}
+
+\\newminted[neoNotebookMlodyCode]{mlody}{
+  bgcolor=neoNotebookMlodyBg
+}
+"
+  "Notebook-local minted wrappers layered on top of the-score's preamble.")
+
 (defconst neo--org-haskell-latex-documentclass
   (concat
    "\\documentclass[
@@ -45,7 +66,9 @@
 ]{kaobook}
 
 "
-   neo--org-haskell-latex-preamble-input)
+   neo--org-haskell-latex-preamble-input
+   "\n"
+   neo--org-haskell-latex-minted-style-setup)
   "Document class block used for Haskell notebook LaTeX exports.")
 
 (defconst neo--org-haskell-latex-class-sectioning
@@ -91,6 +114,34 @@
           (cons entry
                 (assoc-delete-all (car entry) org-latex-minted-langs)))))
 
+(defun neo--org-haskell-notebook-minted-environment (language)
+  "Return the notebook minted wrapper environment for LANGUAGE."
+  (pcase (downcase language)
+    ("haskell" "neoNotebookHaskellCode")
+    ("mlody" "neoNotebookMlodyCode")
+    (_ "neoNotebookCode")))
+
+(defun neo--org-haskell-style-src-block (output backend _info)
+  "Rewrite LaTeX minted OUTPUT into notebook-specific wrapper environments."
+  (if (and (org-export-derived-backend-p backend 'latex)
+           (string-match "\\\\begin{minted}\\(\\[[^]]*\\]\\)?{\\([^}]+\\)}" output))
+      (let* ((options (or (match-string 1 output) ""))
+             (language (match-string 2 output))
+             (environment
+              (neo--org-haskell-notebook-minted-environment language))
+             (begin-replacement
+              (if (string= environment "neoNotebookCode")
+                  (format "\\begin{%s}%s{%s}" environment options language)
+                (format "\\begin{%s}%s" environment options))))
+        (setq output (replace-match begin-replacement t t output))
+        (replace-regexp-in-string
+         "\\\\end{minted}"
+         (format "\\end{%s}" environment)
+         output
+         t
+         t))
+    output))
+
 (defun neo--org-haskell-configure-export ()
   "Configure LaTeX export defaults for the current Haskell notebook buffer."
   (setq-local org-latex-default-class neo--org-haskell-latex-class-name)
@@ -103,8 +154,12 @@
   ;; when `org-export-filter-apply-functions' `funcall's each entry.
   (setq-local org-export-filter-final-output-functions
               (copy-sequence org-export-filter-final-output-functions))
+  (setq-local org-export-filter-src-block-functions
+              (copy-sequence org-export-filter-src-block-functions))
   (cl-pushnew #'neo--org-haskell-prefix-final-output
-              org-export-filter-final-output-functions))
+              org-export-filter-final-output-functions)
+  (cl-pushnew #'neo--org-haskell-style-src-block
+              org-export-filter-src-block-functions))
 
 (neo/use-package ox-latex
   :builtin t

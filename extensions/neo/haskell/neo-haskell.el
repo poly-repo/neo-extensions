@@ -87,6 +87,9 @@
 (defvar neo/haskell-modes '(haskell-mode haskell-ts-mode haskell-literate-mode)
   "Major modes that count as Haskell source for shared configuration.")
 
+(defconst neo/haskell-ghc2024-minimum-ghci-version "9.10"
+  "Minimum `ghci --numeric-version' that supports `-XGHC2024'.")
+
 (defconst neo/haskell-tool-search-directories
   (mapcar #'expand-file-name '("~/.ghcup/bin" "~/.cabal/bin"))
   "Directories to search when GUI Emacs misses Haskell tools on PATH.
@@ -168,6 +171,47 @@ fall back to the standard ghcup/cabal user-level bin locations."
        for candidate = (expand-file-name program dir)
        when (file-executable-p candidate)
        return candidate)))
+
+(defun neo--haskell-executable-candidates (program)
+  "Return absolute executable candidates for PROGRAM in preference order."
+  (delete-dups
+   (delq nil
+         (cons
+          (executable-find program)
+          (mapcar
+           (lambda (dir)
+             (let ((candidate (expand-file-name program dir)))
+               (when (file-executable-p candidate)
+                 candidate)))
+           neo/haskell-tool-search-directories)))))
+
+(defun neo--haskell-ghci-version (ghci)
+  "Return GHCI's numeric version string, or nil when probing fails."
+  (car-safe
+   (ignore-errors
+     (process-lines ghci "--numeric-version"))))
+
+(defun neo--haskell-ghci-supports-ghc2024-p (ghci)
+  "Return non-nil when GHCI supports `-XGHC2024'."
+  (when-let* ((version (neo--haskell-ghci-version ghci)))
+    (not (version< version neo/haskell-ghc2024-minimum-ghci-version))))
+
+(defun neo--haskell-find-ghci-executable ()
+  "Return a `ghci' executable that supports `-XGHC2024'."
+  (let* ((candidates (neo--haskell-executable-candidates "ghci"))
+         (ghci (seq-find #'neo--haskell-ghci-supports-ghc2024-p candidates)))
+    (or ghci
+        (user-error
+         "neo-haskell: could not find a GHC2024-capable ghci; checked %s"
+         (if candidates
+             (mapconcat
+              (lambda (candidate)
+                (format "%s (%s)"
+                        candidate
+                        (or (neo--haskell-ghci-version candidate) "unknown")))
+              candidates
+              ", ")
+           "PATH and user tool directories")))))
 
 (defun neo--haskell-existing-tool-directories ()
   "Return Haskell tool directories that exist on this machine.
@@ -378,11 +422,12 @@ for one-off lab files."
 (defun neo--haskell-ensure-standalone-repl ()
   "Start or reuse a plain `ghci' buffer for the current workspace."
   (require 'comint)
+  (neo--haskell-prepare-buffer-environment)
   (let* ((default-directory (neo--haskell-project-root))
          (buffer-name (neo--haskell-standalone-repl-buffer-name))
          (buffer (get-buffer-create buffer-name))
          (process-name (concat "neo-haskell-ghci:" buffer-name))
-         (ghci (or (neo--haskell-find-executable "ghci") "ghci")))
+         (ghci (neo--haskell-find-ghci-executable)))
     (unless (comint-check-proc buffer)
       (apply #'make-comint-in-buffer
              process-name

@@ -113,11 +113,12 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
     (concat
      (format "-- Generated from %s by neo/org-haskell-notebook-mode.\n\n" source)
      (mapconcat
-      (lambda (block)
+     (lambda (block)
         (format "{-# LINE %d %S #-}\n%s"
                 (plist-get block :line)
                 source
-                (plist-get block :body)))
+                (neo--org-haskell-normalize-block-body
+                 (plist-get block :body))))
       blocks
       "\n\n")
      "\n")))
@@ -152,9 +153,44 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
     (comint-send-string process string)
     repl-buffer))
 
+(defun neo--org-haskell-common-prefix (left right)
+  "Return the common prefix shared by LEFT and RIGHT."
+  (let* ((max-length (min (length left) (length right)))
+         (index 0))
+    (while (and (< index max-length)
+                (eq (aref left index) (aref right index)))
+      (setq index (1+ index)))
+    (substring left 0 index)))
+
+(defun neo--org-haskell-normalize-block-body (body)
+  "Remove indentation common to every non-blank line in BODY."
+  (let ((common-indent nil)
+        (lines (split-string body "\n" nil)))
+    (dolist (line lines)
+      (when (string-match-p "\\S-" line)
+        (let ((indent
+               (progn
+                 (string-match "\\`[ \t]*" line)
+                 (match-string 0 line))))
+          (setq common-indent
+                (if common-indent
+                    (neo--org-haskell-common-prefix common-indent indent)
+                  indent)))))
+    (if (or (null common-indent) (string-empty-p common-indent))
+        body
+      (mapconcat
+       (lambda (line)
+         (if (string-prefix-p common-indent line)
+             (string-remove-prefix common-indent line)
+           line))
+       lines
+       "\n"))))
+
 (defun neo--org-haskell-format-interactive-snippet (body)
   "Wrap BODY for safe multi-line evaluation in GHCi."
-  (format ":{\n%s\n:}\n" (string-trim-right body)))
+  (format ":{\n%s\n:}\n"
+          (string-trim-right
+           (neo--org-haskell-normalize-block-body body))))
 
 ;;;###autoload
 (define-derived-mode neo/org-haskell-notebook-mode org-mode "Neo Org Haskell"

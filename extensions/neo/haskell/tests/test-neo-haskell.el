@@ -66,17 +66,21 @@
                 :to-equal '(standalone-load (pop ghci-buffer))))))
 
   (describe "neo--haskell-ensure-standalone-repl"
-    (it "starts ghci with the direct-cradle flags"
+    (it "starts a GHC2024-capable ghci with the direct-cradle flags"
       (let ((calls nil)
             (repl-buffer (generate-new-buffer " *neo-haskell-ghci*")))
         (unwind-protect
             (progn
               (cl-letf (((symbol-function 'neo--haskell-project-root)
                          (lambda () "/tmp/codelabs/haskell/"))
-                        ((symbol-function 'neo--haskell-find-executable)
-                         (lambda (_program) nil))
                         ((symbol-function 'require)
                          (lambda (&rest _args) t))
+                        ((symbol-function 'neo--haskell-prepare-buffer-environment)
+                         (lambda ()
+                           (push 'prepare-environment calls)))
+                        ((symbol-function 'neo--haskell-find-ghci-executable)
+                         (lambda ()
+                           "/opt/ghcup/bin/ghci"))
                         ((symbol-function 'get-buffer-create)
                          (lambda (name &optional _inhibit-buffer-hooks)
                            (when (equal name "*neo-haskell:haskell*")
@@ -92,21 +96,47 @@
                            (push (cons 'make-comint args) calls)
                            repl-buffer)))
                 (expect (neo--haskell-ensure-standalone-repl) :to-equal repl-buffer))
-              (expect (cl-subseq (nreverse calls) 0 3)
+              (expect (cl-subseq (nreverse calls) 0 4)
                       :to-equal
                       (list
+                       'prepare-environment
                        (list 'buffer "*neo-haskell:haskell*")
                        (cons 'make-comint
                              (list
                               "neo-haskell-ghci:*neo-haskell:haskell*"
                               repl-buffer
-                              "ghci"
+                              "/opt/ghcup/bin/ghci"
                               nil
                               "-ignore-dot-ghci"
                               "-i."
                               "-XGHC2024"))
                        (list 'configure repl-buffer))))
           (kill-buffer repl-buffer)))))
+
+  (describe "neo--haskell-find-ghci-executable"
+    (it "prefers a GHC2024-capable ghci over an older one on exec-path"
+      (cl-letf (((symbol-function 'neo--haskell-executable-candidates)
+                 (lambda (_program)
+                   '("/usr/bin/ghci" "/opt/ghcup/bin/ghci")))
+                ((symbol-function 'neo--haskell-ghci-version)
+                 (lambda (ghci)
+                   (if (string= ghci "/usr/bin/ghci")
+                       "9.6.6"
+                     "9.10.3"))))
+        (expect (neo--haskell-find-ghci-executable)
+                :to-equal
+                "/opt/ghcup/bin/ghci")))
+
+    (it "errors when no GHC2024-capable ghci is available"
+      (cl-letf (((symbol-function 'neo--haskell-executable-candidates)
+                 (lambda (_program)
+                   '("/usr/bin/ghci")))
+                ((symbol-function 'neo--haskell-ghci-version)
+                 (lambda (_ghci)
+                   "9.6.6")))
+        (expect (neo--haskell-find-ghci-executable)
+                :to-throw
+                'user-error))))
 
   (describe "neo--haskell-load-buffer-into-standalone-repl"
     (it "tracks the source buffer for standalone repl switching"

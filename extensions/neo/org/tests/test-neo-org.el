@@ -81,10 +81,26 @@
               :to-equal
               `(file+headline ,(expand-file-name "~/notes/capture.org") "Inbox"))))
 
-  (it "adds the Haskell Org tempo shorthand"
+  (it "overrides Org's default <h shorthand with a Haskell source block"
+    (require 'org-tempo)
+    (let ((org-structure-template-alist (copy-tree org-structure-template-alist))
+          (org-tempo-tags nil))
+      (neo--org-configure-structure-templates)
+      (with-temp-buffer
+        (org-mode)
+        (insert "<h")
+        (expect (org-tempo-complete-tag) :to-be-truthy)
+        (expect (buffer-string)
+                :to-equal
+                "#+begin_src haskell\n\n#+end_src"))))
+
+  (it "keeps the extended Haskell Org tempo shorthands"
     (let (org-structure-template-alist)
       (neo--org-configure-structure-templates)
-      (expect (cdr (assoc "h" org-structure-template-alist))
+      (expect (cdr (assoc "hs" org-structure-template-alist))
+              :to-equal
+              "src haskell")
+      (expect (cdr (assoc "haskell" org-structure-template-alist))
               :to-equal
               "src haskell")))
 
@@ -133,6 +149,9 @@
         (expect (cadr entry)
                 :to-match
                 (regexp-quote neo--org-haskell-latex-preamble-input))
+        (expect (cadr entry)
+                :to-match
+                "\\\\newminted\\[neoNotebookHaskellCode\\]{haskell}")
         (expect (caddr entry) :to-equal '("\\chapter{%s}" . "\\chapter*{%s}")))))
 
   (it "adds the optional Org Roam project template only when configured"
@@ -234,6 +253,9 @@
       (expect (member #'neo--org-haskell-prefix-final-output
                       org-export-filter-final-output-functions)
               :not :to-be nil)
+      (expect (member #'neo--org-haskell-style-src-block
+                      org-export-filter-src-block-functions)
+              :not :to-be nil)
       (expect (local-variable-p 'org-latex-default-class) :to-be-truthy)))
 
   (it "prefixes LaTeX exports with build-mode detection"
@@ -264,34 +286,41 @@
                  latex)
                 :not :to-be nil))))
 
-  (it "exports Haskell source blocks with minted"
+  (it "exports Haskell source blocks with notebook shading"
     (with-temp-buffer
       (insert "#+title: Demo\n\n#+begin_src haskell\nf x = x + 1\n#+end_src\n")
       (neo/org-haskell-notebook-mode)
       (neo--org-haskell-register-latex-class)
       (neo--org-haskell-configure-export)
-      (let ((latex (org-export-as 'latex nil nil nil nil)))
-        (expect latex
-                :to-match
-                "\\\\begin{minted}\\(?:\\[[^]]*\\]\\)?{haskell}")
-        (expect latex :not :to-match "\\\\begin{verbatim}"))))
+      (let* ((latex (org-export-as 'latex nil nil nil nil))
+             (body (substring latex
+                              (string-match
+                               (regexp-quote "\\begin{document}")
+                               latex))))
+        (expect body :to-match (regexp-quote "\\begin{neoNotebookHaskellCode}[]"))
+        (expect latex :to-match "neoNotebookHaskellBg")
+        (expect body :not :to-match (regexp-quote "\\begin{minted}"))
+        (expect body :not :to-match (regexp-quote "\\begin{verbatim}")))))
 
-  (it "exports mlody blocks through the notebook minted lexer alias"
+  (it "exports notebook blocks with language-specific shaded wrappers"
     (with-temp-buffer
       (insert "#+title: Demo\n\n"
               "#+begin_src mlody\nvalue(name=\"greeting\")\n#+end_src\n\n"
-              "#+begin_src haskell\nf x = x + 1\n#+end_src\n")
+              "#+begin_src haskell\nf x = x + 1\n#+end_src\n\n"
+              "#+begin_src python\nprint('hi')\n#+end_src\n")
       (neo/org-haskell-notebook-mode)
       (neo--org-haskell-register-latex-class)
       (neo--org-haskell-configure-export)
-      (let ((latex (org-export-as 'latex nil nil nil nil)))
-        (expect latex
-                :to-match
-                "\\\\begin{minted}\\(?:\\[[^]]*\\]\\)?{mlody}")
-        (expect latex
-                :to-match
-                "\\\\begin{minted}\\(?:\\[[^]]*\\]\\)?{haskell}")
-        (expect latex :not :to-match "\\\\begin{minted}\\(?:\\[[^]]*\\]\\)?{python}"))))
+      (let* ((latex (org-export-as 'latex nil nil nil nil))
+             (body (substring latex
+                              (string-match
+                               (regexp-quote "\\begin{document}")
+                               latex))))
+        (expect body :to-match (regexp-quote "\\begin{neoNotebookMlodyCode}[]"))
+        (expect body :to-match (regexp-quote "\\begin{neoNotebookHaskellCode}[]"))
+        (expect body :to-match (regexp-quote "\\begin{neoNotebookCode}[]{python}"))
+        (expect latex :to-match "neoNotebookMlodyBg")
+        (expect body :not :to-match (regexp-quote "\\begin{minted}")))))
 
   (it "runs a second LuaLaTeX pass for fast notebook arara profiles"
     (let* ((profile (neo--org-haskell-render-arara-build-profile "online" t t))
@@ -502,13 +531,19 @@
                 '("one = 1"
                   "two = one + 1")))))
 
+  (it "drops indentation common to every non-blank line in a block body"
+    (expect (neo--org-haskell-normalize-block-body
+             "  foo = do\n    pure 1\n\n  bar = foo\n")
+            :to-equal
+            "foo = do\n  pure 1\n\nbar = foo\n"))
+
   (it "sends the current Haskell block through multiline GHCi input"
     (let ((calls nil)
           (repl-buffer (generate-new-buffer " *neo-org-ghci*")))
       (unwind-protect
           (with-temp-buffer
             (org-mode)
-            (insert "#+begin_src haskell\nfoo x =\n  x + 1\n#+end_src\n")
+            (insert "#+begin_src haskell\n  foo x =\n    x + 1\n#+end_src\n")
             (search-backward "foo")
             (let ((source-buffer (current-buffer)))
               (cl-letf (((symbol-function 'neo--haskell-ensure-standalone-repl)
@@ -542,8 +577,8 @@
             (let ((neo/org-haskell-temporary-directory temp-dir))
               (setq buffer-file-name "/tmp/notebooks/demo.org")
               (insert "* Notes\n"
-                      "#+begin_src haskell\nimport Data.List\n#+end_src\n\n"
-                      "#+begin_src haskell\nmain = print (sort [3, 1, 2])\n#+end_src\n")
+                      "#+begin_src haskell\n  import Data.List\n#+end_src\n\n"
+                      "#+begin_src haskell\n  main = print (sort [3, 1, 2])\n#+end_src\n")
               (goto-char (point-min))
               (cl-letf (((symbol-function 'neo--haskell-ensure-standalone-repl)
                          (lambda ()
