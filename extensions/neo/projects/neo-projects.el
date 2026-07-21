@@ -184,6 +184,70 @@ low-priority buffers such as `*scratch*'."
 Runs on the same idle timer as the restore, immediately after it, so
 consumers can decide which perspective should ultimately be selected.")
 
+(defvar persp-state-default-file nil)
+
+(defvar neo/perspective-restore-in-progress nil
+  "Non-nil while NEO is restoring perspective state.")
+
+(defconst neo--projects-transient-git-buffer-file-rx
+  (rx "/.git/"
+      (or "COMMIT_EDITMSG"
+          "EDIT_DESCRIPTION"
+          "MERGE_MSG"
+          "SQUASH_MSG"
+          "TAG_EDITMSG"
+          "NOTES_EDITMSG")
+      string-end)
+  "Git control files that should never be persisted in perspective state.")
+
+(defconst neo--projects-restore-temp-perspective-rx
+  (rx string-start (= 8 (any "0-9a-f")) string-end)
+  "Perspective names that look like perspective.el restore scratch names.")
+
+(defun neo--projects-transient-git-buffer-p (buffer)
+  "Return non-nil when BUFFER is a transient Git control buffer."
+  (when (buffer-live-p buffer)
+    (or (with-current-buffer buffer
+          (derived-mode-p 'git-commit-mode))
+        (when-let* ((file-name (buffer-file-name buffer)))
+          (string-match-p neo--projects-transient-git-buffer-file-rx file-name)))))
+
+(defun neo--projects-persp-interesting-buffer-p (orig-fn buffer)
+  "Keep transient Git control BUFFERs out of perspective state."
+  (and (not (neo--projects-transient-git-buffer-p buffer))
+       (funcall orig-fn buffer)))
+
+(defun neo--projects-restore-temp-perspective-p (name)
+  "Return non-nil when NAME looks like a leaked restore scratch perspective."
+  (and (stringp name)
+       (string-match-p neo--projects-restore-temp-perspective-rx name)))
+
+(defun neo--projects-prune-restore-temp-perspectives ()
+  "Remove leaked restore scratch perspectives from the current frame."
+  (when (featurep 'perspective)
+    (dolist (name (copy-sequence (persp-names)))
+      (when (neo--projects-restore-temp-perspective-p name)
+        (persp-kill name)))))
+
+(defun neo/projects-restore-perspectives-on-startup ()
+  "Restore saved perspectives, then hand off final landing to NEO hooks."
+  (when (fboundp 'neo/ensure-frame-onscreen-and-usable)
+    (neo/ensure-frame-onscreen-and-usable))
+  (when (and persp-state-default-file
+             (file-exists-p persp-state-default-file))
+    (let ((neo/perspective-restore-in-progress t))
+      (condition-case err
+          (unwind-protect
+              (persp-state-load persp-state-default-file)
+            (neo--projects-prune-restore-temp-perspectives))
+        (error
+         (if (fboundp 'neo/log-warn)
+             (neo/log-warn 'projects "perspective restore skipped: %s"
+                           (error-message-string err))
+           (message "neo: perspective restore skipped: %s"
+                    (error-message-string err)))))))
+  (run-hooks 'neo/after-perspective-restore-hook))
+
 (defun neo/persp-ensure-messages ()
   "Ensure *Messages* is part of the current perspective."
   (when (and (featurep 'perspective)
@@ -200,34 +264,21 @@ consumers can decide which perspective should ultimately be selected.")
   (persp-state-default-file (expand-file-name "persp-state.el" no-littering-var-directory))
   :config
   (persp-mode 1)
+  (advice-remove 'persp--state-interesting-buffer-p
+                 #'neo--projects-persp-interesting-buffer-p)
+  (advice-add 'persp--state-interesting-buffer-p :around
+              #'neo--projects-persp-interesting-buffer-p)
   ;; use-package adds NAME-mode as an autoload trigger for every :hook entry;
   ;; moving kill-emacs here avoids perspective-mode landing in kill-emacs-hook.
   (remove-hook 'kill-emacs-hook #'perspective-mode)
   (add-hook 'kill-emacs-hook #'persp-state-save)
   ;; NOTE we give time for magit/projectile/etc... to settle. There're
   ;; races I've not been able to solve.
-  (run-with-idle-timer 1 nil (lambda ()
-			       ;; Make sure the frame is big enough to hold the
-			       ;; saved layout before restoring it, and never let
-			       ;; a too-small-frame error abort the restore.
-			       ;; Only guarantee the frame is big enough for the
-			       ;; layout here — do NOT re-apply the saved size, or
-			       ;; a frame the user/treemacs resized would snap back
-			       ;; (a late, intermittent flash).
-			       (when (fboundp 'neo/ensure-frame-onscreen-and-usable)
-				 (neo/ensure-frame-onscreen-and-usable))
-			       (when (file-exists-p persp-state-default-file)
-				 (condition-case err
-				     (persp-state-load persp-state-default-file)
-				   (error
-				    (if (fboundp 'neo/log-warn)
-					(neo/log-warn 'projects "perspective restore skipped: %s"
-						      (error-message-string err))
-				      (message "neo: perspective restore skipped: %s"
-					       (error-message-string err))))))
-			       (run-hooks 'neo/after-perspective-restore-hook)))
+  (run-with-idle-timer 1 nil #'neo/projects-restore-perspectives-on-startup)
   :hook
   ((persp-switch persp-created) . neo/persp-ensure-messages)
+  (persp-state-before-save . neo--projects-prune-restore-temp-perspectives)
+  (persp-state-after-load . neo--projects-prune-restore-temp-perspectives)
   :bind
   ("C-x b" . persp-switch-to-buffer*)
   ("C-x k" . persp-kill-buffer*))

@@ -571,11 +571,12 @@ invisible to Forge commands like `forge-visit-pullreq'."
       (insert-file-contents file)
       (split-string (buffer-string) "\n" t "^[ \t]*"))))
 
-
+(defvar neo/perspective-restore-in-progress nil)
 
 (defun neo/git-commit-insert-type-scope ()
   "Prompt for commit type and scope, then insert at beginning of commit buffer with emoji annotations."
-  (when t ; (eq major-mode 'git-commit-mode)
+  (when (and (derived-mode-p 'git-commit-mode)
+             (not neo/perspective-restore-in-progress))
     (let* ((selection (neo/select-commit-type))
            (type (car selection))
            (emoji (cadr selection))

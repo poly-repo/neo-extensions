@@ -14,6 +14,52 @@
   (before-each
     (clrhash neo/project-last-switched-times))
 
+  (it "skips transient git control buffers when saving perspective state"
+    (let ((buffer (generate-new-buffer "EDIT_DESCRIPTION")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (setq-local buffer-file-name "/tmp/repo/.git/EDIT_DESCRIPTION")
+            (expect (neo--projects-transient-git-buffer-p buffer) :to-be-truthy)
+            (expect (neo--projects-persp-interesting-buffer-p (lambda (_buffer) t) buffer)
+                    :to-be nil))
+        (kill-buffer buffer))))
+
+  (it "keeps normal file buffers in perspective state"
+    (let ((buffer (generate-new-buffer "notes.txt")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (setq-local buffer-file-name "/tmp/repo/notes.txt")
+            (expect (neo--projects-transient-git-buffer-p buffer) :to-be nil)
+            (expect (neo--projects-persp-interesting-buffer-p (lambda (_buffer) t) buffer)
+                    :to-be-truthy))
+        (kill-buffer buffer))))
+
+  (it "prunes leaked restore scratch perspectives"
+    (let (killed)
+      (cl-letf (((symbol-function 'featurep) (lambda (feature) (eq feature 'perspective)))
+                ((symbol-function 'persp-names)
+                 (lambda () '("main" "org-haskell" "664b6d19" "deadbeef" "App:Dashboard")))
+                ((symbol-function 'persp-kill)
+                 (lambda (name) (push name killed))))
+        (neo--projects-prune-restore-temp-perspectives))
+      (expect (nreverse killed) :to-equal '("664b6d19" "deadbeef"))))
+
+  (it "marks restore progress only while perspective state is loading"
+    (let (flag-during-load flag-during-hook)
+      (let ((neo/after-perspective-restore-hook
+             (list (lambda ()
+                     (setq flag-during-hook neo/perspective-restore-in-progress)))))
+        (cl-letf (((symbol-function 'file-exists-p)
+                   (lambda (file) (equal file "/tmp/persp-state.el")))
+                  ((symbol-function 'neo/ensure-frame-onscreen-and-usable) #'ignore)
+                  ((symbol-function 'persp-state-load)
+                   (lambda (_file)
+                     (setq flag-during-load neo/perspective-restore-in-progress))))
+          (let ((persp-state-default-file "/tmp/persp-state.el"))
+            (neo/projects-restore-perspectives-on-startup))))
+      (expect flag-during-load :to-be-truthy)
+      (expect flag-during-hook :to-be nil)))
+
   (it "forces Magit visibility for a new project without notes"
     (let (magit-calls)
       (cl-letf (((symbol-function 'projectile-project-root)

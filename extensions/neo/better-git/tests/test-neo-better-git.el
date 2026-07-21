@@ -17,6 +17,29 @@
                              (file-name-directory (or load-file-name buffer-file-name))))
 
 (describe "neo-better-git"
+  (it "skips commit prompts while perspectives are restoring"
+    (let ((neo/perspective-restore-in-progress t)
+          (called nil))
+      (with-temp-buffer
+        (cl-letf (((symbol-function 'derived-mode-p) (lambda (&rest _modes) t))
+                  ((symbol-function 'neo/select-commit-type)
+                   (lambda ()
+                     (setq called t)
+                     '("fix" "🐛"))))
+          (neo/git-commit-insert-type-scope)
+          (expect called :to-be nil)
+          (expect (buffer-string) :to-equal "")))))
+
+  (it "inserts the selected type and scope in git commit buffers"
+    (with-temp-buffer
+      (cl-letf (((symbol-function 'derived-mode-p) (lambda (&rest _modes) t))
+                ((symbol-function 'neo/select-commit-type)
+                 (lambda () '("fix" "🐛")))
+                ((symbol-function 'completing-read)
+                 (lambda (&rest _args) "neo")))
+        (neo/git-commit-insert-type-scope)
+        (expect (buffer-string) :to-equal "🐛 fix(neo): \n\n"))))
+
   (it "switches to a project and then ensures Magit is visible"
     (let (events)
       (cl-letf (((symbol-function 'neo/switch-to-project)
