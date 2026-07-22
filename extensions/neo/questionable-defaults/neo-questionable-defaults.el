@@ -124,13 +124,31 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
    . visual-wrap-prefix-mode)
   )
 
+(defun neo--questionable-defaults-enable-key-chords ()
+  "Enable key-chord processing in the current programming buffer."
+  (setq-local input-method-function #'key-chord-input-method)
+  (key-chord-reset-typing-detection))
+
+(defun neo--questionable-defaults-restrict-key-chords-to-prog-mode ()
+  "Restrict key-chord processing to programming buffers, including existing ones."
+  (when (eq (default-value 'input-method-function)
+            #'key-chord-input-method)
+    (set-default 'input-method-function nil))
+  (setq key-chord-mode nil)
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (if (derived-mode-p 'prog-mode)
+          (neo--questionable-defaults-enable-key-chords)
+        (when (eq input-method-function #'key-chord-input-method)
+          (kill-local-variable 'input-method-function))))))
+
 (neo/use-package key-chord
+  :hook (prog-mode . neo--questionable-defaults-enable-key-chords)
   :config
-  (key-chord-mode 1)
   (key-chord-define-global "``" 'toggle-menu-bar-mode-from-frame)
   (key-chord-define-global ".." 'comment-or-uncomment-region)
-  (key-chord-define-global ",," 'sort-lines)) ; not to useful these
-					; days of autoformat
+  (key-chord-define-global ",," 'sort-lines)
+  (neo--questionable-defaults-restrict-key-chords-to-prog-mode))
 
 (neo/use-package which-key
   :custom
