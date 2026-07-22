@@ -159,7 +159,21 @@
         (expect (cadr entry)
                 :to-match
                 "\\\\newminted\\[neoNotebookHaskellCode\\]{haskell}")
-        (expect (caddr entry) :to-equal '("\\neohaskelltopsection{%s}" . "\\neohaskelltopsection*{%s}")))))
+        (expect (caddr entry) :to-equal '("\\section{%s}" . "\\section*{%s}")))))
+
+  (it "uses the normal section hierarchy without a chapter-zero prefix"
+    (expect neo--org-haskell-latex-top-section-command
+            :to-match
+            (regexp-quote "\\renewcommand{\\thesection}{\\arabic{section}}"))
+    (expect neo--org-haskell-latex-top-section-command
+            :to-match
+            (regexp-quote "\\renewcommand{\\thesubsection}{\\thesection.\\arabic{subsection}}"))
+    (expect neo--org-haskell-latex-top-section-command
+            :not :to-match
+            (regexp-quote "\\neohaskelltopsection"))
+    (expect neo--org-haskell-latex-top-section-command
+            :not :to-match
+            (regexp-quote "\\marginpar")))
 
   (it "adds the optional Org Roam project template only when configured"
     (let ((neo/org-directory "~/notes")
@@ -306,9 +320,9 @@
                               (string-match
                                (regexp-quote "\\begin{document}")
                                latex))))
-        (expect body :to-match (regexp-quote "\\neohaskelltopsection{Section}"))
+        (expect body :to-match (regexp-quote "\\section{Section}"))
         (expect body :to-match
-                "\\\\frontmatter\n\\\\maketitle\n\\\\tableofcontents\n\n\\\\mainmatter\n\n\\\\neohaskelltopsection{Section}")
+                "\\\\frontmatter\n\\\\maketitle\n\\\\tableofcontents\n\n\\\\mainmatter\n\n\\\\section{Section}")
         (expect body :to-match (regexp-quote "\\sidenote{Side note text.}"))
         (expect body :not :to-match (regexp-quote "\\footnote{")))))
 
@@ -325,8 +339,8 @@
                                latex))))
         (expect body :not :to-match (regexp-quote "\\tableofcontents"))
         (expect body :to-match
-                "\\\\frontmatter\n\\\\maketitle\n\n\\\\mainmatter\n\\\\neohaskelltopsection{Section}")
-        (expect body :to-match (regexp-quote "\\section{Subsection}")))))
+                "\\\\frontmatter\n\\\\maketitle\n\n\\\\mainmatter\n\\\\section{Section}")
+        (expect body :to-match (regexp-quote "\\subsection{Subsection}")))))
 
   (it "exports Haskell source blocks with notebook shading"
     (with-temp-buffer
@@ -489,6 +503,60 @@
         (delete-directory repo-root t)
         (delete-directory temp-dir t))))
 
+  (it "uses the selected arara profile when interactive notebook PDF export gets a prefix arg"
+    (let ((repo-root (make-temp-file "neo-org-haskell-repo" t))
+          (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
+      (unwind-protect
+          (with-temp-buffer
+            (let ((notebook-file (expand-file-name "notes/demo.org" repo-root))
+                  (neo/org-haskell-temporary-directory temp-dir)
+                  compile-call
+                  selected-profile)
+              (neo--test-org-prepare-score-fixture repo-root)
+              (setq default-directory repo-root
+                    buffer-file-name notebook-file)
+              (insert "#+title: Demo\n\nHello, notebook export.\n")
+              (neo/org-haskell-notebook-mode)
+              (cl-letf (((symbol-function 'org-export-to-file)
+                         (lambda (_backend file &rest _args)
+                           (with-temp-file file
+                             (insert "LATEX\n"))
+                           file))
+                        ((symbol-function 'neo--org-haskell-read-arara-profile)
+                         (lambda ()
+                           (setq selected-profile "print")
+                           selected-profile))
+                        ((symbol-function 'compile)
+                         (lambda (command)
+                           (setq compile-call (list default-directory command))
+                           'compilation-buffer))
+                        ((symbol-function 'message)
+                         (lambda (&rest _args) nil)))
+                (let ((build-directory
+                       (file-name-as-directory
+                        (neo--org-haskell-pdf-build-directory)))
+                      (current-prefix-arg '(4)))
+                  (expect (call-interactively #'neo/org-haskell-export-pdf)
+                          :to-equal
+                          'compilation-buffer)
+                  (expect selected-profile :to-equal "print")
+                  (expect compile-call
+                          :to-equal
+                          (list build-directory
+                                "arara --preamble print main.tex"))))))
+        (delete-directory repo-root t)
+        (delete-directory temp-dir t))))
+
+  (it "routes online and print convenience commands through the shared notebook PDF export"
+    (let (calls)
+      (cl-letf (((symbol-function 'neo/org-haskell-export-pdf)
+                 (lambda (&optional preamble)
+                   (push preamble calls)
+                   preamble)))
+        (expect (neo/org-haskell-export-online-pdf) :to-equal "online")
+        (expect (neo/org-haskell-export-print-pdf) :to-equal "print")
+        (expect (nreverse calls) :to-equal '("online" "print")))))
+
   (it "routes Org's standard PDF export for notebooks through the staged arara build"
     (let ((repo-root (make-temp-file "neo-org-haskell-repo" t))
           (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
@@ -511,7 +579,7 @@
                              (insert "LATEX\n"))
                            (funcall post-process file)))
                         ((symbol-function 'neo--org-haskell-compile-pdf-file)
-                         (lambda (file)
+                         (lambda (file &optional _preamble)
                            (setq compiled-tex file)
                            "/tmp/demo-online.pdf")))
                 (expect (neo--org-haskell-export-to-pdf nil t nil nil '(:foo bar))
@@ -525,6 +593,46 @@
                           :to-equal
                           (list 'latex entry-path nil t nil nil '(:foo bar)))
                   (expect compiled-tex :to-equal entry-path)))))
+        (delete-directory repo-root t)
+        (delete-directory temp-dir t))))
+
+  (it "uses the selected arara profile for notebook Org PDF export when prefix selection is requested"
+    (let ((repo-root (make-temp-file "neo-org-haskell-repo" t))
+          (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
+      (unwind-protect
+          (with-temp-buffer
+            (let ((notebook-file (expand-file-name "notes/demo.org" repo-root))
+                  (neo/org-haskell-temporary-directory temp-dir)
+                  selected-profile
+                  compiled-call)
+              (neo--test-org-prepare-score-fixture repo-root)
+              (setq default-directory repo-root
+                    buffer-file-name notebook-file)
+              (insert "#+title: Demo\n\nHello, notebook export.\n")
+              (neo/org-haskell-notebook-mode)
+              (cl-letf (((symbol-function 'org-export-to-file)
+                         (lambda (_backend file _async _subtreep _visible-only _body-only _ext-plist post-process)
+                           (with-temp-file file
+                             (insert "LATEX\n"))
+                           (funcall post-process file)))
+                        ((symbol-function 'neo--org-haskell-read-arara-profile)
+                         (lambda ()
+                           (setq selected-profile "print")
+                           selected-profile))
+                        ((symbol-function 'neo--org-haskell-compile-pdf-file)
+                         (lambda (file &optional preamble)
+                           (setq compiled-call (list file preamble))
+                           "/tmp/demo-print.pdf")))
+                (let ((entry-path
+                       (expand-file-name
+                        neo--org-haskell-latex-entry-file-name
+                        (neo--org-haskell-pdf-build-directory)))
+                      (current-prefix-arg '(4)))
+                  (expect (neo--org-haskell-export-to-pdf nil t nil nil '(:foo bar))
+                          :to-equal
+                          "/tmp/demo-print.pdf")
+                  (expect selected-profile :to-equal "print")
+                  (expect compiled-call :to-equal (list entry-path "print"))))))
         (delete-directory repo-root t)
         (delete-directory temp-dir t))))
 

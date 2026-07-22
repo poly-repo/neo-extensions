@@ -34,21 +34,15 @@
 
 (defconst neo--org-haskell-latex-top-section-command
   "
-% Notebook top-level headings should read like sections while still using
-% chapter-scoped Kaobook machinery for margin mini-TOCs and numbering.
-\\NewDocumentCommand{\\neohaskelltopsection}{s m}{
-  \\IfBooleanTF{#1}{
-    \\section*{#2}
-  }{
-    \\refstepcounter{chapter}
-    \\section*{\\thechapter\\enspace #2}
-    \\addcontentsline{toc}{section}{\\protect\\numberline{\\thechapter}#2}
-    \\mlodyrecordchaptertocifneeded
-    \\marginpar{\\mlodychaptertoccontents}
-  }
-}
+% Notebook headings use the standard section hierarchy.
+% Kaobook is chapter-oriented, so remove the leading chapter 0 prefix.
+\\renewcommand{\\thesection}{\\arabic{section}}
+\\renewcommand{\\thesubsection}{\\thesection.\\arabic{subsection}}
+\\renewcommand{\\thesubsubsection}{\\thesubsection.\\arabic{subsubsection}}
+\\renewcommand{\\theparagraph}{\\thesubsubsection.\\arabic{paragraph}}
+\\renewcommand{\\thesubparagraph}{\\theparagraph.\\arabic{subparagraph}}
 "
-  "LaTeX command used for top-level notebook headings.")
+  "LaTeX numbering overrides used for notebook section headings.")
 
 (defconst neo--org-haskell-latex-sidenote-footnote-command
   "\\sidenote{%s%s}"
@@ -96,8 +90,7 @@
   "Document class block used for Haskell notebook LaTeX exports.")
 
 (defconst neo--org-haskell-latex-class-sectioning
-  '(("\\neohaskelltopsection{%s}" . "\\neohaskelltopsection*{%s}")
-    ("\\section{%s}" . "\\section*{%s}")
+  '(("\\section{%s}" . "\\section*{%s}")
     ("\\subsection{%s}" . "\\subsection*{%s}")
     ("\\subsubsection{%s}" . "\\subsubsection*{%s}")
     ("\\paragraph{%s}" . "\\paragraph*{%s}")

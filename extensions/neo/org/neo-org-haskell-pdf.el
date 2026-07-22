@@ -11,7 +11,7 @@
   :group 'neo-org)
 
 (defcustom neo/org-haskell-arara-default-preamble "draft-fast-online"
-  "Default arara preamble used by `neo/org-haskell-export-pdf'."
+  "Default arara build profile used by `neo/org-haskell-export-pdf'."
   :type '(choice
           (const "print")
           (const "online")
@@ -344,9 +344,19 @@ passed through to `org-export-to-file'."
      ext-plist
      post-process)))
 
-(defun neo--org-haskell-compile-pdf-file (tex-path)
-  "Compile TEX-PATH synchronously with arara and return the resulting PDF."
-  (let* ((preamble neo/org-haskell-arara-default-preamble)
+(defun neo--org-haskell-resolve-arara-preamble (&optional preamble)
+  "Return the notebook arara profile to use for PREAMBLE.
+When PREAMBLE is nil, `current-prefix-arg' requests an interactive profile
+selection and otherwise `neo/org-haskell-arara-default-preamble' is used."
+  (neo--org-haskell-ensure-arara-preamble
+   (or preamble
+       (and current-prefix-arg
+            (neo--org-haskell-read-arara-profile))
+       neo/org-haskell-arara-default-preamble)))
+
+(defun neo--org-haskell-compile-pdf-file (tex-path &optional preamble)
+  "Compile TEX-PATH synchronously with arara PREAMBLE and return the PDF."
+  (let* ((preamble (neo--org-haskell-resolve-arara-preamble preamble))
          (build-directory (file-name-directory tex-path))
          (pdf-path (neo--org-haskell-pdf-output-path preamble build-directory))
          (command (neo--org-haskell-arara-command preamble))
@@ -381,17 +391,20 @@ passed through to `org-export-to-file'."
 
 (defun neo--org-haskell-export-to-pdf
     (&optional async subtreep visible-only body-only ext-plist)
-  "Export the current notebook to PDF through the staged arara build."
+  "Export the current notebook to PDF through the staged arara build.
+With `current-prefix-arg', prompt for the notebook arara profile first."
   (when async
     (user-error
      "neo-org: async LaTeX PDF export is not supported for Haskell notebooks"))
-  (neo--org-haskell-export-latex-file
-   nil
-   subtreep
-   visible-only
-   body-only
-   ext-plist
-   #'neo--org-haskell-compile-pdf-file))
+  (let ((preamble (neo--org-haskell-resolve-arara-preamble)))
+    (neo--org-haskell-export-latex-file
+     nil
+     subtreep
+     visible-only
+     body-only
+     ext-plist
+     (lambda (file)
+       (neo--org-haskell-compile-pdf-file file preamble)))))
 
 (defun neo--org-haskell-around-latex-export-to-pdf
     (orig &optional async subtreep visible-only body-only ext-plist)
@@ -405,10 +418,10 @@ passed through to `org-export-to-file'."
        ext-plist)
     (funcall orig async subtreep visible-only body-only ext-plist)))
 
-(defun neo--org-haskell-read-arara-preamble ()
-  "Prompt for an arara preamble used to build a notebook PDF."
+(defun neo--org-haskell-read-arara-profile ()
+  "Prompt for a notebook arara build profile."
   (completing-read
-   (format "Arara preamble (default %s): "
+   (format "Notebook arara profile (default %s): "
            neo/org-haskell-arara-default-preamble)
    neo--org-haskell-arara-build-preambles
    nil
@@ -416,6 +429,15 @@ passed through to `org-export-to-file'."
    nil
    nil
    neo/org-haskell-arara-default-preamble))
+
+(defun neo--org-haskell-ensure-arara-preamble (preamble)
+  "Return PREAMBLE when it names a notebook PDF-producing arara profile."
+  (setq preamble (or preamble neo/org-haskell-arara-default-preamble))
+  (unless (member preamble neo--org-haskell-arara-build-preambles)
+    (user-error
+     "neo-org: %s is not a PDF-producing notebook arara profile"
+     preamble))
+  preamble)
 
 (defun neo--org-haskell-arara-command (preamble)
   "Return the shell command used to run arara with PREAMBLE."
@@ -438,27 +460,36 @@ passed through to `org-export-to-file'."
 
 ;;;###autoload
 (defun neo/org-haskell-export-pdf (&optional preamble)
-  "Export the current notebook to LaTeX and compile it with arara.
-With prefix argument, prompt for PREAMBLE instead of using the default."
+  "Export the current notebook to PDF with arara PROFILE PREAMBLE.
+With a prefix argument, prompt for the notebook arara profile instead of
+using `neo/org-haskell-arara-default-preamble'."
   (interactive
    (list
     (if current-prefix-arg
-        (neo--org-haskell-read-arara-preamble)
+        (neo--org-haskell-read-arara-profile)
       neo/org-haskell-arara-default-preamble)))
-  (setq preamble (or preamble neo/org-haskell-arara-default-preamble))
-  (unless (member preamble neo--org-haskell-arara-build-preambles)
-    (user-error
-     "neo-org: %s is not a PDF-producing arara preamble"
-     preamble))
+  (setq preamble (neo--org-haskell-resolve-arara-preamble preamble))
   (let* ((tex-path (neo--org-haskell-export-latex-file))
          (build-directory (file-name-directory tex-path)))
     (when (called-interactively-p 'interactive)
       (message
-       "neo-org: building %s with arara preamble %s"
+       "neo-org: building %s with arara profile %s"
        tex-path
        preamble))
     (let ((default-directory build-directory))
       (compile (neo--org-haskell-arara-command preamble)))))
+
+;;;###autoload
+(defun neo/org-haskell-export-online-pdf ()
+  "Export the current notebook to PDF with the arara online profile."
+  (interactive)
+  (neo/org-haskell-export-pdf "online"))
+
+;;;###autoload
+(defun neo/org-haskell-export-print-pdf ()
+  "Export the current notebook to PDF with the arara print profile."
+  (interactive)
+  (neo/org-haskell-export-pdf "print"))
 
 (neo/use-package ox-latex
   :builtin t
