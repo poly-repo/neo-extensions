@@ -125,30 +125,44 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   )
 
 (defun neo--questionable-defaults-enable-key-chords ()
-  "Enable key-chord processing in the current programming buffer."
+  "Enable key-chord processing in the current buffer."
   (setq-local input-method-function #'key-chord-input-method)
   (key-chord-reset-typing-detection))
 
-(defun neo--questionable-defaults-restrict-key-chords-to-prog-mode ()
-  "Restrict key-chord processing to programming buffers, including existing ones."
+(defun neo--questionable-defaults-key-chords-disabled-p ()
+  "Return non-nil when the current buffer should not use key chords."
+  (or (minibufferp)
+      (derived-mode-p 'comint-mode
+                      'eat-mode
+                      'eshell-mode
+                      'term-mode
+                      'vterm-mode)))
+
+(defun neo--questionable-defaults-refresh-key-chords ()
+  "Refresh key-chord processing for the current buffer."
+  (if (neo--questionable-defaults-key-chords-disabled-p)
+      (when (eq input-method-function #'key-chord-input-method)
+        (kill-local-variable 'input-method-function))
+    (neo--questionable-defaults-enable-key-chords)))
+
+(defun neo--questionable-defaults-scope-key-chords ()
+  "Scope key-chord processing away from terminal and minibuffer input."
   (when (eq (default-value 'input-method-function)
             #'key-chord-input-method)
     (set-default 'input-method-function nil))
   (setq key-chord-mode nil)
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
-      (if (derived-mode-p 'prog-mode)
-          (neo--questionable-defaults-enable-key-chords)
-        (when (eq input-method-function #'key-chord-input-method)
-          (kill-local-variable 'input-method-function))))))
+      (neo--questionable-defaults-refresh-key-chords))))
 
 (neo/use-package key-chord
-  :hook (prog-mode . neo--questionable-defaults-enable-key-chords)
+  :hook ((after-change-major-mode . neo--questionable-defaults-refresh-key-chords)
+         (minibuffer-setup . neo--questionable-defaults-refresh-key-chords))
   :config
   (key-chord-define-global "``" 'toggle-menu-bar-mode-from-frame)
   (key-chord-define-global ".." 'comment-or-uncomment-region)
   (key-chord-define-global ",," 'sort-lines)
-  (neo--questionable-defaults-restrict-key-chords-to-prog-mode))
+  (neo--questionable-defaults-scope-key-chords))
 
 (neo/use-package which-key
   :custom
