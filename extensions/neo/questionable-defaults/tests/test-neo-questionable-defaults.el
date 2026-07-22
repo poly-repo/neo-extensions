@@ -53,6 +53,15 @@
               :to-be nil)))
 
   (describe "key-chord activation scope"
+    (it "clears stale key-chord state when the input method is unavailable"
+      (with-temp-buffer
+        (setq-local input-method-function #'key-chord-input-method)
+        (neo--questionable-defaults-enable-key-chords)
+        (expect (local-variable-p 'input-method-function)
+                :to-be nil)
+        (expect input-method-function
+                :not :to-be #'key-chord-input-method)))
+
     (it "enables key chords from editing-mode hooks"
       (let* ((arguments
               (neo--questionable-defaults-test-package-arguments 'key-chord))
@@ -67,7 +76,9 @@
                    . neo--questionable-defaults-refresh-key-chords)
                  hooks)
                 :not :to-be nil)
-        (cl-letf (((symbol-function 'key-chord-reset-typing-detection)
+        (cl-letf (((symbol-function 'key-chord-input-method)
+                   #'ignore)
+                  ((symbol-function 'key-chord-reset-typing-detection)
                    #'ignore))
           (dolist (mode '(emacs-lisp-mode
                           text-mode
@@ -152,6 +163,8 @@
                   (setq-local input-method-function #'key-chord-input-method)))
               (cl-letf (((symbol-function 'buffer-list)
                          (lambda () buffers))
+                        ((symbol-function 'key-chord-input-method)
+                         #'ignore)
                         ((symbol-function 'key-chord-reset-typing-detection)
                          #'ignore))
                 (neo--questionable-defaults-scope-key-chords))
@@ -186,7 +199,33 @@
                    (key-chord-define-global
                     ".." 'comment-or-uncomment-region)
                    (key-chord-define-global ",," 'sort-lines)))
-          (expect (member binding arguments) :not :to-be nil))))))
+          (expect (member binding arguments) :not :to-be nil))))
+
+    (it "scrubs stale key-chord state before `save-buffers-kill-emacs'"
+      (let ((original-default (default-value 'input-method-function))
+            (buffer (generate-new-buffer " *key-chord-exit* "))
+            original-value)
+        (unwind-protect
+            (progn
+              (with-current-buffer buffer
+                (setq-local input-method-function #'key-chord-input-method)
+                (setq original-value input-method-function))
+              (set-default 'input-method-function #'key-chord-input-method)
+              (cl-letf (((symbol-function 'buffer-list)
+                         (lambda () (list buffer))))
+                (neo--questionable-defaults-cleanup-before-exit
+                 (lambda ()
+                   (expect (default-value 'input-method-function) :to-be nil)
+                   (with-current-buffer buffer
+                     (expect (local-variable-p 'input-method-function)
+                             :to-be nil)
+                     (expect input-method-function :to-be nil))))))
+          (set-default 'input-method-function original-default)
+          (with-current-buffer buffer
+            (if original-value
+                (setq-local input-method-function original-value)
+              (kill-local-variable 'input-method-function)))
+          (kill-buffer buffer))))))
 
 (provide 'test-neo-questionable-defaults)
 ;;; test-neo-questionable-defaults.el ends here

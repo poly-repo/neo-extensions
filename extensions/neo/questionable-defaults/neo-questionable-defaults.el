@@ -124,10 +124,27 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
    . visual-wrap-prefix-mode)
   )
 
+(defun neo--questionable-defaults-reset-key-chord-state ()
+  "Reset key-chord typing state when supported by the installed package."
+  (when (fboundp 'key-chord-reset-typing-detection)
+    (key-chord-reset-typing-detection)))
+
+(defun neo--questionable-defaults-key-chord-input-method-available-p ()
+  "Return non-nil when `key-chord-input-method' is callable."
+  (fboundp 'key-chord-input-method))
+
+(defun neo--questionable-defaults-disable-key-chords ()
+  "Disable key-chord processing in the current buffer when it is active."
+  (when (eq input-method-function #'key-chord-input-method)
+    (kill-local-variable 'input-method-function)))
+
 (defun neo--questionable-defaults-enable-key-chords ()
   "Enable key-chord processing in the current buffer."
-  (setq-local input-method-function #'key-chord-input-method)
-  (key-chord-reset-typing-detection))
+  (if (neo--questionable-defaults-key-chord-input-method-available-p)
+      (progn
+        (setq-local input-method-function #'key-chord-input-method)
+        (neo--questionable-defaults-reset-key-chord-state))
+    (neo--questionable-defaults-disable-key-chords)))
 
 (defun neo--questionable-defaults-key-chords-disabled-p ()
   "Return non-nil when the current buffer should not use key chords."
@@ -140,9 +157,9 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
 
 (defun neo--questionable-defaults-refresh-key-chords ()
   "Refresh key-chord processing for the current buffer."
-  (if (neo--questionable-defaults-key-chords-disabled-p)
-      (when (eq input-method-function #'key-chord-input-method)
-        (kill-local-variable 'input-method-function))
+  (if (or (neo--questionable-defaults-key-chords-disabled-p)
+          (not (neo--questionable-defaults-key-chord-input-method-available-p)))
+      (neo--questionable-defaults-disable-key-chords)
     (neo--questionable-defaults-enable-key-chords)))
 
 (defun neo--questionable-defaults-scope-key-chords ()
@@ -154,6 +171,15 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   (dolist (buffer (buffer-list))
     (with-current-buffer buffer
       (neo--questionable-defaults-refresh-key-chords))))
+
+(defun neo--questionable-defaults-cleanup-before-exit (orig-fn &rest args)
+  "Scrub stale key-chord state before running ORIG-FN with ARGS."
+  (neo--questionable-defaults-scope-key-chords)
+  (apply orig-fn args))
+
+(advice-add 'save-buffers-kill-emacs
+            :around
+            #'neo--questionable-defaults-cleanup-before-exit)
 
 (neo/use-package key-chord
   :hook ((after-change-major-mode . neo--questionable-defaults-refresh-key-chords)

@@ -27,10 +27,102 @@
   "Stub Codex toggle-all command for advice wiring tests."
   nil)
 
+(defun codex-cli-stop-all ()
+  "Stub Codex stop-all command for exit-guard tests."
+  nil)
+
 (load-file (expand-file-name "../neo-ai-buddy-codex.el"
                              (file-name-directory (or load-file-name buffer-file-name))))
 
 (describe "neo-ai-buddy-codex"
+  (it "installs the Codex exit guard when the extension loads"
+    (expect (null (advice-member-p #'neo--ai-buddy-codex-exit-guard
+                                   'save-buffers-kill-emacs))
+            :to-be nil)
+    (expect (memq #'codex-cli-stop-all kill-emacs-hook)
+            :to-be nil))
+
+  (it "removes the legacy late kill hook when installing the exit guard"
+    (let ((kill-emacs-hook '(codex-cli-stop-all other-hook))
+          (kill-emacs-query-functions
+           '(neo--ai-buddy-codex-stop-all-before-exit)))
+      (neo--ai-buddy-codex-install-exit-guard)
+      (expect (memq #'codex-cli-stop-all kill-emacs-hook)
+              :to-be nil)
+      (expect (memq #'neo--ai-buddy-codex-stop-all-before-exit
+                    kill-emacs-query-functions)
+              :to-be nil)
+      (expect (null (advice-member-p #'neo--ai-buddy-codex-exit-guard
+                                     'save-buffers-kill-emacs))
+              :to-be nil)))
+
+  (it "allows exit immediately when Codex CLI is not loaded"
+    (let (stopped)
+      (cl-letf (((symbol-function 'featurep)
+                 (lambda (feature)
+                   (not (eq feature 'codex-cli))))
+                ((symbol-function 'codex-cli-stop-all)
+                 (lambda ()
+                   (setq stopped t))))
+        (expect (neo--ai-buddy-codex-stop-all-before-exit)
+                :to-be-truthy)
+        (expect stopped
+                :to-be nil))))
+
+  (it "stops Codex sessions before Emacs exits when Codex CLI is loaded"
+    (let (stop-scope)
+      (cl-letf (((symbol-function 'featurep)
+                 (lambda (feature)
+                   (eq feature 'codex-cli)))
+                ((symbol-function 'codex-cli-stop-all)
+                 (lambda (&optional scope)
+                   (setq stop-scope scope))))
+        (expect (neo--ai-buddy-codex-stop-all-before-exit)
+                :to-be-truthy)
+        (expect stop-scope
+                :to-equal 'all))))
+
+  (it "prompts before exiting when stopping Codex sessions fails"
+    (let (prompt)
+      (cl-letf (((symbol-function 'featurep)
+                 (lambda (feature)
+                   (eq feature 'codex-cli)))
+                ((symbol-function 'codex-cli-stop-all)
+                 (lambda ()
+                   (error "display-line-number")))
+                ((symbol-function 'y-or-n-p)
+                 (lambda (message)
+                   (setq prompt message)
+                   t)))
+        (expect (neo--ai-buddy-codex-stop-all-before-exit)
+                :to-be-truthy)
+        (expect prompt
+                :to-match "failed to stop Codex CLI sessions before exit"))))
+
+  (it "runs the Codex exit guard before `save-buffers-kill-emacs'"
+    (let (events)
+      (cl-letf (((symbol-function 'neo--ai-buddy-codex-stop-all-before-exit)
+                 (lambda ()
+                   (push 'guard events)
+                   t)))
+        (neo--ai-buddy-codex-exit-guard
+         (lambda ()
+           (push 'quit events)
+           'done)))
+      (expect (nreverse events)
+              :to-equal '(guard quit))))
+
+  (it "aborts `save-buffers-kill-emacs' when the Codex exit guard declines"
+    (let (ran)
+      (cl-letf (((symbol-function 'neo--ai-buddy-codex-stop-all-before-exit)
+                 (lambda () nil)))
+        (expect (neo--ai-buddy-codex-exit-guard
+                 (lambda ()
+                   (setq ran t)
+                   'done))
+                :to-be nil))
+      (expect ran :to-be nil)))
+
   (it "installs startup advice when the extension loads"
     (expect (null (advice-member-p #'neo--ai-buddy-codex-run-with-startup-context
                                    'codex-cli-start))

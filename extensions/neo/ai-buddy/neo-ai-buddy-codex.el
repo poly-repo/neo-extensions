@@ -145,6 +145,37 @@ create a session -- a missing session is started outright."
     (user-error
      (message "%s" (cadr err)))))
 
+(defun neo--ai-buddy-codex-stop-all-before-exit ()
+  "Stop Codex CLI sessions before Emacs exits.
+Return non-nil when exit should proceed."
+  (if (not (featurep 'codex-cli))
+      t
+    (condition-case err
+        (progn
+          (codex-cli-stop-all 'all)
+          t)
+      (error
+       (y-or-n-p
+        (format
+         "NEO: failed to stop Codex CLI sessions before exit (%s). Exit anyway? "
+         (error-message-string err)))))))
+
+(defun neo--ai-buddy-codex-exit-guard (orig-fn &rest args)
+  "Run the Codex exit guard before invoking ORIG-FN with ARGS."
+  (when (neo--ai-buddy-codex-stop-all-before-exit)
+    (apply orig-fn args)))
+
+(defun neo--ai-buddy-codex-install-exit-guard ()
+  "Install an early, reload-safe exit guard for Codex CLI sessions."
+  (remove-hook 'kill-emacs-hook #'codex-cli-stop-all)
+  (remove-hook 'kill-emacs-query-functions
+               #'neo--ai-buddy-codex-stop-all-before-exit)
+  (unless (advice-member-p #'neo--ai-buddy-codex-exit-guard
+                           'save-buffers-kill-emacs)
+    (advice-add 'save-buffers-kill-emacs
+                :around
+                #'neo--ai-buddy-codex-exit-guard)))
+
 (defun neo--ai-buddy-codex-register-side-action ()
   "Register Codex CLI as the weak `right' side-window fallback action."
   (neo/register-side-action 'right #'neo--ai-buddy-codex-side-window-action 'weak))
@@ -211,11 +242,7 @@ create a session -- a missing session is started outright."
 	codex-cli-terminal-backend 'vterm
 	codex-cli-side 'right
 	codex-cli-width 90)
-  (setq codex-cli-toggle-all-min-width 60)
-  :config
-  ;; Stop any running Codex CLI sessions on exit rather than leaving their
-  ;; vterm processes (and the codex subprocesses under them) orphaned.
-  (add-hook 'kill-emacs-hook #'codex-cli-stop-all))
+  (setq codex-cli-toggle-all-min-width 60))
 
 ;; Installed unconditionally because the first Codex launch often happens
 ;; through `codex-cli' autoloads, before the `neo/use-package' config block
@@ -228,5 +255,9 @@ create a session -- a missing session is started outright."
 ;; first load, so gating the registration on it would mean the action never
 ;; becomes available until something else loads vterm first.
 (neo--ai-buddy-codex-register-side-action)
+
+;; Installed unconditionally so any exit path (`C-x C-c', menu quit, restart)
+;; stops Codex sessions before Emacs has committed to shutdown.
+(neo--ai-buddy-codex-install-exit-guard)
 
 (provide 'neo-ai-buddy-codex)
