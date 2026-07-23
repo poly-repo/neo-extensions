@@ -36,6 +36,39 @@
       (neo/dispatch-side 'right)
       (expect called :to-equal '(second)))))
 
+(describe "neo-ui-side-windows prefix keys"
+  (it "binds Super-arrow prefixes to the corresponding side maps"
+    (dolist (spec '(("s-<left>" . neo/side-window-left-map)
+                    ("s-<right>" . neo/side-window-right-map)
+                    ("s-<up>" . neo/side-window-top-map)
+                    ("s-<down>" . neo/side-window-bottom-map)))
+      (expect (lookup-key global-map (kbd (car spec)))
+              :to-be (cdr spec))))
+
+  (it "does not bind Shift-arrow prefixes to the side maps"
+    (dolist (spec '(("S-<left>" . neo/side-window-left-map)
+                    ("S-<right>" . neo/side-window-right-map)
+                    ("S-<up>" . neo/side-window-top-map)
+                    ("S-<down>" . neo/side-window-bottom-map)))
+      (expect (lookup-key global-map (kbd (car spec)))
+              :not :to-be (cdr spec))))
+
+  (it "removes a stale Shift-arrow side-map prefix"
+    (let ((global-map (make-sparse-keymap)))
+      (define-key global-map (kbd "S-<left>") 'neo/side-window-left-map)
+      (neo--bind-side-window-prefix "<left>" 'neo/side-window-left-map)
+      (expect (lookup-key global-map (kbd "S-<left>")) :to-be nil)
+      (expect (lookup-key global-map (kbd "s-<left>"))
+              :to-be 'neo/side-window-left-map)))
+
+  (it "preserves an unrelated Shift-arrow binding"
+    (let ((global-map (make-sparse-keymap)))
+      (define-key global-map (kbd "S-<left>") #'ignore)
+      (neo--bind-side-window-prefix "<left>" 'neo/side-window-left-map)
+      (expect (lookup-key global-map (kbd "S-<left>")) :to-be #'ignore)
+      (expect (lookup-key global-map (kbd "s-<left>"))
+              :to-be 'neo/side-window-left-map))))
+
 (describe "neo/toggle-side-window slot release"
   (before-each
     (setq neo/side-actions nil))

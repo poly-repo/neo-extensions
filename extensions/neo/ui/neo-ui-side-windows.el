@@ -122,13 +122,22 @@ once dismissed, and `neo/dispatch-side' runs instead."
   (define-key map (kbd key) command)
   (define-key map (kbd (format "M-%s" key)) command))
 
+(defun neo--bind-side-window-prefix (key map-symbol)
+  "Bind the Super variant of KEY to MAP-SYMBOL.
+Remove the old Shift binding only when it still targets MAP-SYMBOL."
+  (let ((old-key (kbd (format "S-%s" key)))
+        (new-key (kbd (format "s-%s" key))))
+    (when (eq (lookup-key global-map old-key) map-symbol)
+      (define-key global-map old-key nil))
+    (define-key global-map new-key map-symbol)))
+
 (dolist (spec '((left "<left>") (right "<right>") (top "<up>") (bottom "<down>")))
   (let* ((side (car spec))
          (key (cadr spec))
          (map-sym (intern (format "neo/side-window-%s-map" side)))
          (map (make-sparse-keymap)))
     (fset map-sym map)
-    (global-set-key (kbd (format "S-%s" key)) map-sym)
+    (neo--bind-side-window-prefix key map-sym)
     
     (neo/bind-key-variants map key
                            (if (eq side 'bottom)
