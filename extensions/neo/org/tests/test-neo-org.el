@@ -688,6 +688,29 @@
             :to-equal
             "foo = do\n  pure 1\n\nbar = foo\n"))
 
+  (it "starts the notebook repl from the containing Git worktree root"
+    (let ((repl-buffer (generate-new-buffer " *neo-org-ghci*"))
+          (repl-directory nil))
+      (unwind-protect
+          (with-temp-buffer
+            (setq buffer-file-name
+                  "/tmp/omega-worktree/mlody/haskell/experimental/demo.orghs"
+                  default-directory "/home/test/")
+            (cl-letf (((symbol-function 'locate-dominating-file)
+                       (lambda (start marker)
+                         (expect start
+                                 :to-equal
+                                 "/tmp/omega-worktree/mlody/haskell/experimental/")
+                         (expect marker :to-equal ".git")
+                         "/tmp/omega-worktree/"))
+                      ((symbol-function 'neo--haskell-ensure-standalone-repl)
+                       (lambda ()
+                         (setq repl-directory default-directory)
+                         repl-buffer)))
+              (expect (neo--org-haskell-ensure-repl) :to-equal repl-buffer)
+              (expect repl-directory :to-equal "/tmp/omega-worktree/")))
+        (kill-buffer repl-buffer))))
+
   (it "sends the current Haskell block through multiline GHCi input"
     (let ((calls nil)
           (repl-buffer (generate-new-buffer " *neo-org-ghci*")))

@@ -71,6 +71,8 @@
             (repl-buffer (generate-new-buffer " *neo-haskell-ghci*")))
         (unwind-protect
             (progn
+              (with-current-buffer repl-buffer
+                (setq default-directory "/home/mav/"))
               (cl-letf (((symbol-function 'neo--haskell-project-root)
                          (lambda () "/tmp/codelabs/haskell/"))
                         ((symbol-function 'require)
@@ -110,7 +112,76 @@
                               "-ignore-dot-ghci"
                               "-i."
                               "-XGHC2024"))
-                       (list 'configure repl-buffer))))
+                       (list 'configure repl-buffer)))
+              (expect (buffer-local-value 'default-directory repl-buffer)
+                      :to-equal
+                      "/tmp/codelabs/haskell/")
+              (expect
+               (buffer-local-value
+                'neo--haskell-standalone-repl-root
+                repl-buffer)
+               :to-equal
+               "/tmp/codelabs/haskell/"))
+          (kill-buffer repl-buffer))))
+
+    (it "restarts a live ghci when its launch root is unknown or different"
+      (let ((calls nil)
+            (process-live t)
+            (repl-buffer (generate-new-buffer " *neo-haskell-ghci*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer repl-buffer
+                (setq default-directory "/home/mav/"
+                      neo--haskell-standalone-repl-root "/home/mav/"))
+              (cl-letf (((symbol-function 'neo--haskell-project-root)
+                         (lambda () "/tmp/omega-worktree/"))
+                        ((symbol-function 'require)
+                         (lambda (&rest _args) t))
+                        ((symbol-function 'neo--haskell-prepare-buffer-environment)
+                         #'ignore)
+                        ((symbol-function 'neo--haskell-find-ghci-executable)
+                         (lambda () "/opt/ghcup/bin/ghci"))
+                        ((symbol-function 'get-buffer-create)
+                         (lambda (&rest _args) repl-buffer))
+                        ((symbol-function 'comint-check-proc)
+                         (lambda (_buffer) process-live))
+                        ((symbol-function 'get-buffer-process)
+                         (lambda (_buffer) 'old-ghci))
+                        ((symbol-function 'delete-process)
+                         (lambda (process)
+                           (push (list 'delete process) calls)
+                           (setq process-live nil)))
+                        ((symbol-function 'make-comint-in-buffer)
+                         (lambda (&rest _args)
+                           (push (list 'start default-directory) calls)
+                           (setq process-live t)
+                           repl-buffer))
+                        ((symbol-function 'neo--haskell-configure-standalone-repl)
+                         (lambda (buffer)
+                           (push (list 'configure buffer) calls))))
+                (expect (neo--haskell-ensure-standalone-repl)
+                        :to-equal
+                        repl-buffer)
+                (expect (nreverse calls)
+                        :to-equal
+                        (list
+                         '(delete old-ghci)
+                         '(start "/tmp/omega-worktree/")
+                         (list 'configure repl-buffer)))
+                (setq calls nil)
+                (expect (neo--haskell-ensure-standalone-repl)
+                        :to-equal
+                        repl-buffer)
+                (expect calls :to-be nil))
+              (expect (buffer-local-value 'default-directory repl-buffer)
+                      :to-equal
+                      "/tmp/omega-worktree/")
+              (expect
+               (buffer-local-value
+                'neo--haskell-standalone-repl-root
+                repl-buffer)
+               :to-equal
+               "/tmp/omega-worktree/"))
           (kill-buffer repl-buffer)))))
 
   (describe "neo--haskell-find-ghci-executable"
@@ -137,6 +208,45 @@
         (expect (neo--haskell-find-ghci-executable)
                 :to-throw
                 'user-error))))
+
+  (describe "neo--haskell-project-root"
+    (it "does not let an ancestor cabal file escape the nearest Git worktree"
+      (let* ((ancestor (make-temp-file "neo-haskell-ancestor-" t))
+             (worktree (expand-file-name "omega-worktree/" ancestor))
+             (notebook-directory
+              (expand-file-name "mlody/haskell/experimental/" worktree))
+             (default-directory notebook-directory))
+        (unwind-protect
+            (progn
+              (make-directory (expand-file-name ".git/" worktree) t)
+              (make-directory notebook-directory t)
+              (write-region "" nil
+                            (expand-file-name "stray.cabal" ancestor)
+                            nil 'silent)
+              (write-region "" nil
+                            (expand-file-name "cabal.project" worktree)
+                            nil 'silent)
+              (expect (neo--haskell-project-root)
+                      :to-equal
+                      (file-name-as-directory worktree)))
+          (delete-directory ancestor t))))
+
+    (it "still prefers a nearer package root inside the Git worktree"
+      (let* ((worktree (make-temp-file "neo-haskell-worktree-" t))
+             (package (expand-file-name "mlody/haskell/" worktree))
+             (source-directory (expand-file-name "src/" package))
+             (default-directory source-directory))
+        (unwind-protect
+            (progn
+              (make-directory (expand-file-name ".git/" worktree) t)
+              (make-directory source-directory t)
+              (write-region "" nil
+                            (expand-file-name "mlody.cabal" package)
+                            nil 'silent)
+              (expect (neo--haskell-project-root)
+                      :to-equal
+                      (file-name-as-directory package)))
+          (delete-directory worktree t)))))
 
   (describe "neo--haskell-load-buffer-into-standalone-repl"
     (it "tracks the source buffer for standalone repl switching"

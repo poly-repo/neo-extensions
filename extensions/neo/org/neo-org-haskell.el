@@ -3,6 +3,7 @@
 (require 'org)
 (require 'org-element)
 (require 'ob-core)
+(require 'project)
 (require 'subr-x)
 
 (declare-function neo--haskell-ensure-standalone-repl "neo-haskell" ())
@@ -159,12 +160,28 @@ When BLOCKS is nil, collect the current notebook's Haskell blocks first."
       (insert content))
     path))
 
+(defun neo--org-haskell-project-root ()
+  "Return the project root containing the current notebook.
+Prefer the nearest Git root so a notebook in a linked worktree resolves to
+that worktree rather than to the repository's primary checkout."
+  (let* ((source-directory
+         (if buffer-file-name
+              (file-name-directory (expand-file-name buffer-file-name))
+            (file-name-as-directory (expand-file-name default-directory))))
+         (git-root (locate-dominating-file source-directory ".git")))
+    (or (when git-root
+          (file-name-as-directory (expand-file-name git-root)))
+        (when-let* ((project (project-current nil source-directory)))
+          (file-name-as-directory (expand-file-name (project-root project))))
+        source-directory)))
+
 (defun neo--org-haskell-ensure-repl ()
   "Return the notebook REPL buffer, associating it with the current source."
   (unless (fboundp 'neo--haskell-ensure-standalone-repl)
     (user-error "neo-org: enable neo:haskell before using notebook REPL commands"))
-  (let ((source-buffer (current-buffer))
-        (repl-buffer (neo--haskell-ensure-standalone-repl)))
+  (let* ((source-buffer (current-buffer))
+         (default-directory (neo--org-haskell-project-root))
+         (repl-buffer (neo--haskell-ensure-standalone-repl)))
     (with-current-buffer repl-buffer
       (setq neo--haskell-standalone-repl-source-buffer source-buffer))
     repl-buffer))

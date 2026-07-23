@@ -265,20 +265,27 @@ cannot resolve the bare executable name."
         (add-hook 'before-save-hook #'haskell-mode-stylish-buffer nil :local))
     (message "neo-haskell: stylish-haskell not found; skipping format-on-save")))
 
-(defun neo--haskell-locate-dominating-directory (start predicate)
+(defun neo--haskell-locate-dominating-directory (start predicate &optional boundary)
   "Walk upward from START until PREDICATE returns non-nil for a directory.
 
 This exists because Haskell project roots are often identified by file
 patterns such as `*.cabal', whereas `locate-dominating-file' only
-matches a single literal file or directory name."
+matches a single literal file or directory name.  When BOUNDARY is
+non-nil, inspect it but do not search its ancestors."
   (let ((dir (file-name-as-directory (expand-file-name start)))
+        (boundary (and boundary
+                       (file-name-as-directory (expand-file-name boundary))))
         parent
         found)
     (while (and dir (not found))
       (when (funcall predicate dir)
         (setq found dir))
       (setq parent (file-name-directory (directory-file-name dir)))
-      (setq dir (unless (or (null parent) (equal dir parent)) parent)))
+      (setq dir
+            (unless (or (null parent)
+                        (equal dir parent)
+                        (and boundary (equal dir boundary)))
+              parent)))
     found))
 
 (defun neo--haskell-project-root ()
@@ -286,19 +293,31 @@ matches a single literal file or directory name."
 
 HLS behaves best when launched from the package or cabal project that
 owns the file, not from an arbitrarily large VC root. Prefer explicit
-Haskell markers first, then fall back to `project.el' / `.git'."
-  (or (locate-dominating-file default-directory "hie.yaml")
-      (neo--haskell-locate-dominating-directory
-       default-directory
-       (lambda (dir)
-         (directory-files dir nil "\\.cabal\\'" t)))
-      (locate-dominating-file default-directory "cabal.project")
-      (locate-dominating-file default-directory "stack.yaml")
-      (when-let* ((project (and (fboundp 'project-current)
-                               (project-current nil))))
-        (expand-file-name (project-root project)))
-      (locate-dominating-file default-directory ".git")
-      default-directory))
+Haskell markers first, then fall back to `.git' / `project.el'.  Marker
+searches stop at the nearest Git root so unrelated files above a linked
+worktree cannot capture its REPL or language-server processes."
+  (let* ((start (file-name-as-directory (expand-file-name default-directory)))
+         (git-root (locate-dominating-file start ".git"))
+         (marker-root
+          (lambda (filename)
+            (neo--haskell-locate-dominating-directory
+             start
+             (lambda (dir)
+               (file-exists-p (expand-file-name filename dir)))
+             git-root))))
+    (or (funcall marker-root "hie.yaml")
+        (neo--haskell-locate-dominating-directory
+         start
+         (lambda (dir)
+           (directory-files dir nil "\\.cabal\\'" t))
+         git-root)
+        (funcall marker-root "cabal.project")
+        (funcall marker-root "stack.yaml")
+        git-root
+        (when-let* ((project (and (fboundp 'project-current)
+                                  (project-current nil))))
+          (expand-file-name (project-root project)))
+        start)))
 
 (defun neo--haskell-standalone-workspace-p ()
   "Return non-nil when the current buffer lives in a direct-file workspace.
@@ -323,6 +342,9 @@ for one-off lab files."
 
 (defvar-local neo--haskell-standalone-repl-source-buffer nil
   "Most recent source buffer associated with a standalone GHCi REPL.")
+
+(defvar-local neo--haskell-standalone-repl-root nil
+  "Workspace root used to launch this standalone GHCi process.")
 
 (defvar neo--haskell-eglot-quickfix-map
   (let ((map (make-sparse-keymap)))
@@ -423,11 +445,17 @@ for one-off lab files."
   "Start or reuse a plain `ghci' buffer for the current workspace."
   (require 'comint)
   (neo--haskell-prepare-buffer-environment)
-  (let* ((default-directory (neo--haskell-project-root))
+  (let* ((root (file-name-as-directory (neo--haskell-project-root)))
+         (default-directory root)
          (buffer-name (neo--haskell-standalone-repl-buffer-name))
          (buffer (get-buffer-create buffer-name))
          (process-name (concat "neo-haskell-ghci:" buffer-name))
          (ghci (neo--haskell-find-ghci-executable)))
+    (with-current-buffer buffer
+      (setq default-directory root)
+      (when (and (comint-check-proc buffer)
+                 (not (equal neo--haskell-standalone-repl-root root)))
+        (delete-process (get-buffer-process buffer))))
     (unless (comint-check-proc buffer)
       (apply #'make-comint-in-buffer
              process-name
@@ -435,7 +463,9 @@ for one-off lab files."
              ghci
              nil
              '("-ignore-dot-ghci" "-i." "-XGHC2024"))
-      (neo--haskell-configure-standalone-repl buffer))
+      (neo--haskell-configure-standalone-repl buffer)
+      (with-current-buffer buffer
+        (setq neo--haskell-standalone-repl-root root)))
     buffer))
 
 (defun neo--haskell-load-buffer-into-standalone-repl ()
