@@ -106,7 +106,10 @@ When SUBDIRECTORY is non-nil, resolve it under the shared notebook temp root."
 
 (defun neo--org-haskell-collect-document-blocks ()
   "Return tangled Haskell source blocks in document order.
-Blocks marked with `:tangle no' are reserved for manual evaluation."
+Blocks marked with `:tangle no' are reserved for manual evaluation.
+Refresh Org's element cache before parsing so externally edited blocks are
+visible."
+  (org-element-cache-reset)
   (let (blocks)
     (org-element-map (org-element-parse-buffer) 'src-block
       (lambda (src-block)

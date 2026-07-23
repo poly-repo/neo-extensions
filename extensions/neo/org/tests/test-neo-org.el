@@ -712,6 +712,26 @@
                 '("one = 1"
                   "two = one + 1")))))
 
+  (it "resets the Org element cache before collecting notebook blocks"
+    (with-temp-buffer
+      (org-mode)
+      (insert "#+begin_src haskell\nanswer = 42\n#+end_src\n")
+      (let ((cache-reset-p nil)
+            (cache-reset-count 0)
+            (original-cache-reset (symbol-function 'org-element-cache-reset))
+            (original-parse-buffer (symbol-function 'org-element-parse-buffer)))
+        (cl-letf (((symbol-function 'org-element-cache-reset)
+                   (lambda (&rest args)
+                     (setq cache-reset-p t)
+                     (cl-incf cache-reset-count)
+                     (apply original-cache-reset args)))
+                  ((symbol-function 'org-element-parse-buffer)
+                   (lambda (&rest args)
+                     (expect cache-reset-p :to-be-truthy)
+                     (apply original-parse-buffer args))))
+          (neo--org-haskell-collect-document-blocks))
+        (expect cache-reset-count :to-equal 1))))
+
   (it "drops indentation common to every non-blank line in a block body"
     (expect (neo--org-haskell-normalize-block-body
              "  foo = do\n    pure 1\n\n  bar = foo\n")
