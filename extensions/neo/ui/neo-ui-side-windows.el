@@ -135,18 +135,20 @@ Remove the old Shift binding only when it still targets MAP-SYMBOL."
   (let* ((side (car spec))
          (key (cadr spec))
          (map-sym (intern (format "neo/side-window-%s-map" side)))
-         (map (make-sparse-keymap)))
+         (map (make-sparse-keymap))
+         (toggle-command
+          (if (eq side 'bottom)
+              (lambda ()
+                (interactive)
+                (if (fboundp 'neo/toggle-eshell)
+                    (neo/toggle-eshell)
+                  (neo/toggle-side-window side)))
+            (lambda () (interactive) (neo/toggle-side-window side)))))
     (fset map-sym map)
     (neo--bind-side-window-prefix key map-sym)
-    
-    (neo/bind-key-variants map key
-                           (if (eq side 'bottom)
-                               (lambda ()
-                                 (interactive)
-                                 (if (fboundp 'neo/toggle-eshell)
-                                     (neo/toggle-eshell)
-                                   (neo/toggle-side-window side)))
-                             (lambda () (interactive) (neo/toggle-side-window side))))
+
+    (neo/bind-key-variants map key toggle-command)
+    (define-key map (kbd (format "s-%s" key)) toggle-command)
     (neo/bind-key-variants map "b"
                            (lambda () (interactive) (neo/bury-side-window-buffer side)))
     (neo/bind-key-variants map "k"

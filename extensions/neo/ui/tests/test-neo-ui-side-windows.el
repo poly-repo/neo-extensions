@@ -45,6 +45,13 @@
       (expect (lookup-key global-map (kbd (car spec)))
               :to-be (cdr spec))))
 
+  (it "accepts a held Super modifier for the second arrow"
+    (dolist (key '("<left>" "<right>" "<up>" "<down>"))
+      (expect (lookup-key global-map
+                          (kbd (format "s-%s s-%s" key key)))
+              :to-be (lookup-key global-map
+                                 (kbd (format "s-%s %s" key key))))))
+
   (it "does not bind Shift-arrow prefixes to the side maps"
     (dolist (spec '(("S-<left>" . neo/side-window-left-map)
                     ("S-<right>" . neo/side-window-right-map)
