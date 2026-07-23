@@ -3,6 +3,10 @@
 (require 'cl-lib)
 (require 'subr-x)
 
+(declare-function neo--org-haskell-around-babel-execute
+                  "neo-org-haskell"
+                  (original body params))
+
 (defgroup neo-org nil
   "Customization options for the org extension."
   :group 'neo-extensions)
@@ -114,6 +118,7 @@ Relative paths are resolved under `neo/org-directory'."
 
 (defcustom neo/org-babel-languages
   '((emacs-lisp . t)
+    (haskell . t)
     (python . t)
     (shell . t)
     (C . t))
@@ -394,6 +399,18 @@ If PATH is relative, resolve it under BASE-DIRECTORY."
   :if (neo--org-crypt-enabled-p)
   :config
   (neo--org-configure-crypt))
+
+(neo/use-package ob-haskell
+  :builtin t
+  :after org
+  :config
+  (unless (advice-member-p
+           #'neo--org-haskell-around-babel-execute
+           #'org-babel-execute:haskell)
+    (advice-add
+     #'org-babel-execute:haskell
+     :around
+     #'neo--org-haskell-around-babel-execute)))
 
 (neo/use-package ob-python
   :builtin t

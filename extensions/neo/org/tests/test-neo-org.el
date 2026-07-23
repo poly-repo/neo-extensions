@@ -81,6 +81,36 @@
               :to-equal
               `(file+headline ,(expand-file-name "~/notes/capture.org") "Inbox"))))
 
+  (it "enables Haskell source blocks for Org Babel dispatch"
+    (let ((inhibit-message t)
+          (org-confirm-babel-evaluate nil)
+          dispatched-body)
+      (spy-on 'org-babel-do-load-languages)
+      (cl-letf (((symbol-function 'org-babel-execute:haskell)
+                 (lambda (body _params)
+                   (setq dispatched-body body)
+                   "dispatched")))
+        (neo--org-configure-babel)
+        (expect 'org-babel-do-load-languages
+                :to-have-been-called-with
+                'org-babel-load-languages
+                neo/org-babel-languages)
+        (expect (alist-get 'haskell neo/org-babel-languages)
+                :to-be-truthy)
+        (with-temp-buffer
+          (org-mode)
+          (insert "#+begin_src haskell :results silent\n"
+                  "main = putStrLn \"ok\"\n"
+                  "#+end_src\n")
+          (goto-char (point-min))
+          (forward-line 1)
+          (expect (org-babel-execute-src-block)
+                  :to-equal
+                  "dispatched")
+          (expect dispatched-body
+                  :to-equal
+                  "main = putStrLn \"ok\"")))))
+
   (it "overrides Org's default <h shorthand with a Haskell source block"
     (require 'org-tempo)
     (let ((org-structure-template-alist (copy-tree org-structure-template-alist))
@@ -687,6 +717,58 @@
              "  foo = do\n    pure 1\n\n  bar = foo\n")
             :to-equal
             "foo = do\n  pure 1\n\nbar = foo\n"))
+
+  (it "executes a manual Babel block with notebook context and one main"
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/notebooks/manual.orghs")
+      (neo/org-haskell-notebook-mode)
+      (insert "#+begin_src haskell\n"
+              "module Main where\n"
+              "#+end_src\n\n"
+              "#+begin_src haskell\n"
+              "answer = 42\n"
+              "#+end_src\n\n"
+              "#+begin_src haskell\n"
+              "main = print \"wrong\"\n"
+              "#+end_src\n\n"
+              "#+begin_src haskell :results output :tangle no\n"
+              "main :: IO ()\n"
+              "main = print answer\n"
+              "#+end_src\n")
+      (search-backward "main = print answer")
+      (let ((params '((:tangle . "no")
+                      (:compile . "no")
+                      (:result-params . ("output" "replace"))))
+            executed-body
+            executed-params)
+        (neo--org-haskell-around-babel-execute
+         (lambda (body received-params)
+           (setq executed-body body
+                 executed-params received-params)
+           "ok")
+         "main :: IO ()\nmain = print answer"
+         params)
+        (expect executed-body :to-match "module Main where")
+        (expect executed-body :to-match "answer = 42")
+        (expect executed-body :not :to-match "main = print \\\"wrong\\\"")
+        (expect executed-body :to-match "main = print answer")
+        (expect (alist-get :compile executed-params) :to-equal "yes")
+        (expect (alist-get :result-params executed-params)
+                :to-equal
+                '("output" "replace"))
+        (expect (alist-get :compile params) :to-equal "no"))))
+
+  (it "preserves standard Haskell Babel execution outside notebook mode"
+    (with-temp-buffer
+      (org-mode)
+      (let* ((params '((:tangle . "no") (:compile . "no")))
+             (result
+              (neo--org-haskell-around-babel-execute
+               (lambda (body received-params)
+                 (list body received-params))
+               "main = pure ()"
+               params)))
+        (expect result :to-equal (list "main = pure ()" params)))))
 
   (it "starts the notebook repl from the containing Git worktree root"
     (let ((repl-buffer (generate-new-buffer " *neo-org-ghci*"))

@@ -147,6 +147,45 @@ Blocks marked with `:tangle no' are reserved for manual evaluation."
   (string-match-p neo--org-haskell-main-function-rx
                   (neo--org-haskell-render-document blocks)))
 
+(defun neo--org-haskell-block-defines-main-p (block)
+  "Return non-nil when BLOCK contains a top-level `main' declaration."
+  (string-match-p
+   neo--org-haskell-main-function-rx
+   (neo--org-haskell-normalize-block-body (plist-get block :body))))
+
+(defun neo--org-haskell-render-manual-babel-body (body)
+  "Render notebook context followed by manual Babel BODY.
+Other blocks that define `main' are omitted so BODY may provide its own entry
+point."
+  (let (context-blocks)
+    (dolist (block (neo--org-haskell-collect-document-blocks))
+      (unless (neo--org-haskell-block-defines-main-p block)
+        (push block context-blocks)))
+    (let ((block (neo--org-haskell-current-block-info))
+          (source (neo--org-haskell-source-name)))
+      (concat
+       (neo--org-haskell-render-document (nreverse context-blocks))
+       "\n"
+       (format "{-# LINE %d %S #-}\n" (plist-get block :line) source)
+       (neo--org-haskell-normalize-block-body body)
+       "\n"))))
+
+(defun neo--org-haskell-around-babel-execute (original body params)
+  "Run manual notebook BODY with context around Babel executor ORIGINAL.
+PARAMS are the processed Babel header arguments.  Outside a Haskell notebook,
+or for an ordinary tangled block, preserve the standard `ob-haskell'
+behavior."
+  (if (and (derived-mode-p 'neo/org-haskell-notebook-mode)
+           (string-equal-ignore-case
+            (format "%s" (alist-get :tangle params))
+            "no"))
+      (let ((compile-params (copy-tree params)))
+        (setf (alist-get :compile compile-params) "yes")
+        (funcall original
+                 (neo--org-haskell-render-manual-babel-body body)
+                 compile-params))
+    (funcall original body params)))
+
 (defun neo--org-haskell-write-document-file (&optional blocks)
   "Write BLOCKS to the generated notebook `.hs' file.
 When BLOCKS is nil, collect the current notebook's Haskell blocks first."
