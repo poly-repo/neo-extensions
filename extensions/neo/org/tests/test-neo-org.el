@@ -30,25 +30,27 @@
     (insert content))
   path)
 
-(defun neo--test-org-prepare-score-fixture (root)
-  "Create the minimal shared score fixture under ROOT."
-  (let ((score-root (expand-file-name neo--org-haskell-score-relative-directory root)))
-    (make-directory (expand-file-name ".rules" score-root) t)
-    (make-directory (expand-file-name "images" score-root) t)
-    (make-directory (expand-file-name "chapters" score-root) t)
+(defun neo--test-org-prepare-mlody-latex-fixture (root)
+  "Create minimal shared MLody LaTeX support under ROOT."
+  (let ((style-root
+         (expand-file-name neo--org-haskell-mlody-style-relative-directory root))
+        (book-root
+         (expand-file-name neo--org-haskell-mlody-book-relative-directory root)))
+    (make-directory style-root t)
+    (make-directory (expand-file-name "assets/images" book-root) t)
     (neo--test-org-write-file
-     (expand-file-name "preamble.tex" score-root)
-     "% test preamble\n")
+     (expand-file-name "mlody-style.sty" style-root)
+     "% test shared style\n")
     (neo--test-org-write-file
-     (expand-file-name "theme.tex" score-root)
-     "% test theme\n")
+     (expand-file-name "mlody-code.sty" style-root)
+     "% test shared code support\n")
     (neo--test-org-write-file
-     (expand-file-name "main.bib" score-root)
-     "")
+     (expand-file-name "mlody-book.cls" book-root)
+     "% test book class\n")
     (neo--test-org-write-file
-     (expand-file-name ".rules/mlodylualatex.yaml" score-root)
+     (expand-file-name neo--org-haskell-arara-rule-relative-path root)
      "!config\n")
-    score-root))
+    book-root))
 
 (load-file (expand-file-name "../neo-org.el"
                              (file-name-directory (or load-file-name buffer-file-name))))
@@ -174,22 +176,36 @@
         (expect (assq 'default face-remapping-alist) :to-be nil)
         (expect neo--org-fixed-pitch-cookies :to-be nil))))
 
-  (it "registers the Kaobook LaTeX class for Haskell notebooks"
+  (it "registers the shared MLody book class for Haskell notebooks"
     (let ((org-latex-classes '(("article" "\\documentclass{article}"))))
       (neo--org-haskell-register-latex-class)
       (let ((entry (assoc neo--org-haskell-latex-class-name org-latex-classes)))
         (expect entry :not :to-be nil)
         (expect (cadr entry) :to-equal neo--org-haskell-latex-documentclass)
-        (expect (cadr entry)
-                :to-match
-                (regexp-quote neo--org-haskell-latex-preamble-input))
+        (expect (string-match-p
+                 (regexp-quote "]{mlody-book}")
+                 (cadr entry))
+                :not :to-be nil)
         (expect (cadr entry)
                 :to-match
                 (regexp-quote neo--org-haskell-latex-top-section-command))
+        (expect (cadr entry) :not :to-match "kaobook")
+        (expect (cadr entry) :not :to-match "the-score")
         (expect (cadr entry)
                 :to-match
                 "\\\\newminted\\[neoNotebookHaskellCode\\]{haskell}")
         (expect (caddr entry) :to-equal '("\\section{%s}" . "\\section*{%s}")))))
+
+  (it "delegates print and online mode selection to mlody-book"
+    (expect neo--org-haskell-latex-documentclass
+            :to-match
+            (regexp-quote "mode=auto"))
+    (expect neo--org-haskell-latex-documentclass
+            :to-match
+            (regexp-quote "chapter-banners=false"))
+    (expect neo--org-haskell-latex-documentclass
+            :not :to-match
+            (regexp-quote "\\PassOptionsToClass")))
 
   (it "uses the normal section hierarchy without a chapter-zero prefix"
     (expect neo--org-haskell-latex-top-section-command
@@ -301,7 +317,7 @@
       (expect (cadr (assq 'mlody org-latex-minted-langs))
               :to-equal
               "mlody")
-      (expect (member #'neo--org-haskell-prefix-final-output
+      (expect (member #'neo--org-haskell-structure-final-output
                       org-export-filter-final-output-functions)
               :not :to-be nil)
       (expect (member #'neo--org-haskell-style-src-block
@@ -309,16 +325,8 @@
               :not :to-be nil)
       (expect (local-variable-p 'org-latex-default-class) :to-be-truthy)))
 
-  (it "prefixes LaTeX exports with build-mode detection"
-    (expect
-     (neo--org-haskell-prefix-final-output "\\documentclass{article}\n" 'latex nil)
-     :to-match
-     (concat "\\`"
-             (regexp-quote neo--org-haskell-latex-build-mode-prefix)
-             (regexp-quote "\\documentclass{article}\n"))))
-
   (it "leaves non-LaTeX exports unchanged"
-    (expect (neo--org-haskell-prefix-final-output "plain text" 'ascii nil)
+    (expect (neo--org-haskell-structure-final-output "plain text" 'ascii nil)
             :to-equal
             "plain text"))
 
@@ -330,16 +338,14 @@
       (neo--org-haskell-configure-export)
       (expect org-export-filter-final-output-functions :not :to-contain t)
       (let ((latex (org-export-as 'latex nil nil nil nil)))
-        (expect (string-prefix-p neo--org-haskell-latex-build-mode-prefix latex)
-                :to-be-truthy)
-        (expect (string-match-p
-                 (regexp-quote neo--org-haskell-latex-preamble-input)
-                 latex)
+        (expect (string-match-p (regexp-quote "]{mlody-book}") latex)
                 :not :to-be nil)
+        (expect latex :not :to-match "kaobook")
+        (expect latex :not :to-match "mlody/docs/the-score")
         (expect latex :to-match "\\\\begin{document}\n\n\\\\frontmatter\n")
         (expect latex :to-match "\\\\tableofcontents\n\n\\\\mainmatter\n"))))
 
-  (it "exports notebook footnotes as score-style sidenotes"
+  (it "exports notebook footnotes as MLody-style sidenotes"
     (with-temp-buffer
       (insert "#+title: Demo\n\n* Section\nFootnote[fn:1]\n\n[fn:1] Side note text.\n")
       (neo/org-haskell-notebook-mode)
@@ -440,19 +446,21 @@
       (expect (length latex-lines) :to-equal 2)
       (expect (car latex-lines) :to-equal (cadr latex-lines))
       (expect (car latex-lines) :to-match "jobname: .*online")
-      (expect (car latex-lines) :to-match "pythonpath: \\.latexminted")
+      (expect (car latex-lines) :to-match "texinputs: \"\\.latex//:\"")
+      (expect (car latex-lines) :to-match "pythonpath: \"\\.latexminted\"")
+      (expect (car latex-lines) :to-match "texmfcache: \"\\.texmf-cache\"")
       (expect (car latex-lines) :to-match "draft: true")
       (expect profile :not :to-match "biber")
       (expect profile :not :to-match "makeindex")))
 
-  (it "stages notebook LaTeX exports for arara without hardwired score jobnames"
+  (it "stages shared MLody LaTeX support without Score content"
     (let ((repo-root (make-temp-file "neo-org-haskell-repo" t))
           (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
       (unwind-protect
           (with-temp-buffer
             (let ((notebook-file (expand-file-name "notes/demo.org" repo-root))
                   (neo/org-haskell-temporary-directory temp-dir))
-              (neo--test-org-prepare-score-fixture repo-root)
+              (neo--test-org-prepare-mlody-latex-fixture repo-root)
               (setq default-directory repo-root
                     buffer-file-name notebook-file)
               (insert "#+title: Demo\n\nHello, notebook export.\n")
@@ -483,18 +491,19 @@
                                   (regexp-quote
                                    (file-name-as-directory
                                     (expand-file-name temp-dir)))))
-                  (expect (file-symlink-p (expand-file-name "images" build-directory))
-                          :not :to-be nil)
-                  (expect (file-symlink-p (expand-file-name "chapters" build-directory))
+                  (expect (file-symlink-p
+                           (expand-file-name
+                            (file-name-concat
+                             neo--org-haskell-latex-support-relative-directory
+                             "mlody")
+                            build-directory))
                           :not :to-be nil)
                   (expect (file-symlink-p
                            (expand-file-name
-                            neo--org-haskell-score-preamble-relative-path
+                            (file-name-concat
+                             neo--org-haskell-latex-support-relative-directory
+                             "mlody-book")
                             build-directory))
-                          :not :to-be nil)
-                  (expect (file-symlink-p (expand-file-name "theme.tex" build-directory))
-                          :not :to-be nil)
-                  (expect (file-symlink-p (expand-file-name "main.bib" build-directory))
                           :not :to-be nil)
                   (expect (file-symlink-p
                            (expand-file-name ".rules/mlodylualatex.yaml" build-directory))
@@ -506,9 +515,21 @@
                           :not :to-be nil)
                   (expect config :to-match "demo-print")
                   (expect config :to-match "demo-online")
-                  (expect config :to-match "pythonpath: \\.latexminted")
-                  (expect config :not :to-match "the-score-print")
-                  (expect config :not :to-match "the-score-online")))))
+                  (expect config :to-match "texinputs: \"\\.latex//:\"")
+                  (expect config :to-match "pythonpath: \"\\.latexminted\"")
+                  (expect config :to-match "texmfcache: \"\\.texmf-cache\"")
+                  (expect (file-directory-p
+                           (expand-file-name
+                            neo--org-haskell-texmf-cache-relative-directory
+                            build-directory))
+                          :to-be t)
+                  (expect (file-exists-p
+                           (expand-file-name "mlody/docs/the-score" build-directory))
+                          :to-be nil)
+                  (expect (file-exists-p (expand-file-name "chapters" build-directory))
+                          :to-be nil)
+                  (expect (file-exists-p (expand-file-name "main.bib" build-directory))
+                          :to-be nil)))))
         (delete-directory repo-root t)
         (delete-directory temp-dir t))))
 
@@ -520,7 +541,7 @@
             (let ((notebook-file (expand-file-name "notes/demo.org" repo-root))
                   (neo/org-haskell-temporary-directory temp-dir)
                   compile-call)
-              (neo--test-org-prepare-score-fixture repo-root)
+              (neo--test-org-prepare-mlody-latex-fixture repo-root)
               (setq default-directory repo-root
                     buffer-file-name notebook-file)
               (insert "#+title: Demo\n\nHello, notebook export.\n")
@@ -563,7 +584,7 @@
                   (neo/org-haskell-temporary-directory temp-dir)
                   compile-call
                   selected-profile)
-              (neo--test-org-prepare-score-fixture repo-root)
+              (neo--test-org-prepare-mlody-latex-fixture repo-root)
               (setq default-directory repo-root
                     buffer-file-name notebook-file)
               (insert "#+title: Demo\n\nHello, notebook export.\n")
@@ -617,7 +638,7 @@
                   (neo/org-haskell-temporary-directory temp-dir)
                   export-call
                   compiled-tex)
-              (neo--test-org-prepare-score-fixture repo-root)
+              (neo--test-org-prepare-mlody-latex-fixture repo-root)
               (setq default-directory repo-root
                     buffer-file-name notebook-file)
               (insert "#+title: Demo\n\nHello, notebook export.\n")
@@ -656,7 +677,7 @@
                   (neo/org-haskell-temporary-directory temp-dir)
                   selected-profile
                   compiled-call)
-              (neo--test-org-prepare-score-fixture repo-root)
+              (neo--test-org-prepare-mlody-latex-fixture repo-root)
               (setq default-directory repo-root
                     buffer-file-name notebook-file)
               (insert "#+title: Demo\n\nHello, notebook export.\n")

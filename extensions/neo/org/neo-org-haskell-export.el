@@ -5,37 +5,14 @@
 (defconst neo--org-haskell-latex-class-name "neo-haskell-notebook"
   "Org LaTeX class name used for Haskell notebook exports.")
 
-(defconst neo--org-haskell-score-relative-directory "mlody/docs/the-score"
-  "Repository-relative score directory reused by notebook exports.")
-
-(defconst neo--org-haskell-score-preamble-relative-path
-  (concat neo--org-haskell-score-relative-directory "/preamble.tex")
-  "Repository-relative preamble path reused by notebook exports.")
-
-(defconst neo--org-haskell-latex-build-mode-prefix
-  "% --- Build-mode detection (print vs online) ---
-% jobname ending in \"-print\"  → twoside layout with blank recto/verso pages
-% jobname ending in \"-online\" → oneside layout, no blank pages
-% arara draft profiles set MLODY_DRAFT=1 → chapter banner images are hidden, spacing kept
-\\directlua{
-  if string.find(tex.jobname, \"online\") then
-    tex.sprint(\"\\\\PassOptionsToClass{oneside}{kaobook}\")
-  else
-    tex.sprint(\"\\\\PassOptionsToClass{twoside,open=right}{kaobook}\")
-  end
-}
-
-"
-  "Comment and Lua preamble inserted at the start of notebook LaTeX exports.")
-
-(defconst neo--org-haskell-latex-preamble-input
-  (format "\\input{%s}" neo--org-haskell-score-preamble-relative-path)
-  "Preamble input included by Haskell notebook LaTeX exports.")
+(defconst neo--org-haskell-mlody-book-relative-path
+  "common/latex/mlody-book/mlody-book.cls"
+  "Repository-relative path used to locate the shared MLody book class.")
 
 (defconst neo--org-haskell-latex-top-section-command
   "
 % Notebook headings use the standard section hierarchy.
-% Kaobook is chapter-oriented, so remove the leading chapter 0 prefix.
+% The book class is chapter-oriented, so remove the leading chapter 0 prefix.
 \\renewcommand{\\thesection}{\\arabic{section}}
 \\renewcommand{\\thesubsection}{\\thesection.\\arabic{subsection}}
 \\renewcommand{\\thesubsubsection}{\\thesubsection.\\arabic{subsubsection}}
@@ -50,7 +27,7 @@
 
 (defconst neo--org-haskell-latex-minted-style-setup
   "
-% Notebook-local code block styling aligned with the-score's palette.
+% Notebook-local code block styling aligned with the shared MLody palette.
 \\colorlet{neoNotebookCodeBg}{neogrey!6!white}
 \\colorlet{neoNotebookHaskellBg}{neoblue!7!white}
 \\colorlet{neoNotebookMlodyBg}{neoorange!9!white}
@@ -67,23 +44,20 @@
   bgcolor=neoNotebookMlodyBg
 }
 "
-  "Notebook-local minted wrappers layered on top of the-score's preamble.")
+  "Notebook-local minted wrappers layered on top of `mlody-book'.")
 
 (defconst neo--org-haskell-latex-documentclass
   (concat
    "\\documentclass[
-    fontsize=10pt,        % Standard for this layout
-    secnumdepth=2,        % Numbering depth
-    bem=section,          % Start the \"Block Enumeration Matrix\" (if needed)
+    mode=auto,
+    chapter-banners=false,
+    fontsize=10pt,
+    secnumdepth=2,
+    bem=section,
     numbers=noenddot,
-   %chapterentrydots=true, % Uncomment to output dots from the chapter name to the page number in the table of contents
-% draft mode is a mess
-%    draft,                      % ...or not
-]{kaobook}
+]{mlody-book}
 
 "
-   neo--org-haskell-latex-preamble-input
-   "\n"
    neo--org-haskell-latex-top-section-command
    "\n"
    neo--org-haskell-latex-minted-style-setup)
@@ -108,14 +82,14 @@
           neo--org-haskell-latex-class-sectioning))
 
 (defun neo--org-haskell-register-latex-class ()
-  "Register the Kaobook-based LaTeX class for Haskell notebook exports."
+  "Register the shared MLody book class for Haskell notebook exports."
   (setq org-latex-classes
         (cons (neo--org-haskell-latex-class-entry)
               (assoc-delete-all neo--org-haskell-latex-class-name
                                 org-latex-classes))))
 
-(defun neo--org-haskell-apply-score-book-structure (output)
-  "Insert the-score-like frontmatter and mainmatter commands into OUTPUT."
+(defun neo--org-haskell-apply-book-structure (output)
+  "Insert notebook frontmatter and mainmatter commands into OUTPUT."
   (let ((result output))
     (unless (string-match-p "\\\\frontmatter\\b" result)
       (setq result
@@ -143,13 +117,10 @@
                result nil nil)))))
     result))
 
-(defun neo--org-haskell-prefix-final-output (output backend _info)
-  "Prefix LaTeX OUTPUT with notebook build-mode boilerplate for BACKEND."
+(defun neo--org-haskell-structure-final-output (output backend _info)
+  "Apply notebook book structure to LaTeX OUTPUT for BACKEND."
   (if (org-export-derived-backend-p backend 'latex)
-      (neo--org-haskell-apply-score-book-structure
-       (if (string-prefix-p neo--org-haskell-latex-build-mode-prefix output)
-           output
-         (concat neo--org-haskell-latex-build-mode-prefix output)))
+      (neo--org-haskell-apply-book-structure output)
     output))
 
 (defun neo--org-haskell-configure-minted-languages ()
@@ -195,7 +166,7 @@
   (setq-local org-latex-src-block-backend 'minted)
   ;; Org turns headings deeper than `org-export-headline-levels' into
   ;; enumerate/itemize entries.  Keep every level supported by our LaTeX
-  ;; class as a real heading so the-score's KOMA fonts and secnumdepth apply.
+  ;; class as a real heading so its KOMA fonts and secnumdepth apply.
   (setq-local org-export-headline-levels
               (length neo--org-haskell-latex-class-sectioning))
   (setq-local org-latex-default-footnote-command
@@ -210,7 +181,7 @@
               (copy-sequence org-export-filter-final-output-functions))
   (setq-local org-export-filter-src-block-functions
               (copy-sequence org-export-filter-src-block-functions))
-  (cl-pushnew #'neo--org-haskell-prefix-final-output
+  (cl-pushnew #'neo--org-haskell-structure-final-output
               org-export-filter-final-output-functions)
   (cl-pushnew #'neo--org-haskell-style-src-block
               org-export-filter-src-block-functions))

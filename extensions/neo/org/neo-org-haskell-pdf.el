@@ -35,8 +35,17 @@
 (defconst neo--org-haskell-latexminted-support-relative-directory ".latexminted"
   "Build-relative directory that exposes repo-local latexminted helpers.")
 
+(defconst neo--org-haskell-latex-support-relative-directory ".latex"
+  "Build-relative directory that exposes shared MLody LaTeX support.")
+
 (defconst neo--org-haskell-latexminted-pythonpath ".latexminted"
   "PYTHONPATH value used by notebook latexminted runs.")
+
+(defconst neo--org-haskell-latex-texinputs ".latex//:"
+  "Recursive TEXINPUTS value used by notebook LuaLaTeX runs.")
+
+(defconst neo--org-haskell-texmf-cache-relative-directory ".texmf-cache"
+  "Build-relative writable cache used by LuaTeX and luaotfload.")
 
 (defconst neo--org-haskell-latexminted-support-source-directory
   (expand-file-name
@@ -89,21 +98,25 @@
     "toc")
   "Generated extensions removed by the notebook clean preamble.")
 
-(defconst neo--org-haskell-score-rule-relative-path
-  (concat neo--org-haskell-score-relative-directory "/.rules/mlodylualatex.yaml")
-  "Repository-relative path to the score arara rule reused by notebooks.")
+(defconst neo--org-haskell-mlody-style-relative-directory
+  "common/latex/mlody"
+  "Repository-relative directory containing shared MLody style packages.")
 
-(defconst neo--org-haskell-score-optional-root-entries
-  '("examples" "img")
-  "Score root entries staged into notebook PDF builds when present.")
+(defconst neo--org-haskell-mlody-book-relative-directory
+  "common/latex/mlody-book"
+  "Repository-relative directory containing the shared MLody book class.")
+
+(defconst neo--org-haskell-arara-rule-relative-path
+  "common/arara/rules/mlodylualatex.yaml"
+  "Repository-relative path to the shared MLody LuaLaTeX arara rule.")
 
 (defun neo--org-haskell-ensure-notebook-buffer ()
   "Raise a user error unless the current buffer is a Haskell notebook."
   (unless (derived-mode-p 'neo/org-haskell-notebook-mode)
     (user-error "neo-org: current buffer is not a Haskell notebook")))
 
-(defun neo--org-haskell-score-root ()
-  "Return the repository root containing the shared score assets."
+(defun neo--org-haskell-repository-root ()
+  "Return the repository root containing the shared MLody book class."
   (neo--org-haskell-ensure-notebook-buffer)
   (let* ((start (or (and buffer-file-name
                          (file-name-directory buffer-file-name))
@@ -114,20 +127,14 @@
            (lambda (directory)
              (file-exists-p
               (expand-file-name
-               neo--org-haskell-score-preamble-relative-path
+               neo--org-haskell-mlody-book-relative-path
                directory))))))
     (unless root
       (user-error
        "neo-org: could not locate %s from %s"
-       neo--org-haskell-score-preamble-relative-path
+       neo--org-haskell-mlody-book-relative-path
        start))
     root))
-
-(defun neo--org-haskell-score-directory ()
-  "Return the absolute score directory reused by notebook PDF builds."
-  (expand-file-name
-   neo--org-haskell-score-relative-directory
-   (neo--org-haskell-score-root)))
 
 (defun neo--org-haskell-pdf-build-directory ()
   "Return the build directory for the current notebook PDF export."
@@ -181,9 +188,12 @@
   "Return the notebook LuaLaTeX directive for VARIANT.
 When DRAFT is non-nil, set the MLody draft flag for the run."
   (format
-   "%% arara: mlodylualatex: { jobname: %s, shell: true, pythonpath: %s%s, synctex: yes }"
+   (concat "%% arara: mlodylualatex: { jobname: %s, shell: true, "
+           "texinputs: %S, pythonpath: %S, texmfcache: %S%s, synctex: yes }")
    (neo--org-haskell-arara-jobname variant)
+   neo--org-haskell-latex-texinputs
    neo--org-haskell-latexminted-pythonpath
+   neo--org-haskell-texmf-cache-relative-directory
    (if draft ", draft: true" "")))
 
 (defun neo--org-haskell-render-arara-build-profile (variant &optional draft fast)
@@ -265,60 +275,47 @@ bibliography, index, and extra LuaLaTeX passes."
     (insert content))
   path)
 
-(defun neo--org-haskell-stage-score-path (source relative-path build-directory)
+(defun neo--org-haskell-stage-path (source relative-path build-directory)
   "Expose SOURCE inside BUILD-DIRECTORY at RELATIVE-PATH."
   (unless (file-exists-p source)
-    (user-error "neo-org: missing required score path %s" source))
+    (user-error "neo-org: missing required build support path %s" source))
   (let ((target (expand-file-name relative-path build-directory)))
     (make-directory (file-name-directory target) t)
     (make-symbolic-link source target)
     target))
 
-(defun neo--org-haskell-stage-score-path-if-present (source relative-path build-directory)
-  "Expose SOURCE inside BUILD-DIRECTORY at RELATIVE-PATH when SOURCE exists."
-  (when (file-exists-p source)
-    (neo--org-haskell-stage-score-path source relative-path build-directory)))
-
 (defun neo--org-haskell-prepare-pdf-build-directory ()
   "Reset and repopulate the current notebook PDF build directory."
   (let* ((build-directory (neo--org-haskell-pdf-build-directory))
-         (score-directory (neo--org-haskell-score-directory)))
+         (repository-root (neo--org-haskell-repository-root)))
     (when (file-directory-p build-directory)
       (delete-directory build-directory t))
     (make-directory build-directory t)
-    (neo--org-haskell-stage-score-path
-     (expand-file-name "images" score-directory)
-     "images"
+    (make-directory
+     (expand-file-name neo--org-haskell-texmf-cache-relative-directory
+                       build-directory)
+     t)
+    (neo--org-haskell-stage-path
+     (expand-file-name neo--org-haskell-mlody-style-relative-directory
+                       repository-root)
+     (file-name-concat neo--org-haskell-latex-support-relative-directory
+                       "mlody")
      build-directory)
-    (neo--org-haskell-stage-score-path
-     (expand-file-name "chapters" score-directory)
-     "chapters"
+    (neo--org-haskell-stage-path
+     (expand-file-name neo--org-haskell-mlody-book-relative-directory
+                       repository-root)
+     (file-name-concat neo--org-haskell-latex-support-relative-directory
+                       "mlody-book")
      build-directory)
-    (neo--org-haskell-stage-score-path
-     (expand-file-name "preamble.tex" score-directory)
-     neo--org-haskell-score-preamble-relative-path
-     build-directory)
-    (neo--org-haskell-stage-score-path
-     (expand-file-name "theme.tex" score-directory)
-     "theme.tex"
-     build-directory)
-    (neo--org-haskell-stage-score-path
-     (expand-file-name "main.bib" score-directory)
-     "main.bib"
-     build-directory)
-    (neo--org-haskell-stage-score-path
-     (expand-file-name ".rules/mlodylualatex.yaml" score-directory)
+    (neo--org-haskell-stage-path
+     (expand-file-name neo--org-haskell-arara-rule-relative-path
+                       repository-root)
      ".rules/mlodylualatex.yaml"
      build-directory)
-    (neo--org-haskell-stage-score-path
+    (neo--org-haskell-stage-path
      neo--org-haskell-latexminted-support-source-directory
      neo--org-haskell-latexminted-support-relative-directory
      build-directory)
-    (dolist (entry neo--org-haskell-score-optional-root-entries)
-      (neo--org-haskell-stage-score-path-if-present
-       (expand-file-name entry score-directory)
-       entry
-       build-directory))
     (neo--org-haskell-write-file
      (expand-file-name neo--org-haskell-arara-config-file-name build-directory)
      (neo--org-haskell-render-arara-config))
