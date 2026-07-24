@@ -1,6 +1,7 @@
 ;;; -*- lexical-binding: t -*-
 
 (require 'ox-latex)
+(require 'neo-org-report-export)
 
 (defconst neo--org-haskell-latex-class-name "neo-haskell-notebook"
   "Org LaTeX class name used for Haskell notebook exports.")
@@ -119,9 +120,39 @@
 
 (defun neo--org-haskell-structure-final-output (output backend _info)
   "Apply notebook book structure to LaTeX OUTPUT for BACKEND."
-  (if (org-export-derived-backend-p backend 'latex)
+  (if (and (org-export-derived-backend-p backend 'latex)
+           (not (org-export-derived-backend-p backend 'neo-mlody-report)))
       (neo--org-haskell-apply-book-structure output)
     output))
+
+(defun neo--org-haskell-explicit-latex-class ()
+  "Return the notebook's explicit `LATEX_CLASS' keyword, if any."
+  (cadr (assoc "LATEX_CLASS" (org-collect-keywords '("LATEX_CLASS")))))
+
+(defun neo--org-haskell-report-export-p ()
+  "Return non-nil when the notebook explicitly selects `mlody-report'."
+  (equal (neo--org-haskell-explicit-latex-class)
+         neo--org-report-latex-class-name))
+
+(defun neo--org-haskell-export-backend ()
+  "Return the Org export backend selected by the current notebook."
+  (if (neo--org-haskell-report-export-p)
+      'neo-mlody-report
+    'latex))
+
+(defun neo--org-haskell-add-report-minted-preamble (info backend)
+  "Add notebook minted definitions to report export INFO for BACKEND."
+  (when (org-export-derived-backend-p backend 'neo-mlody-report)
+    (let ((extra-header (plist-get info :latex-header-extra)))
+      (plist-put
+       info
+       :latex-header-extra
+       (string-join
+        (delq nil
+              (list (org-string-nw-p extra-header)
+                    neo--org-haskell-latex-minted-style-setup))
+        "\n"))))
+  info)
 
 (defun neo--org-haskell-configure-minted-languages ()
   "Extend `org-latex-minted-langs' for notebook-local source languages."
@@ -179,8 +210,12 @@
   ;; when `org-export-filter-apply-functions' `funcall's each entry.
   (setq-local org-export-filter-final-output-functions
               (copy-sequence org-export-filter-final-output-functions))
+  (setq-local org-export-filter-options-functions
+              (copy-sequence org-export-filter-options-functions))
   (setq-local org-export-filter-src-block-functions
               (copy-sequence org-export-filter-src-block-functions))
+  (cl-pushnew #'neo--org-haskell-add-report-minted-preamble
+              org-export-filter-options-functions)
   (cl-pushnew #'neo--org-haskell-structure-final-output
               org-export-filter-final-output-functions)
   (cl-pushnew #'neo--org-haskell-style-src-block

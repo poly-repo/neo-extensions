@@ -35,9 +35,14 @@
   (let ((style-root
          (expand-file-name neo--org-haskell-mlody-style-relative-directory root))
         (book-root
-         (expand-file-name neo--org-haskell-mlody-book-relative-directory root)))
+         (expand-file-name neo--org-haskell-mlody-book-relative-directory root))
+        (report-root
+         (expand-file-name
+          neo--org-haskell-mlody-report-relative-directory
+          root)))
     (make-directory style-root t)
     (make-directory (expand-file-name "assets/images" book-root) t)
+    (make-directory report-root t)
     (neo--test-org-write-file
      (expand-file-name "mlody-style.sty" style-root)
      "% test shared style\n")
@@ -47,6 +52,9 @@
     (neo--test-org-write-file
      (expand-file-name "mlody-book.cls" book-root)
      "% test book class\n")
+    (neo--test-org-write-file
+     (expand-file-name "mlody-report.cls" report-root)
+     "% test report class\n")
     (neo--test-org-write-file
      (expand-file-name neo--org-haskell-arara-rule-relative-path root)
      "!config\n")
@@ -196,6 +204,164 @@
                 "\\\\newminted\\[neoNotebookHaskellCode\\]{haskell}")
         (expect (caddr entry) :to-equal '("\\section{%s}" . "\\section*{%s}")))))
 
+  (it "registers the reusable MLody report class and export backend"
+    (let ((org-latex-classes '(("article" "\\documentclass{article}"))))
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend)
+      (let ((entry (assoc neo--org-report-latex-class-name org-latex-classes))
+            (backend (org-export-get-backend 'neo-mlody-report)))
+        (expect entry :not :to-be nil)
+        (expect (cadr entry) :to-equal "\\documentclass{mlody-report}")
+        (expect (caddr entry)
+                :to-equal
+                '("\\section{%s}" . "\\section*{%s}"))
+        (expect backend :not :to-be nil)
+        (expect (org-export-derived-backend-p 'neo-mlody-report 'latex)
+                :to-be-truthy))))
+
+  (it "exports MLody report LaTeX through the public command"
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/reports/command-report.org")
+      (org-mode)
+      (let (export-call)
+        (cl-letf (((symbol-function 'org-export-to-file)
+                   (lambda (&rest args)
+                     (setq export-call args)
+                     (cadr args))))
+          (expect (neo/org-export-mlody-report-latex)
+                  :to-equal
+                  "command-report.tex")
+          (expect export-call
+                  :to-equal
+                  '(neo-mlody-report
+                    "command-report.tex"
+                    nil nil nil nil nil))))))
+
+  (it "maps Org report metadata to escaped MLody report macros"
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/reports/report_source with spaces.org")
+      (insert "#+title: Export Report\n"
+              "#+subtitle: Metadata & purpose\n"
+              "#+author: Ada & Grace\n"
+              "#+date: 2026-07-24\n"
+              "#+id: DOC_42\n"
+              "#+status: Active\n"
+              "#+requires: REQ_1 REQ-2\n"
+              "#+replaces: OLD_1\n"
+              "#+superseded_by: NEW_1\n\n"
+              "* Body\nReport body.\n")
+      (org-mode)
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend)
+      (let ((latex (org-export-as 'neo-mlody-report nil nil nil nil)))
+        (expect latex :to-match (regexp-quote "\\documentclass{mlody-report}"))
+        (expect latex :to-match (regexp-quote "\\title{Export Report}"))
+        (expect latex
+                :to-match
+                (regexp-quote "\\subtitle{Metadata \\& purpose}"))
+        (expect latex :to-match (regexp-quote "\\author{Ada \\& Grace}"))
+        (expect latex :to-match (regexp-quote "\\date{2026-07-24}"))
+        (expect latex :to-match (regexp-quote "\\id{DOC\\_42}"))
+        (expect latex :to-match (regexp-quote "\\status{Active}"))
+        (expect latex
+                :to-match
+                (regexp-quote "\\requires{REQ\\_1, REQ-2}"))
+        (expect latex :to-match (regexp-quote "\\replaces{OLD\\_1}"))
+        (expect latex :to-match (regexp-quote "\\supersededby{NEW\\_1}"))
+        (expect latex
+                :to-match
+                (regexp-quote
+                 (concat
+                  "\\mainfile{\\detokenize{"
+                  "/tmp/reports/report_source with spaces.org}}"))))))
+
+  (it "rejects report source paths that cannot be passed losslessly to TeX"
+    (expect (neo--org-report-render-main-file "/tmp/report{draft}.org")
+            :to-throw 'user-error)
+    (expect (neo--org-report-render-main-file "/tmp/report%20.org")
+            :to-throw 'user-error))
+
+  (it "omits optional MLody report metadata that was not provided"
+    (with-temp-buffer
+      (insert "#+title: Minimal Report\n\n* Body\nReport body.\n")
+      (org-mode)
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend)
+      (let ((latex (org-export-as 'neo-mlody-report nil nil nil nil)))
+        (expect latex :to-match (regexp-quote "\\date{}"))
+        (expect latex :not :to-match (regexp-quote "\\date{\\today}"))
+        (expect latex :not :to-match (regexp-quote "\\id{"))
+        (expect latex :not :to-match (regexp-quote "\\status{"))
+        (expect latex :not :to-match (regexp-quote "\\requires{"))
+        (expect latex :not :to-match (regexp-quote "\\replaces{"))
+        (expect latex :not :to-match (regexp-quote "\\supersededby{"))
+        (expect latex :not :to-match (regexp-quote "\\mainfile{"))
+        (expect latex :not :to-match (regexp-quote "\\purpose{"))
+        (expect latex :not :to-match (regexp-quote "\\lastedit{"))
+        (expect latex :not :to-match (regexp-quote "\\gitcommit{")))))
+
+  (it "moves a top-level Purpose section into the report title metadata"
+    (with-temp-buffer
+      (let ((source
+             (concat "#+title: Purpose Report\n\n"
+                     "* Purpose\nThis is the *only* purpose.\n\n"
+                     "* Findings\nBody text.\n")))
+        (insert source)
+        (org-mode)
+        (neo--org-report-register-latex-class)
+        (neo--org-report-register-export-backend)
+        (let ((latex (org-export-as 'neo-mlody-report nil nil nil nil)))
+          (expect latex
+                  :to-match
+                  (regexp-quote
+                   "\\purpose{This is the \\textbf{only} purpose."))
+          (expect latex :not :to-match (regexp-quote "\\section{Purpose}"))
+          (expect (length
+                   (split-string latex
+                                 (regexp-quote "This is the \\textbf{only} purpose.")
+                                 t))
+                  :to-equal
+                  2)
+          (expect latex :to-match (regexp-quote "\\section{Findings}"))
+          (expect (buffer-string) :to-equal source)))))
+
+  (it "rejects duplicate top-level Purpose sections"
+    (with-temp-buffer
+      (insert "#+title: Duplicate Purpose\n\n"
+              "* Purpose\nFirst.\n\n"
+              "* Purpose\nSecond.\n")
+      (org-mode)
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend)
+      (expect (org-export-as 'neo-mlody-report nil nil nil nil)
+              :to-throw 'user-error)))
+
+  (it "keeps a nested Purpose heading in the report body"
+    (with-temp-buffer
+      (insert "#+title: Nested Purpose\n\n"
+              "* Context\n"
+              "** Purpose\nNested purpose remains here.\n")
+      (org-mode)
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend)
+      (let ((latex (org-export-as 'neo-mlody-report nil nil nil nil)))
+        (expect latex :not :to-match (regexp-quote "\\purpose{"))
+        (expect latex :to-match (regexp-quote "\\subsection{Purpose}"))
+        (expect latex :to-match (regexp-quote "Nested purpose remains here.")))))
+
+  (it "leaves ordinary LaTeX exports unchanged by report translation"
+    (with-temp-buffer
+      (insert "#+title: Ordinary Document\n\n"
+              "* Purpose\nOrdinary body purpose.\n")
+      (org-mode)
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend)
+      (let ((latex (org-export-as 'latex nil nil nil nil)))
+        (expect latex :not :to-match (regexp-quote "\\documentclass{mlody-report}"))
+        (expect latex :not :to-match (regexp-quote "\\purpose{"))
+        (expect latex :to-match (regexp-quote "\\section{Purpose}"))
+        (expect latex :to-match (regexp-quote "Ordinary body purpose.")))))
+
   (it "delegates print and online mode selection to mlody-book"
     (expect neo--org-haskell-latex-documentclass
             :to-match
@@ -320,6 +486,9 @@
       (expect (member #'neo--org-haskell-structure-final-output
                       org-export-filter-final-output-functions)
               :not :to-be nil)
+      (expect (member #'neo--org-haskell-add-report-minted-preamble
+                      org-export-filter-options-functions)
+              :not :to-be nil)
       (expect (member #'neo--org-haskell-style-src-block
                       org-export-filter-src-block-functions)
               :not :to-be nil)
@@ -344,6 +513,47 @@
         (expect latex :not :to-match "mlody/docs/the-score")
         (expect latex :to-match "\\\\begin{document}\n\n\\\\frontmatter\n")
         (expect latex :to-match "\\\\tableofcontents\n\n\\\\mainmatter\n"))))
+
+  (it "exports an explicitly selected MLody report with notebook code styling"
+    (with-temp-buffer
+      (setq buffer-file-name "/tmp/report-notebook.orghs")
+      (insert "#+latex_class: mlody-report\n"
+              "#+title: Report Notebook\n"
+              "#+date: 2026-07-24\n"
+              "#+options: toc:nil\n\n"
+              "* Purpose\nExplain the report.\n\n"
+              "* Findings\n"
+              "#+begin_src haskell\nanswer = 42\n#+end_src\n")
+      (neo/org-haskell-notebook-mode)
+      (neo--org-haskell-register-latex-class)
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend)
+      (neo--org-haskell-configure-export)
+      (let* ((backend (neo--org-haskell-export-backend))
+             (latex (org-export-as backend nil nil nil nil)))
+        (expect backend :to-equal 'neo-mlody-report)
+        (expect latex :to-match (regexp-quote "\\documentclass{mlody-report}"))
+        (expect latex
+                :to-match
+                (regexp-quote "\\purpose{Explain the report."))
+        (expect latex :not :to-match (regexp-quote "\\section{Purpose}"))
+        (expect latex :to-match (regexp-quote "\\section{Findings}"))
+        (expect latex
+                :to-match
+                (regexp-quote "\\begin{neoNotebookHaskellCode}[]"))
+        (expect latex :to-match "neoNotebookHaskellBg")
+        (expect latex :not :to-match (regexp-quote "\\frontmatter"))
+        (expect latex :not :to-match (regexp-quote "\\mainmatter")))))
+
+  (it "keeps other notebooks on the standard LaTeX backend"
+    (with-temp-buffer
+      (insert "#+title: Book Notebook\n")
+      (neo/org-haskell-notebook-mode)
+      (expect (neo--org-haskell-export-backend) :to-equal 'latex))
+    (with-temp-buffer
+      (insert "#+latex_class: article\n#+title: Other Notebook\n")
+      (neo/org-haskell-notebook-mode)
+      (expect (neo--org-haskell-export-backend) :to-equal 'latex)))
 
   (it "exports notebook footnotes as MLody-style sidenotes"
     (with-temp-buffer
@@ -505,6 +715,14 @@
                              "mlody-book")
                             build-directory))
                           :not :to-be nil)
+                  (expect
+                   (file-exists-p
+                    (expand-file-name
+                     (file-name-concat
+                      neo--org-haskell-latex-support-relative-directory
+                      "mlody-report")
+                     build-directory))
+                   :to-be nil)
                   (expect (file-symlink-p
                            (expand-file-name ".rules/mlodylualatex.yaml" build-directory))
                           :not :to-be nil)
@@ -530,6 +748,48 @@
                           :to-be nil)
                   (expect (file-exists-p (expand-file-name "main.bib" build-directory))
                           :to-be nil)))))
+        (delete-directory repo-root t)
+        (delete-directory temp-dir t))))
+
+  (it "uses the report backend and stages its class for an opted-in notebook"
+    (let ((repo-root (make-temp-file "neo-org-haskell-repo" t))
+          (temp-dir (make-temp-file "neo-org-haskell-temp" t)))
+      (unwind-protect
+          (with-temp-buffer
+            (let ((notebook-file
+                   (expand-file-name "notes/report-demo.orghs" repo-root))
+                  (neo/org-haskell-temporary-directory temp-dir)
+                  export-backend)
+              (neo--test-org-prepare-mlody-latex-fixture repo-root)
+              (setq default-directory repo-root
+                    buffer-file-name notebook-file)
+              (insert "#+latex_class: mlody-report\n"
+                      "#+title: Report Demo\n\n"
+                      "* Purpose\nTest report staging.\n")
+              (neo/org-haskell-notebook-mode)
+              (cl-letf (((symbol-function 'org-export-to-file)
+                         (lambda (backend file &rest _args)
+                           (setq export-backend backend)
+                           (with-temp-file file
+                             (insert "LATEX\n"))
+                           file)))
+                (let* ((path (neo/org-haskell-export-latex))
+                       (build-directory
+                        (neo--org-haskell-pdf-build-directory))
+                       (report-support
+                        (expand-file-name
+                         (file-name-concat
+                          neo--org-haskell-latex-support-relative-directory
+                          "mlody-report")
+                         build-directory)))
+                  (expect path
+                          :to-equal
+                          (expand-file-name
+                           neo--org-haskell-latex-entry-file-name
+                           build-directory))
+                  (expect export-backend :to-equal 'neo-mlody-report)
+                  (expect (file-symlink-p report-support)
+                          :not :to-be nil)))))
         (delete-directory repo-root t)
         (delete-directory temp-dir t))))
 

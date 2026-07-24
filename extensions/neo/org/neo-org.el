@@ -8,6 +8,7 @@
 (require 'neo-org-haskell)
 (require 'neo-org-haskell-export)
 (require 'neo-org-haskell-pdf)
+(require 'neo-org-report-export)
 (require 'neo-org-capture)
 (require 'neo-org-roam)
 (require 'neo-org-download)

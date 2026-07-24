@@ -106,6 +106,10 @@
   "common/latex/mlody-book"
   "Repository-relative directory containing the shared MLody book class.")
 
+(defconst neo--org-haskell-mlody-report-relative-directory
+  "common/latex/mlody-report"
+  "Repository-relative directory containing the shared MLody report class.")
+
 (defconst neo--org-haskell-arara-rule-relative-path
   "common/arara/rules/mlodylualatex.yaml"
   "Repository-relative path to the shared MLody LuaLaTeX arara rule.")
@@ -307,6 +311,13 @@ bibliography, index, and extra LuaLaTeX passes."
      (file-name-concat neo--org-haskell-latex-support-relative-directory
                        "mlody-book")
      build-directory)
+    (when (neo--org-haskell-report-export-p)
+      (neo--org-haskell-stage-path
+       (expand-file-name neo--org-haskell-mlody-report-relative-directory
+                         repository-root)
+       (file-name-concat neo--org-haskell-latex-support-relative-directory
+                         "mlody-report")
+       build-directory))
     (neo--org-haskell-stage-path
      (expand-file-name neo--org-haskell-arara-rule-relative-path
                        repository-root)
@@ -329,10 +340,14 @@ passed through to `org-export-to-file'."
   (neo--org-haskell-ensure-notebook-buffer)
   (neo--org-haskell-register-latex-class)
   (neo--org-haskell-configure-export)
-  (let ((build-directory (neo--org-haskell-prepare-pdf-build-directory))
+  (let ((backend (neo--org-haskell-export-backend))
+        (build-directory (neo--org-haskell-prepare-pdf-build-directory))
         (org-export-show-temporary-export-buffer nil))
+    (when (eq backend 'neo-mlody-report)
+      (neo--org-report-register-latex-class)
+      (neo--org-report-register-export-backend))
     (org-export-to-file
-     'latex
+     backend
      (expand-file-name neo--org-haskell-latex-entry-file-name build-directory)
      async
      subtreep
