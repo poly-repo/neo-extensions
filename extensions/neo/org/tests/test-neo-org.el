@@ -372,6 +372,27 @@
                 "\\\\frontmatter\n\\\\maketitle\n\n\\\\mainmatter\n\\\\section{Section}")
         (expect body :to-match (regexp-quote "\\subsection{Subsection}")))))
 
+  (it "keeps deeply nested notebook headings styled and unnumbered as headings"
+    (with-temp-buffer
+      (insert
+       "#+title: Demo\n#+options: toc:nil\n\n* Examples\n** Processing\n*** Basic aggregate processing\n**** Fixture\nBody.\n")
+      (neo/org-haskell-notebook-mode)
+      (neo--org-haskell-register-latex-class)
+      (neo--org-haskell-configure-export)
+      (let* ((latex (org-export-as 'latex nil nil nil nil))
+             (body (substring latex
+                              (string-match
+                               (regexp-quote "\\begin{document}")
+                               latex))))
+        (expect org-export-headline-levels
+                :to-equal
+                (length neo--org-haskell-latex-class-sectioning))
+        (expect body :to-match
+                (regexp-quote "\\subsubsection{Basic aggregate processing}"))
+        (expect body :to-match (regexp-quote "\\paragraph{Fixture}"))
+        (expect body :not :to-match (regexp-quote "\\begin{enumerate}"))
+        (expect body :not :to-match (regexp-quote "\\item Fixture")))))
+
   (it "exports Haskell source blocks with notebook shading"
     (with-temp-buffer
       (insert "#+title: Demo\n\n#+begin_src haskell\nf x = x + 1\n#+end_src\n")

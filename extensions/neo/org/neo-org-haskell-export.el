@@ -193,6 +193,11 @@
   "Configure LaTeX export defaults for the current Haskell notebook buffer."
   (setq-local org-latex-default-class neo--org-haskell-latex-class-name)
   (setq-local org-latex-src-block-backend 'minted)
+  ;; Org turns headings deeper than `org-export-headline-levels' into
+  ;; enumerate/itemize entries.  Keep every level supported by our LaTeX
+  ;; class as a real heading so the-score's KOMA fonts and secnumdepth apply.
+  (setq-local org-export-headline-levels
+              (length neo--org-haskell-latex-class-sectioning))
   (setq-local org-latex-default-footnote-command
               neo--org-haskell-latex-sidenote-footnote-command)
   (neo--org-haskell-configure-minted-languages)
