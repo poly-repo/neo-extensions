@@ -155,16 +155,25 @@
               :to-equal
               "src mlody")))
 
-  (it "configures Org prose for 100-column auto-fill with proportional text"
+  (it "uses visual wrapping without auto-fill in Org buffers"
     (let ((neo/org-fill-column 100)
-          (neo/org-auto-fill t)
+          (neo/org-auto-fill nil)
           (neo/org-use-variable-pitch t)
           (neo/org-code-block-font-height 0.9))
       (with-temp-buffer
         (org-mode)
+        (auto-fill-mode 1)
+        (expect auto-fill-function :to-equal #'org-auto-fill-function)
         (neo--org-mode-setup)
         (expect fill-column :to-equal 100)
-        (expect auto-fill-function :to-equal #'org-auto-fill-function)
+        (expect auto-fill-function :to-be nil)
+        (expect visual-line-mode :to-be-truthy)
+        (expect (local-key-binding (kbd "M-q"))
+                :to-equal
+                #'neo/org-unfill-paragraph)
+        (expect (local-key-binding (kbd "ESC q"))
+                :to-equal
+                #'neo/org-unfill-paragraph)
         (expect (assq 'default face-remapping-alist) :not :to-be nil)
         (expect (assq 'org-block face-remapping-alist)
                 :to-equal
@@ -175,6 +184,81 @@
         (expect (length neo--org-fixed-pitch-cookies)
                 :to-equal
                 (length neo--org-fixed-pitch-faces)))))
+
+  (it "unwraps an Org paragraph without changing adjacent paragraphs"
+    (with-temp-buffer
+      (org-mode)
+      (insert "A paragraph\n"
+              "wrapped over\n"
+              "several lines.\n\n"
+              "Another\n"
+              "paragraph.\n")
+      (goto-char (point-min))
+      (forward-line 1)
+      (neo/org-unfill-paragraph)
+      (expect (buffer-string)
+              :to-equal
+              (concat "A paragraph wrapped over several lines.\n\n"
+                      "Another\n"
+                      "paragraph.\n"))))
+
+  (it "unwraps the enclosing paragraph from inside Org inline markup"
+    (with-temp-buffer
+      (org-mode)
+      (insert "A paragraph with [[https://example.com][a\n"
+              "wrapped link]] in it.\n")
+      (goto-char (point-min))
+      (search-forward "wrapped")
+      (neo/org-unfill-paragraph)
+      (expect (buffer-string)
+              :to-equal
+              (concat "A paragraph with [[https://example.com][a "
+                      "wrapped link]] in it.\n"))))
+
+  (it "unwraps a list paragraph when point is on its marker"
+    (with-temp-buffer
+      (org-mode)
+      (insert "- A list paragraph\n"
+              "  wrapped over lines.\n"
+              "- A separate item\n"
+              "  remains wrapped.\n")
+      (goto-char (point-min))
+      (neo/org-unfill-paragraph)
+      (expect (buffer-string)
+              :to-equal
+              (concat "- A list paragraph wrapped over lines.\n"
+                      "- A separate item\n"
+                      "  remains wrapped.\n"))))
+
+  (it "unwraps chunks separated by Org hard line breaks independently"
+    (with-temp-buffer
+      (org-mode)
+      (insert "First chunk\n"
+              "continues here \\\\  \n"
+              "Second chunk\n"
+              "continues too.\n")
+      (goto-char (point-min))
+      (neo/org-unfill-paragraph)
+      (expect (buffer-string)
+              :to-equal
+              (concat "First chunk continues here \\\\  \n"
+                      "Second chunk continues too.\n"))))
+
+  (it "applies visual wrapping and the unfill binding to derived Org modes"
+    (with-temp-buffer
+      (neo/org-haskell-notebook-mode)
+      (neo--org-mode-setup)
+      (expect (derived-mode-p 'org-mode) :to-be-truthy)
+      (expect auto-fill-function :to-be nil)
+      (expect visual-line-mode :to-be-truthy)
+      (expect (local-key-binding (kbd "M-q"))
+              :to-equal
+              #'neo/org-unfill-paragraph)))
+
+  (it "does not install the Org unfill binding outside Org buffers"
+    (with-temp-buffer
+      (fundamental-mode)
+      (expect (local-key-binding (kbd "M-q")) :to-be nil)))
 
   (it "can keep Org fully fixed-pitch when proportional prose is disabled"
     (let ((neo/org-use-variable-pitch nil))

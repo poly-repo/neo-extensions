@@ -150,7 +150,7 @@ global default."
   :group 'neo-org
   :set #'neo--org-refresh-fill-column)
 
-(defcustom neo/org-auto-fill t
+(defcustom neo/org-auto-fill nil
   "When non-nil, enable Auto Fill in Org buffers.
 Org uses `org-auto-fill-function', so this reflows normal prose
 paragraphs while respecting Org syntax such as tables and block
@@ -298,11 +298,74 @@ If PATH is relative, resolve it under BASE-DIRECTORY."
   (setq-local prettify-symbols-unprettify-at-point 'right-edge)
   (prettify-symbols-mode 1))
 
+(defun neo--org-hard-line-break-before-p (position)
+  "Return non-nil when POSITION follows an Org hard line break.
+Horizontal whitespace before POSITION is ignored."
+  (save-excursion
+    (goto-char position)
+    (skip-chars-backward " \t")
+    (and (eq (char-before) ?\\)
+         (eq (char-before (1- (point))) ?\\))))
+
+(defun neo--org-paragraph-at-point ()
+  "Return the Org paragraph containing point, if any.
+When point is on a list marker, return the paragraph that begins on
+the same line."
+  (or (org-element-lineage (org-element-context) '(paragraph) t)
+      (save-excursion
+        (let ((limit (line-end-position))
+              paragraph)
+          (while (and (not paragraph) (< (point) limit))
+            (forward-char)
+            (setq paragraph
+                  (org-element-lineage
+                   (org-element-context)
+                   '(paragraph)
+                   t)))
+          paragraph))))
+
+;;;###autoload
+(defun neo/org-unfill-paragraph ()
+  "Collapse the Org paragraph at point into one physical line.
+Each chunk ending in an Org hard line break (`\\\\') is collapsed
+separately, preserving the newline between chunks."
+  (interactive)
+  (unless (derived-mode-p 'org-mode)
+    (user-error "This command is only available in Org buffers"))
+  (let ((paragraph (neo--org-paragraph-at-point)))
+    (unless paragraph
+      (user-error "Point is not in an Org paragraph"))
+    (let ((begin (org-element-property :begin paragraph))
+          (end (copy-marker (org-element-property :end paragraph))))
+      (save-excursion
+        (goto-char end)
+        (skip-chars-backward " \t\n" begin)
+        (set-marker end (point))
+        (goto-char begin)
+        (while (search-forward "\n" end t)
+          (let ((newline (1- (point))))
+            (unless (neo--org-hard-line-break-before-p newline)
+              (let ((join-start
+                     (save-excursion
+                       (goto-char newline)
+                       (skip-chars-backward " \t" begin)
+                       (point)))
+                    (join-end
+                     (progn
+                       (skip-chars-forward " \t" end)
+                       (point))))
+                (delete-region join-start join-end)
+                (goto-char join-start)
+                (insert " ")))))
+        (set-marker end nil)))))
+
 (defun neo--org-mode-setup ()
   "Apply NEO defaults for Org buffers."
   (electric-pair-mode -1)
   (neo--org-apply-fill-column)
   (neo--org-apply-auto-fill)
+  (visual-line-mode 1)
+  (local-set-key (kbd "M-q") #'neo/org-unfill-paragraph)
   (neo--org-apply-variable-pitch)
   (when (or neo/org-prettify-haskell-header
             neo/org-prettify-mlody-header)
