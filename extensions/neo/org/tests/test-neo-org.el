@@ -729,16 +729,17 @@
         (expect latex :to-match "neoNotebookMlodyBg")
         (expect body :not :to-match (regexp-quote "\\begin{minted}")))))
 
-  (it "runs a second LuaLaTeX pass for fast notebook arara profiles"
+  (it "stabilizes pagination after minted expansion in fast arara profiles"
     (let* ((profile (neo--org-haskell-render-arara-build-profile "online" t t))
            (lines (split-string profile "\n" t))
-            (latex-lines
+           (latex-lines
              (cl-remove-if-not
               (lambda (line)
                 (string-match-p "mlodylualatex" line))
               lines)))
-      (expect (length latex-lines) :to-equal 2)
+      (expect (length latex-lines) :to-equal 3)
       (expect (car latex-lines) :to-equal (cadr latex-lines))
+      (expect (cadr latex-lines) :to-equal (caddr latex-lines))
       (expect (car latex-lines) :to-match "jobname: .*online")
       (expect (car latex-lines) :to-match "texinputs: \"\\.latex//:\"")
       (expect (car latex-lines) :to-match "pythonpath: \"\\.latexminted\"")

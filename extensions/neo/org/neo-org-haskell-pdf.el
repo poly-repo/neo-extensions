@@ -202,8 +202,8 @@ When DRAFT is non-nil, set the MLody draft flag for the run."
 
 (defun neo--org-haskell-render-arara-build-profile (variant &optional draft fast)
   "Return the arara profile body for VARIANT.
-When DRAFT is non-nil, set `MLODY_DRAFT'.  When FAST is non-nil, skip the
-bibliography, index, and extra LuaLaTeX passes."
+When DRAFT is non-nil, set `MLODY_DRAFT'.  When FAST is non-nil, skip
+the bibliography and index."
   (let* ((jobname (neo--org-haskell-arara-jobname variant))
          (latex (neo--org-haskell-render-arara-lualatex-directive variant draft)))
     (string-join
@@ -214,10 +214,11 @@ bibliography, index, and extra LuaLaTeX passes."
           nil
           neo--org-haskell-arara-pass-clean-extensions)))
       (list latex)
-      ;; minted v3 generates highlight files on the first TeX pass and needs
-      ;; one more pass to typeset them instead of placeholder markers.
+      ;; minted v3 generates highlight files on the first TeX pass.  The
+      ;; second pass replaces its placeholders, which can substantially change
+      ;; pagination, and the third renders the resulting TOC page numbers.
       (when fast
-        (list latex))
+        (list latex latex))
       (unless fast
         (list
          (format "%% arara: biber: { options: [ %S ] }" jobname)
