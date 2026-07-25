@@ -85,9 +85,7 @@
           magit-insert-modules
           magit-insert-local-branches))
 
-  ;; TODO <f12> on laptop is problematic as one would probably have media keys
   :bind
-  ("<f12> s" . 'magit-status)
   ("<f12> g" . 'counsel-git-grep))
 
 (with-eval-after-load 'magit

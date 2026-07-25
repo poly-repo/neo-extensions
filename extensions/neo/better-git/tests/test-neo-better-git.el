@@ -3,9 +3,13 @@
 (require 'buttercup)
 (require 'cl-lib)
 
-(defmacro neo/use-package (&rest _args)
-  "Ignore package declarations while loading extension code in tests."
-  nil)
+(defvar neo--better-git-test-package-declarations nil
+  "Package declarations recorded while loading `neo-better-git.el'.")
+
+(defmacro neo/use-package (name &rest arguments)
+  "Record package NAME and ARGUMENTS without configuring it."
+  `(push (cons ',name ',arguments)
+         neo--better-git-test-package-declarations))
 
 (defvar magit-display-buffer-function nil)
 (defvar magit-status-sections-hook nil)
@@ -17,6 +21,12 @@
                              (file-name-directory (or load-file-name buffer-file-name))))
 
 (describe "neo-better-git"
+  (it "does not bind F12 s to Magit status"
+    (let* ((arguments
+            (cdr (assq 'magit neo--better-git-test-package-declarations)))
+           (bindings (cdr (memq :bind arguments))))
+      (expect (member '("<f12> s" . 'magit-status) bindings) :to-be nil)))
+
   (it "skips commit prompts while perspectives are restoring"
     (let ((neo/perspective-restore-in-progress t)
           (called nil))

@@ -66,6 +66,7 @@
       (let* ((arguments
               (neo--questionable-defaults-test-package-arguments 'key-chord))
              (hooks (cadr (memq :hook arguments))))
+        (expect (cadr (memq :demand arguments)) :to-be t)
         (expect (member
                  '(after-change-major-mode
                    . neo--questionable-defaults-refresh-key-chords)

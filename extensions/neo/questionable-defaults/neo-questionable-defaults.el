@@ -182,6 +182,11 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
             #'neo--questionable-defaults-cleanup-before-exit)
 
 (neo/use-package key-chord
+  ;; `:hook' normally defers package loading until a hook function from the
+  ;; package runs.  Our hook function belongs to this extension, so it cannot
+  ;; autoload `key-chord' and would only ever observe an unavailable input
+  ;; method.
+  :demand t
   :hook ((after-change-major-mode . neo--questionable-defaults-refresh-key-chords)
          (minibuffer-setup . neo--questionable-defaults-refresh-key-chords))
   :config
