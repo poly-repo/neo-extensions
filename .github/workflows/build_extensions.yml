@@ -40,7 +40,17 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo
             }).catch(() => null);
-            return release?.data?.assets?.find(a => a.name.startsWith("extensions-") && a.name.endsWith(".el"))?.browser_download_url || "";
+            const assets = release?.data?.assets ?? [];
+            const manifests = assets
+              .filter(asset =>
+                /^extensions-[a-f0-9]{40}\.el$/.test(asset.name) &&
+                typeof asset.created_at === "string" &&
+                assets.some(checksum => checksum.name === `${asset.name}.sha256`))
+              .sort((left, right) => {
+                const createdOrder = Date.parse(right.created_at) - Date.parse(left.created_at);
+                return createdOrder || left.name.localeCompare(right.name);
+              });
+            return manifests[0]?.browser_download_url || "";
 
       - name: Download previous release file
         if: steps.get_release.outputs.result != ''
