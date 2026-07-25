@@ -92,28 +92,6 @@ cancelled once the dashboard buffer is killed."
                             :foreground "#196DB5"))
     (setq dashboard-startup-banner 'logo
           dashboard-banner-logo-title "Welcome to Emacs Neo")))
-  
-;; (neo/use-package dashboard
-;;     :after dashboard-hackernews
-;;     :delight (dashboard-mode page-break-lines-mode)
-;;     :config
-;;     (if (file-readable-p neo--hacker-image)
-;;         (progn
-;;           (setq dashboard-startup-banner neo--hacker-image)
-;;           (setq dashboard-banner-logo-title "W   E      A   R   E      L   E   G   I   O   N   S")
-;;           (set-face-attribute 'dashboard-banner-logo-title nil :font "Orbitron" :height 200 :weight 'bold :foreground "#196DB5"))
-;;       (setq dashboard-startup-banner 'logo)
-;;       (setq dashboard-banner-logo-title "Welcome to Emacs Neo"))
-;;     (setq dashboard-items
-;;           '((recent . 5)
-;;             (agenda . 10)
-;;             (hackernews . 5)))
-;;     (setq initial-buffer-choice nil)
-;;     (dashboard-setup-startup-hook)
-;;     :hook (
-;;            (after-init     . dashboard-refresh-buffer)
-;;            (dashboard-mode-hook . (lambda () (message "HOOK") (setq cursor-type nil))))
-;;     )
 
 (defvar neo/dashboard-persp "App:Dashboard"
   "Name of the dashboard perspective.")
