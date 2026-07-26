@@ -48,8 +48,10 @@
 ;; TODO: surface this fact in the configuration wizards
 (neo/use-package savehist
   :builtin
-  :init
-  (savehist-mode))
+  :custom
+  (savehist-file (neo/cache-file-path "savehist.el"))
+  :config
+  (savehist-mode 1))
 
 ;; TODO don't really remember what this was about
 (defun neo/sync-neo ()
