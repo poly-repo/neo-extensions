@@ -9,6 +9,7 @@
  :hidden t
  :requires (
 	    "neo:dashboard"
+	    "neo:arcade"
 	    "neo:elisp"
 	    "neo:questionable-defaults"
 	    "neo:session"
@@ -19,6 +20,7 @@
 	    "neo:terminal"
 	    "neo:news"
 	    "neo:org"
+	    "neo:writer"
 	    "neo:projects"
 	    "neo:programming-foundation"
 	    "neo:neo-workflow"

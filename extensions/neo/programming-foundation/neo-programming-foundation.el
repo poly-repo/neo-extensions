@@ -574,4 +574,14 @@ behavior."
   (add-hook 'neo/after-framework-bootstrap-hook
             #'neo--programming-foundation-load-beads))
 
+(neo/use-package highlight-parentheses
+  :custom
+  (highlight-parentheses-delay 0)
+
+  :config
+  (global-highlight-parentheses-mode)
+
+  :hook
+  (minibuffer-setup-hook . highlight-parentheses-minibuffer-setup))
+
 ;;; Note, no (provide 'neo-programing-foundation) here, extensions are loaded not required.

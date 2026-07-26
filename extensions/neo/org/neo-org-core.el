@@ -498,5 +498,16 @@ separately, preserving the newline between chunks."
   (org-tags-column 0)
   (org-hide-emphasis-markers t))
 
+(neo/use-package org-tidy
+  :after org
+  :custom
+  (org-tidy-properties-inline-symbol "")
+  (org-tidy-protect-overlay nil) ; github.com/jxq0/org-tidy/issues/11
+  :hook org-mode-hook)
+
+(use-package org-appear
+  :after org
+  :hook org-mode-hook)
+
 (provide 'neo-org-core)
 ;;; neo-org-core.el ends here

@@ -33,4 +33,31 @@
   (add-hook 'prog-mode-hook #'hl-line-mode)
   (add-hook 'text-mode-hook #'hl-line-mode))
 
+(neo/use-package rainbow-mode
+  :custom
+  (rainbow-ansi-colors nil)
+  (rainbow-x-colors nil))
 
+(neo/use-package lin
+  :custom
+  (lin-face 'lin-blue)
+  (lin-mode-hooks
+   '(dired-mode-hook
+     elfeed-search-mode-hook
+     git-rebase-mode-hook
+     grep-mode-hook
+     ibuffer-mode-hook
+     ilist-mode-hook
+     ledger-report-mode-hook
+     log-view-mode-hook
+     magit-log-mode-hook
+     mu4e-headers-mode
+     occur-mode-hook
+     org-agenda-mode-hook
+     pdf-outline-buffer-mode-hook
+     proced-mode-hook
+     tabulated-list-mode-hook))
+
+  :hook
+  (init-post-init-hook . lin-global-mode))
+(neo/use-package ct)

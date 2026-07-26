@@ -123,7 +123,7 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   ;; find-function. The question could be avoided with
   ;; (setq vc-follow-symlinks t)
   ;; but since we don't use VC at all, I take the nuclear option.
-  ( vc-handled-backends nil)
+  (vc-handled-backends nil)
   ;; TAB cycle if there are only few candidates
   ;; (setq completion-cycle-threshold 3)
 
@@ -149,7 +149,12 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
 
   ;; Backup
   (setq backup-directory-alist '((".*" . "~/.local/share/Trash/files")))
-  
+
+  ;; Misc, still unclassified
+  (confirm-kill-processes nil)
+  (delete-by-moving-to-trash t)
+  (trash-directory (expand-file-name "~/.local/share/Trash/files"))
+  (remote-file-name-inhibit-auto-save t)
   :hook
   ((prog-mode text-mode conf-mode help-mode)
    . visual-wrap-prefix-mode)
@@ -244,3 +249,11 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
 
 (neo/use-package envrc
   :hook (after-init . envrc-global-mode))
+
+
+(neo/use-package vundo
+  :commands vundo
+  :bind
+  ("C-x u" . vundo))
+
+(neo/use-package inheritenv)
