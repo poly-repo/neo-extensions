@@ -8,8 +8,8 @@
 ;; under full-monty) and, failing that, automatically by Elpaca as one of
 ;; magit's own package dependencies. A second, independent top-level
 ;; `neo/use-package transient' declaration here used to race the one in
-;; neo-programming-foundation: because `neo/use-package' defaults to
-;; `:ensure (:wait t)', every top-level declaration synchronously
+;; neo-programming-foundation: at the time, `neo/use-package' defaulted to
+;; `:ensure (:wait t)', so every top-level declaration synchronously
 ;; `elpaca-wait's and then `elpaca-split-queue's, so two independent
 ;; `transient' declarations plus magit's own automatic dependency enqueue
 ;; could register `transient' in three different Elpaca queues. Elpaca then

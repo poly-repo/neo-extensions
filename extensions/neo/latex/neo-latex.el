@@ -332,7 +332,7 @@
           (note    . "Notes on ${author editor}, ${title}"))))
 
 (neo/use-package tex
-  :ensure (auctex :wait t)
+  :ensure (auctex)
   :defer t
   :custom
   (TeX-auto-save t)

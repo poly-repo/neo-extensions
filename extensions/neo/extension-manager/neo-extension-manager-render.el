@@ -242,8 +242,8 @@ unmet `:requires', via `neo/manager--resolve-extension' -- so it (and
 whatever it pulls in) is usable immediately, not just after a restart.
 
 Runs a spinner in place of the card's Install button for the duration:
-`neo/manager--resolve-extension' blocks synchronously (elpaca package
-installs use `:wait t'), so without this there is no feedback at all between
+`neo/manager--resolve-extension' blocks synchronously while each extension's
+package queue is drained, so without this there is no feedback at all between
 clicking Install and the buffer refreshing once it's done -- and a header-
 line-only indicator is too easy to miss."
   (neo/manager--persist-enabled-extension slug)
@@ -444,8 +444,9 @@ fight the spinner's own purpose."
   "Animate an install spinner for LABEL's card in BUF.
 
 `neo/replay-extension-packages' (invoked by `neo/manager--resolve-extension')
-blocks synchronously on elpaca via `:ensure (:wait t)', but elpaca's own wait
-loop polls with `sit-for', which still runs timers and redisplay -- so a
+queues the extension's packages and then blocks on one aggregate
+`elpaca-wait'.  Elpaca's wait loop polls with `sit-for', which still runs
+timers and redisplay -- so a
 timer nudging the display is enough to animate visibly during that blocking
 call.
 
