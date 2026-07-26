@@ -5,16 +5,28 @@
 (defconst neo/theme-config-key "theme"
   "Config DB key for the currently selected Neo theme.")
 
+(defcustom neo/default-theme nil
+  "Theme to load when the current Neo profile has no persisted theme.
+A nil value keeps the default Emacs theme."
+  :type '(choice (const :tag "Default Emacs theme" nil)
+                 (symbol :tag "Theme"))
+  :group 'neo-extensions)
+
 (defvar neo/current-theme nil
   "Theme currently applied by Neo, or nil for the default Emacs theme.")
 
 (defvar neo/after-theme-load-hook nil
   "Hook run after a theme is loaded for Neo.")
 
+(defun neo/theme--available-p (theme)
+  "Return non-nil when THEME is available to `load-theme'."
+  (memq theme (custom-available-themes)))
+
 (defun neo/run-after-theme-load (theme &rest _)
-  "Record THEME as current and run `neo/after-theme-load-hook'."
-  (setq neo/current-theme theme)
-  (run-hooks 'neo/after-theme-load-hook))
+  "Record selectable THEME and run `neo/after-theme-load-hook'."
+  (when (neo/theme--available-p theme)
+    (setq neo/current-theme theme)
+    (run-hooks 'neo/after-theme-load-hook)))
 
 (add-hook 'enable-theme-functions #'neo/run-after-theme-load)
 (add-hook 'neo/after-theme-load-hook #'neo/save-initial-frame-properties)
@@ -33,10 +45,6 @@
    ((symbolp theme) theme)
    ((stringp theme) (intern theme))
    (t (error "neo: invalid theme value %S" theme))))
-
-(defun neo/theme--available-p (theme)
-  "Return non-nil when THEME is available to `load-theme'."
-  (memq theme (custom-available-themes)))
 
 (defun neo/theme--restore-disabled-themes (themes)
   "Re-enable THEMES after a failed theme switch."
@@ -77,11 +85,14 @@ When PERSIST is non-nil, save THEME to the Neo config DB."
       (user-error "neo: failed to load theme %s" theme))))
 
 (defun neo/restore-persisted-theme ()
-  "Restore the user's persisted theme choice when available.
-When no theme has been saved yet, keep the default Emacs theme."
-  (when-let* ((saved-theme-name (neo/get-config neo/theme-config-key))
-              ((not (equal saved-theme-name ""))))
-    (neo/load-theme-internal saved-theme-name)))
+  "Restore the persisted theme or apply `neo/default-theme'.
+Loading the default does not persist it in the Neo config DB."
+  (let ((saved-theme-name (neo/get-config neo/theme-config-key)))
+    (cond
+     ((and saved-theme-name (not (equal saved-theme-name "")))
+      (neo/load-theme-internal saved-theme-name))
+     (neo/default-theme
+      (neo/load-theme-internal neo/default-theme)))))
 
 (add-hook 'neo/after-framework-bootstrap-hook #'neo/restore-persisted-theme)
 

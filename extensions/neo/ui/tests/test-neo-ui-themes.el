@@ -36,6 +36,7 @@
   (before-each
     (setq neo--test-config nil
           neo--saved-frame-snapshots 0
+          neo/default-theme nil
           neo/current-theme nil
           custom-enabled-themes nil
           neo/after-framework-bootstrap-hook neo--default-after-framework-bootstrap-hook
@@ -54,6 +55,22 @@
         (expect neo/current-theme :to-be nil)
         (expect neo--saved-frame-snapshots :to-equal 0))))
 
+  (it "loads the default theme without persisting it"
+    (let (load-calls)
+      (setq neo/default-theme 'ef-summer)
+      (cl-letf (((symbol-function 'custom-available-themes)
+                 (lambda () '(ef-summer ef-winter)))
+                ((symbol-function 'load-theme)
+                 (lambda (theme no-confirm)
+                   (push (list theme no-confirm) load-calls)
+                   (neo/run-after-theme-load theme))))
+        (expect (neo/restore-persisted-theme) :to-equal 'ef-summer)
+        (expect load-calls :to-equal '((ef-summer t)))
+        (expect (alist-get "theme" neo--test-config nil nil #'string=)
+                :to-be nil)
+        (expect neo/current-theme :to-equal 'ef-summer)
+        (expect neo--saved-frame-snapshots :to-equal 1))))
+
   (it "restores a persisted theme from the config DB"
     (let (load-calls)
       (setq neo--test-config '(("theme" . "ef-summer")))
@@ -67,6 +84,30 @@
         (expect load-calls :to-equal '((ef-summer t)))
         (expect neo/current-theme :to-equal 'ef-summer)
         (expect neo--saved-frame-snapshots :to-equal 1))))
+
+  (it "prefers a persisted theme over the default"
+    (let (load-calls)
+      (setq neo/default-theme 'ef-summer
+            neo--test-config '(("theme" . "ef-winter")))
+      (cl-letf (((symbol-function 'custom-available-themes)
+                 (lambda () '(ef-summer ef-winter)))
+                ((symbol-function 'load-theme)
+                 (lambda (theme no-confirm)
+                   (push (list theme no-confirm) load-calls)
+                   (neo/run-after-theme-load theme))))
+        (expect (neo/restore-persisted-theme) :to-equal 'ef-winter)
+        (expect load-calls :to-equal '((ef-winter t)))
+        (expect (alist-get "theme" neo--test-config nil nil #'string=)
+                :to-equal "ef-winter")
+        (expect neo/current-theme :to-equal 'ef-winter))))
+
+  (it "ignores synthetic theme events"
+    (setq neo/current-theme 'ef-summer)
+    (cl-letf (((symbol-function 'custom-available-themes)
+               (lambda () '(ef-summer ef-winter))))
+      (neo/run-after-theme-load 'spacious-padding)
+      (expect neo/current-theme :to-equal 'ef-summer)
+      (expect neo--saved-frame-snapshots :to-equal 0)))
 
   (it "persists an explicit theme change"
     (let (disabled-themes)

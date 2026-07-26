@@ -2,9 +2,40 @@
 
 ;;; Defaults for Neo
 
+(require 'seq)
+
 (defgroup neo-questionable-defaults nil
   "Customization options for the questionable defaults extension."
   :group 'neo-extensions)
+
+(defun neo--questionable-defaults-persisted-theme-p ()
+  "Return non-nil when the current Neo profile has a saved theme."
+  (let ((saved-theme-name (neo/get-config neo/theme-config-key)))
+    (and saved-theme-name (not (equal saved-theme-name "")))))
+
+(defun neo--questionable-defaults-current-theme-p ()
+  "Return non-nil when a selectable visual theme is currently enabled."
+  (seq-some #'neo/theme--available-p custom-enabled-themes))
+
+(defun neo--questionable-defaults-maybe-apply-theme ()
+  "Apply the questionable default theme when no theme choice exists."
+  (remove-hook 'neo/after-framework-bootstrap-hook
+               #'neo--questionable-defaults-maybe-apply-theme)
+  (when (and (not (neo--questionable-defaults-persisted-theme-p))
+             (not (neo--questionable-defaults-current-theme-p)))
+    (neo/restore-persisted-theme)))
+
+(defun neo--questionable-defaults-configure-theme ()
+  "Use `ef-summer' as the default theme for questionable defaults."
+  (setq neo/default-theme 'ef-summer)
+  (if (bound-and-true-p neo/framework-bootstrapped-p)
+      (neo--questionable-defaults-maybe-apply-theme)
+    (add-hook 'neo/after-framework-bootstrap-hook
+              #'neo--questionable-defaults-maybe-apply-theme
+              t)))
+
+(with-eval-after-load 'neo-ui-themes
+  (neo--questionable-defaults-configure-theme))
 
 (defcustom neo/y-or-n-ret-default 'no
   "Global default for what pressing RET should mean in `y-or-n-p'.

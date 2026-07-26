@@ -13,6 +13,10 @@
   "Recorded package declarations from `neo-questionable-defaults.el'.")
 
 (defvar key-chord-mode nil)
+(defvar neo/after-framework-bootstrap-hook nil)
+(defvar neo/default-theme nil)
+(defvar neo/framework-bootstrapped-p nil)
+(defvar neo/theme-config-key "theme")
 
 (define-derived-mode neo--questionable-defaults-test-terminal-mode comint-mode
   "NeoChordTerminal")
@@ -34,6 +38,69 @@
   (cdr (assq package neo--questionable-defaults-test-package-declarations)))
 
 (describe "neo-questionable-defaults"
+  (describe "theme default"
+    (before-each
+      (setq neo/default-theme nil
+            neo/framework-bootstrapped-p nil
+            neo/after-framework-bootstrap-hook nil
+            custom-enabled-themes nil))
+
+    (it "defers ef-summer until framework bootstrap"
+      (cl-letf (((symbol-function 'neo/get-config)
+                 (lambda (_key) nil))
+                ((symbol-function 'neo/restore-persisted-theme)
+                 (lambda ()
+                   (error "theme restored before bootstrap"))))
+        (neo--questionable-defaults-configure-theme)
+        (expect neo/default-theme :to-equal 'ef-summer)
+        (expect (member #'neo--questionable-defaults-maybe-apply-theme
+                        neo/after-framework-bootstrap-hook)
+                :not :to-be nil)))
+
+    (it "applies ef-summer from the deferred bootstrap hook"
+      (let (restored)
+        (cl-letf (((symbol-function 'neo/get-config)
+                   (lambda (_key) nil))
+                  ((symbol-function 'neo/theme--available-p)
+                   (lambda (theme) (memq theme '(ef-summer ef-winter))))
+                  ((symbol-function 'neo/restore-persisted-theme)
+                   (lambda () (setq restored t))))
+          (neo--questionable-defaults-configure-theme)
+          (setq neo/framework-bootstrapped-p t)
+          (run-hooks 'neo/after-framework-bootstrap-hook)
+          (expect neo/default-theme :to-equal 'ef-summer)
+          (expect restored :to-be-truthy)
+          (expect (member #'neo--questionable-defaults-maybe-apply-theme
+                          neo/after-framework-bootstrap-hook)
+                  :to-be nil))))
+
+    (it "does not replace a persisted profile theme"
+      (let (restored)
+        (setq neo/framework-bootstrapped-p t)
+        (cl-letf (((symbol-function 'neo/get-config)
+                   (lambda (_key) "ef-winter"))
+                  ((symbol-function 'neo/theme--available-p)
+                   (lambda (theme) (memq theme '(ef-summer ef-winter))))
+                  ((symbol-function 'neo/restore-persisted-theme)
+                   (lambda () (setq restored t))))
+          (neo--questionable-defaults-configure-theme)
+          (expect neo/default-theme :to-equal 'ef-summer)
+          (expect restored :to-be nil))))
+
+    (it "does not replace an enabled selectable theme"
+      (let (restored)
+        (setq neo/framework-bootstrapped-p t
+              custom-enabled-themes '(ef-winter))
+        (cl-letf (((symbol-function 'neo/get-config)
+                   (lambda (_key) nil))
+                  ((symbol-function 'neo/theme--available-p)
+                   (lambda (theme) (memq theme '(ef-summer ef-winter))))
+                  ((symbol-function 'neo/restore-persisted-theme)
+                   (lambda () (setq restored t))))
+          (neo--questionable-defaults-configure-theme)
+          (expect neo/default-theme :to-equal 'ef-summer)
+          (expect restored :to-be nil)))))
+
   (it "enables global auto-revert instead of a buffer-local mode"
     (with-temp-buffer
       (insert-file-contents
