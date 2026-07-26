@@ -276,14 +276,32 @@ Optional FONT-NAME can be used to compute based on a specific font family."
      :code-pt code-pt
      :code-px code-px)))
 
-(defun neo/classify-monitor ()
-  (let* ((screen-geometry (neo/screen-geometry))
-	 (width (plist-get screen-geometry :width))
-	 (height (plist-get screen-geometry :height))
-	 (screen-resolution (neo/display-dpi))
-	 (x-dpi (car screen-resolution))
-	 (y-dpi (cdr screen-resolution)))
-    (neo/classify-monitor-aux width height x-dpi y-dpi)))
+(defun neo/classify-monitor (&optional frame)
+  "Return the classification of FRAME's current monitor.
+FRAME defaults to the selected frame.  Graphic frames use the geometry
+and physical size reported by `frame-monitor-attributes', so frames on
+different monitors are classified independently.  Terminal frames use
+their character dimensions and a conventional 96 DPI fallback."
+  (let ((frame (or frame (selected-frame))))
+    (if (display-graphic-p frame)
+        (let* ((attributes (frame-monitor-attributes frame))
+               (geometry (alist-get 'geometry attributes))
+               (mm-size (alist-get 'mm-size attributes))
+               (display (frame-parameter frame 'display))
+               (width (or (nth 2 geometry) (display-pixel-width display)))
+               (height (or (nth 3 geometry) (display-pixel-height display)))
+               (mm-width (car mm-size))
+               (mm-height (cadr mm-size))
+               (fallback-dpi (neo/display-dpi display))
+               (dpi-h (if (and width mm-width (> mm-width 0))
+                          (/ (* width 25.4) mm-width)
+                        (car fallback-dpi)))
+               (dpi-v (if (and height mm-height (> mm-height 0))
+                          (/ (* height 25.4) mm-height)
+                        (cdr fallback-dpi))))
+          (neo/classify-monitor-aux width height dpi-h dpi-v))
+      (neo/classify-monitor-aux
+       (frame-width frame) (frame-height frame) 96.0 96.0))))
 
 
 (defun neo/frame-fullscreen-or-window (width height)
@@ -298,13 +316,8 @@ Use full-screen on large monitors, normal window on smaller ones."
       nil)))
 
 (defun neo/get-current-monitor-classification ()
-  (if (display-graphic-p)
-      (neo/classify-monitor-aux 
-       (display-pixel-width) (display-pixel-height)
-       (frame-parameter nil 'res-x) (frame-parameter nil 'res-y))
-    ;; Terminal defaults
-    (neo/classify-monitor-aux 
-     (frame-width) (frame-height) 96.0 96.0)))
+  "Return the selected frame's current monitor classification."
+  (neo/classify-monitor (selected-frame)))
 
 ;; ;; Apply to initial frame
 ;; (add-to-list 'initial-frame-alist
