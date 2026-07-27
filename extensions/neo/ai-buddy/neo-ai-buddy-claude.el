@@ -6,8 +6,15 @@
 ;;   :config
 ;;   (claude-code-ide-emacs-tools-setup)) ; Optionally enable Emacs MCP tools
 
+;; Declare the MCP HTTP server dependency before the package that requires it,
+;; so clean aggregate bootstraps do not discover it only during the dependent
+;; package's build.
+(neo/use-package web-server
+  :demand t)
+
 (neo/use-package claude-code-ide
   :ensure (claude-code-ide :host github :repo "manzaltu/claude-code-ide.el")
+  :after web-server
   :bind ("C-c C-'" . claude-code-ide-menu)
   :config
   (setq claude-code-ide-terminal-backend 'eat)
