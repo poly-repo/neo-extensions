@@ -3,12 +3,17 @@
 (require 'buttercup)
 (require 'cl-lib)
 
-(defmacro neo/use-package (&rest _args)
-  "Ignore package declarations while loading extension code in tests."
-  nil)
+(defvar neo--dashboard-test-package-declarations nil
+  "Package declarations recorded while loading `neo-dashboard.el'.")
+
+(defmacro neo/use-package (name &rest arguments)
+  "Record package NAME and ARGUMENTS without configuring it."
+  `(push (cons ',name ',arguments)
+         neo--dashboard-test-package-declarations))
 
 (defvar neo/extension-registry-alist nil)
 (defvar neo--framework nil)
+(defvar neo--application-perspective-stack nil)
 (defvar neo/cache-directory nil)
 
 (provide 'dashboard)
@@ -18,6 +23,13 @@
                              (file-name-directory (or load-file-name buffer-file-name))))
 
 (describe "neo-dashboard"
+  (it "declares fortune-mod as the system package providing fortune"
+    (let* ((arguments
+            (cdr (assq 'dashboard neo--dashboard-test-package-declarations)))
+           (requirements
+            (cadr (memq :ensure-system-package arguments))))
+      (expect requirements :to-equal '((fortune . fortune-mod)))))
+
   (before-each
     (setq neo/dashboard--origin-persp nil)
     (when-let* ((buffer (get-buffer (neo/dashboard--buffer-name))))

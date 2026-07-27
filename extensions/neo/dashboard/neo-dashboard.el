@@ -385,6 +385,8 @@ return to whatever was active before the dashboard took over."
   (neo/dashboard))
 
 (neo/use-package dashboard
+  :ensure-system-package
+  ((fortune . fortune-mod))
   :config
   (neo--setup-banner)
   (add-to-list 'dashboard-item-generators
