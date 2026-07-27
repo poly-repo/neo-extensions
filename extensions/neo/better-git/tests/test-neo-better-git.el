@@ -21,6 +21,20 @@
                              (file-name-directory (or load-file-name buffer-file-name))))
 
 (describe "neo-better-git"
+  (it "loads Transient before demanding Magit"
+    (let* ((declarations
+            (reverse neo--better-git-test-package-declarations))
+           (first-two-names
+            (mapcar #'car (cl-subseq declarations 0 2)))
+           (transient-arguments
+            (cdr (assq 'transient declarations)))
+           (magit-arguments
+            (cdr (assq 'magit declarations))))
+      (expect first-two-names :to-equal '(transient magit))
+      (expect (cadr (memq :demand transient-arguments)) :to-be t)
+      (expect (cadr (memq :after magit-arguments)) :to-be 'transient)
+      (expect (cadr (memq :demand magit-arguments)) :to-be t)))
+
   (it "does not bind F12 s to Magit status"
     (let* ((arguments
             (cdr (assq 'magit neo--better-git-test-package-declarations)))

@@ -16,6 +16,9 @@ Johnson scans this directory recursively."
   (make-directory (expand-file-name neo/writer-dictionary-directory) t))
 
 (neo/use-package jinx
+  :ensure-system-package
+  ((pkgconf . pkgconf)
+   (("pkgconf" "--exists" "enchant-2") . libenchant-2-dev))
   :hook
   ((text-mode prog-mode) . jinx-mode)
   :bind

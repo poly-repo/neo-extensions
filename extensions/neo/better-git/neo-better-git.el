@@ -2,23 +2,15 @@
 
 (require 'vc-git)
 
-;; NOTE: deliberately NOT declaring `(neo/use-package transient)` here.
-;; `transient' is already installed explicitly by neo-programming-foundation
-;; (a dependency-free sibling extension, always present alongside better-git
-;; under full-monty) and, failing that, automatically by Elpaca as one of
-;; magit's own package dependencies. A second, independent top-level
-;; `neo/use-package transient' declaration here used to race the one in
-;; neo-programming-foundation: at the time, `neo/use-package' defaulted to
-;; `:ensure (:wait t)', so every top-level declaration synchronously
-;; `elpaca-wait's and then `elpaca-split-queue's, so two independent
-;; `transient' declarations plus magit's own automatic dependency enqueue
-;; could register `transient' in three different Elpaca queues. Elpaca then
-;; fails the newest of those registrations against magit's queue with
-;; "Unhandled build error: (transient \"dependent magit in past queue\")"
-;; during `neo/full-monty' -- which looks like magit's install hanging while
-;; Elpaca silently re-clones transient before surfacing the error.
+;; Full bootstrap merges duplicate declarations and queues packages before one
+;; aggregate wait.  Better Git declares its runtime dependency explicitly so
+;; standalone and clean installs do not depend on programming-foundation order.
+(neo/use-package transient
+  :demand t)
+
 (neo/use-package magit
   :after transient
+  :demand t
   :config
   (setq magit-save-repository-buffers 'dontask)
   ;; `key-chord' itself is only installed/enabled by neo:questionable-defaults,
