@@ -19,6 +19,7 @@
 	    "neo:better-git"
 	    "neo:terminal"
 	    "neo:news"
+	    "neo:weather"
 	    "neo:org"
 	    "neo:writer"
 	    "neo:projects"
