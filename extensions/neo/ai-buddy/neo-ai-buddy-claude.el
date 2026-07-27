@@ -6,10 +6,12 @@
 ;;   :config
 ;;   (claude-code-ide-emacs-tools-setup)) ; Optionally enable Emacs MCP tools
 
-;; Declare the MCP HTTP server dependency before the package that requires it,
+;; Install the MCP HTTP server dependency before the package that requires it,
 ;; so clean aggregate bootstraps do not discover it only during the dependent
-;; package's build.
+;; package's build.  The explicit wait takes effect when Neo eventually replays
+;; this stored declaration.
 (neo/use-package web-server
+  :ensure (:wait t)
   :demand t)
 
 (neo/use-package claude-code-ide

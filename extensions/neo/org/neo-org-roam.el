@@ -143,10 +143,11 @@ Relative paths are resolved under `neo/org-directory'."
   (require 'org-roam-dailies)
   (org-roam-db-autosync-mode))
 
-;; Queue Org Roam UI's server dependency explicitly.  During a clean
-;; aggregate bootstrap this gives Elpaca the dependency order before it
-;; discovers `simple-httpd' while building `org-roam-ui'.
+;; Install Org Roam UI's server dependency explicitly.  During a clean
+;; aggregate bootstrap the replay-time wait finishes this stored declaration
+;; before Elpaca discovers `simple-httpd' while building `org-roam-ui'.
 (neo/use-package simple-httpd
+  :ensure (:wait t)
   :if (and neo/org-enable-roam neo/org-enable-roam-ui)
   :demand t)
 

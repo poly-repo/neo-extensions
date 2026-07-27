@@ -15,7 +15,7 @@
                               (or load-file-name buffer-file-name))))
 
 (describe "neo-org-roam package ordering"
-  (it "queues and demands simple-httpd before org-roam-ui"
+  (it "queues and waits for simple-httpd before org-roam-ui"
     (let* ((declarations
             (reverse neo--org-roam-test-package-declarations))
            (names (mapcar #'car declarations))
@@ -26,6 +26,9 @@
       (expect (seq-position names 'simple-httpd)
               :to-be-less-than
               (seq-position names 'org-roam-ui))
+      (expect (cadr (memq :ensure simple-httpd-arguments))
+              :to-equal
+              '(:wait t))
       (expect (cadr (memq :demand simple-httpd-arguments)) :to-be t)
       (expect (cadr (memq :after org-roam-ui-arguments))
               :to-equal

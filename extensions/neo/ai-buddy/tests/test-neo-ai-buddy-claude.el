@@ -15,7 +15,7 @@
                               (or load-file-name buffer-file-name))))
 
 (describe "neo-ai-buddy Claude package ordering"
-  (it "queues and demands web-server before claude-code-ide"
+  (it "queues and waits for web-server before claude-code-ide"
     (let* ((declarations
             (reverse neo--ai-buddy-claude-test-package-declarations))
            (names (mapcar #'car declarations))
@@ -26,6 +26,9 @@
       (expect (seq-position names 'web-server)
               :to-be-less-than
               (seq-position names 'claude-code-ide))
+      (expect (cadr (memq :ensure web-server-arguments))
+              :to-equal
+              '(:wait t))
       (expect (cadr (memq :demand web-server-arguments)) :to-be t)
       (expect (cadr (memq :after claude-arguments))
               :to-be
