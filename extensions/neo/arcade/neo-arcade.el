@@ -5,13 +5,12 @@
 ;;; Insert coin
 
 (neo/use-package tetris
-  :ensure nil
-  :commands tetris
+  :commands tetris)
+
+(neo/use-package autotetris-mode
+  :after tetris
   :bind
   (:map tetris-mode-map
-        ("k" . tetris-rotate-prev)
-        ("l" . tetris-move-down)
-        ("j" . tetris-move-left)
-        (";" . tetris-move-right)))
+        ("RET" . autotetris-mode)))
 
 ;;; Note, no (provide 'neo-arcade) here, extensions are loaded not required.
