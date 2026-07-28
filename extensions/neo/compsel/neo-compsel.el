@@ -129,6 +129,10 @@
 
 (neo/use-package corfu
   :doc "Show completions near the point"
+  ;; The lsp-mode hook below implies deferred loading in use-package.  Corfu is
+  ;; also NEO's completion frontend for Eglot, so load it eagerly and enable
+  ;; `global-corfu-mode' even when lsp-mode never runs.
+  :demand t
   ;; Build corfu's bundled extensions (corfu-popupinfo etc.) onto the
   ;; load-path so they can be required below.
   :ensure (corfu

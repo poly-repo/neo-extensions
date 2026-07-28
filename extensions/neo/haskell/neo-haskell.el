@@ -485,8 +485,9 @@ for one-off lab files."
 (defun neo--haskell-enable-eglot-ui ()
   "Turn on HLS-specific Eglot features for the current Haskell buffer.
 
-Inlay hints are the missing piece between hover-only support and the
-kind of ambient type feedback users expect from HLS."
+HLS uses inlay hints for actionable refinements such as explicit imports
+and record expansion.  Its inferred top-level types are separate code
+lenses, and are omitted when a declaration already has a signature."
   (when (and (derived-mode-p 'haskell-mode 'haskell-ts-mode)
              (bound-and-true-p eglot--managed-mode))
     (neo--haskell-enable-eglot-quickfix-overlays)
