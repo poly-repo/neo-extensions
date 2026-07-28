@@ -18,6 +18,9 @@
 (defvar neo/framework-bootstrapped-p nil)
 (defvar neo/theme-config-key "theme")
 
+(deftheme neo--questionable-defaults-test-theme
+  "Theme used to verify user-theme face precedence.")
+
 (define-derived-mode neo--questionable-defaults-test-terminal-mode comint-mode
   "NeoChordTerminal")
 
@@ -118,6 +121,40 @@
                nil
                t)
               :to-be nil)))
+
+  (it "configures ace-window with a user-theme Faster One face"
+    (let* ((arguments
+            (neo--questionable-defaults-test-package-arguments 'ace-window))
+           (configuration (cadr (memq :config arguments))))
+      (expect (cadr (memq :bind arguments))
+              :to-equal '("C-x o" . ace-window))
+      (expect configuration
+              :to-equal
+              '(custom-theme-set-faces
+                'user
+                '(aw-leading-char-face
+                  ((t
+                    (:inherit ace-jump-face-foreground
+                     :family "Faster One"
+                     :height 3.0
+                     :foreground "dark gray"))))))
+      (unwind-protect
+          (progn
+            (unless (facep 'aw-leading-char-face)
+              (make-face 'aw-leading-char-face))
+            (custom-theme-set-faces
+             'neo--questionable-defaults-test-theme
+             '(aw-leading-char-face
+               ((t (:family "Monospace" :height 1.5)))))
+            (enable-theme 'neo--questionable-defaults-test-theme)
+            (expect (face-attribute 'aw-leading-char-face :family nil t)
+                    :to-equal "Monospace")
+            (eval configuration t)
+            (expect (face-attribute 'aw-leading-char-face :family nil t)
+                    :to-equal "Faster One")
+            (expect (face-attribute 'aw-leading-char-face :height nil t)
+                    :to-equal 3.0))
+        (disable-theme 'neo--questionable-defaults-test-theme))))
 
   (describe "key-chord activation scope"
     (it "clears stale key-chord state when the input method is unavailable"

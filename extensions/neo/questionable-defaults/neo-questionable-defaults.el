@@ -240,6 +240,18 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
   (which-key-mode t)
   (which-key-side-window-slot -10))
 
+(neo/use-package ace-window
+  :bind ("C-x o" . ace-window)
+  :config
+  (custom-theme-set-faces
+   'user
+   '(aw-leading-char-face
+     ((t
+       (:inherit ace-jump-face-foreground
+        :family "Faster One"
+        :height 3.0
+        :foreground "dark gray"))))))
+
 (neo/use-package ediff
   :builtin
   :custom
