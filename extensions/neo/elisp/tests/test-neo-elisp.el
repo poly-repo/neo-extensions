@@ -22,19 +22,38 @@
   (font-lock-ensure))
 
 (describe "neo-elisp use-package buttons"
-  (it "browses the package symbol through standard button activation"
+  (it "opens the package menu URL through standard button activation"
     (with-temp-buffer
       (neo--elisp-test-fontify "(neo/use-package helpful)\n")
       (search-backward "helpful")
       (let ((button (button-at (point)))
-            browsed)
+            menu-package
+            opened-url)
         (expect button :not :to-be nil)
         (expect (button-get button 'follow-link) :to-be t)
-        (cl-letf (((symbol-function 'elpaca-browse)
+        (cl-letf (((symbol-function 'elpaca-menu-item)
                    (lambda (package)
-                     (setq browsed package))))
+                     (setq menu-package package)
+                     '(:url "https://example.test/helpful")))
+                  ((symbol-function 'browse-url)
+                   (lambda (url &rest _arguments)
+                     (setq opened-url url)))
+                  ((symbol-function 'elpaca-browse)
+                   (lambda (_package)
+                     (error "Elpaca fallback should not run"))))
           (button-activate button))
-        (expect browsed :to-be 'helpful))))
+        (expect menu-package :to-be 'helpful)
+        (expect opened-url :to-equal "https://example.test/helpful"))))
+
+  (it "delegates to Elpaca when the menu item has no URL"
+    (let (browsed)
+      (cl-letf (((symbol-function 'elpaca-menu-item)
+                 (lambda (_package) '(:description "No URL")))
+                ((symbol-function 'elpaca-browse)
+                 (lambda (package)
+                   (setq browsed package))))
+        (neo--elisp-browse-package 'local-package))
+      (expect browsed :to-be 'local-package)))
 
   (it "ignores lookalikes in comments and strings"
     (with-temp-buffer

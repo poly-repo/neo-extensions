@@ -13,6 +13,14 @@
 (defvar-local neo--elisp-use-package-buttons-enabled-p nil
   "Whether `neo/use-package' package-name buttons are enabled.")
 
+(defun neo--elisp-browse-package (package)
+  "Browse PACKAGE using its Elpaca menu URL when available."
+  (let* ((item (elpaca-menu-item package))
+         (url (plist-get item :url)))
+    (if url
+        (browse-url url)
+      (elpaca-browse package))))
+
 (defun neo--elisp-use-package-button-matcher (limit)
   "Make the next `neo/use-package' package name before LIMIT clickable."
   (catch 'matched
@@ -38,7 +46,7 @@
                   (make-text-button
                    start end
                    'button-data package
-                   'action #'elpaca-browse
+                   'action #'neo--elisp-browse-package
                    'follow-link t
                    'help-echo (format "Browse %s with Elpaca" package)))
                 (set-match-data (list start end))
