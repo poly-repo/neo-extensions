@@ -8,36 +8,36 @@
 ;; :tree-sitter-grammars in this extension's manifest.el.
 (require 'neo-programming-foundation-treesit)
 
-;; not really needed .git should be good enough
-(with-eval-after-load 'project
-  (add-to-list 'project-vc-extra-root-markers "pyproject.toml")
-  (add-to-list 'project-vc-extra-root-markers "pyrightconfig.json"))
+(defun neo--python-project-marker-p (directory)
+  "Return non-nil when DIRECTORY contains a Python project marker."
+  (or (file-exists-p (expand-file-name "pyproject.toml" directory))
+      (file-exists-p (expand-file-name "pyrightconfig.json" directory))))
 
-(defun neo/project-root ()
-  "Return the current project's root, or a sensible fallback."
-  (or (when-let* ((p (project-current nil)))
-        (expand-file-name (project-root p)))
-      (locate-dominating-file default-directory ".git")
-      (locate-dominating-file default-directory "pyproject.toml")
-      default-directory))
+(defun neo--python-eglot-project (directory)
+  "Return the nearest Python project rooted above DIRECTORY for Eglot.
 
-(defun neo/eglot-ensure-at-root ()
-  "Start/reuse Eglot with the project root as workspace."
-  (let ((root (neo/project-root)))
-    (let ((default-directory root))
-      (eglot-ensure))))
+Return nil outside Python Eglot project discovery so ordinary project
+backends retain ownership of Bazel, VC, and other project operations."
+  (when (and (bound-and-true-p eglot-lsp-context)
+             (derived-mode-p 'python-base-mode))
+    (when-let* ((root (locate-dominating-file
+                       directory
+                       #'neo--python-project-marker-p)))
+      (cons 'transient (expand-file-name root)))))
 
-;; Enable for Python (use python-base-mode to cover python-mode & python-ts-mode)
-(when (neo/extensionp "neo:programming-foundation")
-  (add-hook 'python-base-mode-hook #'neo/eglot-ensure-at-root))
+(defun neo/python-eglot-ensure ()
+  "Install Python project discovery before starting or reusing Eglot."
+  (require 'project)
+  (add-hook 'project-find-functions #'neo--python-eglot-project)
+  (eglot-ensure))
 
 ;; Handy command to fix a session that started at the wrong root
-(defun neo/eglot-reconnect-at-root ()
-  "Restart Eglot for this buffer using the project root."
+(defun neo/python-eglot-reconnect ()
+  "Restart Eglot for the nearest Python project root."
   (interactive)
   (when (eglot-current-server)
     (eglot-shutdown (eglot-current-server)))
-  (neo/eglot-ensure-at-root))
+  (neo/python-eglot-ensure))
 
 (defun neo--python-dape-breakpoint-load ()
   "Load saved Dape breakpoints without breaking startup."
@@ -47,6 +47,21 @@
       (file-missing
        (message "neo: skipping Dape breakpoint restore: %s"
                 (error-message-string err))))))
+
+(defvar eglot-watch-files-outside-project-root)
+
+(with-eval-after-load 'eglot
+  (defclass neo/python-eglot-server (eglot-lsp-server) ()
+    :documentation
+    "Eglot server for Python that ignores file watches outside its project.")
+
+  (cl-defmethod eglot-register-capability
+    ((_server neo/python-eglot-server)
+     (_method (eql workspace/didChangeWatchedFiles))
+     _id &rest _params)
+    "Register Python file watches without traversing outside the project root."
+    (let ((eglot-watch-files-outside-project-root nil))
+      (cl-call-next-method))))
 
 
 ;(neo/eglot-set-server '(python-mode python-ts-mode) '("pyright-langserver" "--stdio"))
@@ -63,50 +78,23 @@
 ;;                   :mccabe      (:enabled ,json-false)
 ;;                   :flake8      (:enabled t))))))
 
-;(defun neo/python-eglot-shadow-venv-setup ()
-  ;"Set eglot/BasedPyright to use the shadow Bazel virtualenv."
-  ;(setq eglot-workspace-configuration
-        ;`((:pyright . (:python (
-				;:venvPath "~/.local/share/lsp-venv"
-					  ;:pythonPath "~/.local/share/lsp-venv/bin/python"
-					  ;:extraPaths ["~/.local/share/lsp-venv-typings"]))))))
-
-(defun neo/python-eglot-shadow-venv-setup ()
-  "Set eglot/BasedPyright to use the shadow Bazel virtualenv."
-  (setq-default eglot-workspace-configuration nil))
-
-  ;(setq-default eglot-workspace-configuration
-	      ;'(:basedpyright (
-			       ;:python (
-					;:venvPath "~/.local/share/lsp-venv"
-						  ;:pythonPath "~/.local/share/lsp-venv/bin/python"
-			
-
-
-		  ;:extraPaths ["~/.local/share/lsp-venv-typings"])
-			       ;:typeCheckingMode "recommended"
-						 ;)
-			      ;:basedpyright.analysis (
-						      ;:diagnosticSeverityOverrides (
-										    ;:reportUnusedCallResult "none"
-													    ;)
-           ;:inlayHints (
-             ;:callArgumentNames :json-false
-           ;)
-           ;))))
-
-;;; TODO testing. Working with eglot, but we must be able to load without
-(when (neo/extensionp "neo:programming-foundation")
-  (add-hook 'python-mode-hook #'neo/python-eglot-shadow-venv-setup))
-
 (neo/use-package python
   :builtin
-  :after eglot				;TODO why?
+  :hook
+  (python-base-mode . neo/python-eglot-ensure)
   :custom
   (python-shell-interpreter "python3")
   :config
-  (neo/eglot-set-server '(python-mode python-ts-mode) '("rass" "python"
-							))
+  (neo/eglot-set-server
+   '(python-mode python-ts-mode)
+   '(neo/python-eglot-server
+     "rass"
+     "--"
+     "basedpyright-langserver"
+     "--stdio"
+     "--"
+     "ruff"
+     "server"))
   ;; (neo/eglot-set-server '(python-mode python-ts-mode) '("basedpyright-langserver"
   ;; 							"--stdio"
   ;; 							))

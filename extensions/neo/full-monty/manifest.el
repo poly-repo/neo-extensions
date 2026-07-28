@@ -26,6 +26,7 @@
 	    "neo:programming-foundation"
 	    "neo:neo-workflow"
 	    "neo:build"
+	    "neo:go"
 	    "neo:python"
 	    "neo:haskell"
 	    "neo:latex"
