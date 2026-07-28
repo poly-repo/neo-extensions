@@ -7,6 +7,7 @@
 (neo/use-package jsonrpc)
 
 (require 'neo-programming-foundation-treesit)
+(require 'neo-eglot-info)
 
 (neo/use-package flymake)
 (neo/use-package posframe)
