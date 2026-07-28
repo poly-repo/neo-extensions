@@ -3,6 +3,12 @@
 (require 'neo-ui-frame)
 (require 'seq)
 
+(defconst neo--fonts-height-step 10
+  "Font height adjustment step, in tenths of a point.")
+
+(defconst neo--fonts-minimum-height 10
+  "Minimum adjustable font height, in tenths of a point.")
+
 (defun neo--fonts-graphic-frames ()
   "Return all live graphic frames."
   (seq-filter (lambda (frame)
@@ -19,14 +25,66 @@
       (round (* 10 ui-pt))))
    ((eq value 'default) nil)))
 
+(defun neo--fonts-effective-height (frame)
+  "Return the configured face height plus FRAME's local adjustment."
+  (if-let* ((height
+             (neo--fonts-height-for-frame
+              frame neo/config/preferred-font-size)))
+      (max neo--fonts-minimum-height
+           (+ height
+              (or (frame-parameter
+                   frame 'neo--fonts-height-adjustment)
+                  0)))
+    (frame-parameter frame 'neo--fonts-height-override)))
+
 (defun neo--fonts-apply-frame-size (frame)
   "Apply the configured font size to graphic FRAME."
   (when (and (frame-live-p frame) (display-graphic-p frame))
-    (when-let* ((height
-                 (neo--fonts-height-for-frame
-                  frame neo/config/preferred-font-size)))
+    (when-let* ((height (neo--fonts-effective-height frame)))
       (set-face-attribute 'default frame :height height)
       height)))
+
+(defun neo--fonts-adjust-frame-size (frame delta)
+  "Adjust FRAME's font height by DELTA tenths of a point.
+Store an offset from the configured height so monitor-aware sizing remains
+active.  When the preference is `default', store an absolute frame-local
+override instead."
+  (unless (and (frame-live-p frame) (display-graphic-p frame))
+    (user-error "Font size adjustment requires a graphic frame"))
+  (if-let* ((height
+             (neo--fonts-height-for-frame
+              frame neo/config/preferred-font-size)))
+      (let ((adjustment
+             (+ (or (frame-parameter
+                     frame 'neo--fonts-height-adjustment)
+                    0)
+                delta)))
+        (set-frame-parameter
+         frame 'neo--fonts-height-adjustment
+         (max (- neo--fonts-minimum-height height) adjustment)))
+    (let ((height
+           (or (frame-parameter frame 'neo--fonts-height-override)
+               (face-attribute 'default :height frame 'default))))
+      (unless (numberp height)
+        (user-error "Cannot determine the selected frame's font size"))
+      (set-frame-parameter
+       frame 'neo--fonts-height-override
+       (max neo--fonts-minimum-height (+ (round height) delta)))))
+  (neo--fonts-apply-frame-size frame))
+
+(defun neo/fonts-decrease-size (&optional frame)
+  "Decrease FRAME's font size by one point.
+FRAME defaults to the selected frame."
+  (interactive)
+  (neo--fonts-adjust-frame-size
+   (or frame (selected-frame)) (- neo--fonts-height-step)))
+
+(defun neo/fonts-increase-size (&optional frame)
+  "Increase FRAME's font size by one point.
+FRAME defaults to the selected frame."
+  (interactive)
+  (neo--fonts-adjust-frame-size
+   (or frame (selected-frame)) neo--fonts-height-step))
 
 (defun neo/config--apply-font-size (symbol value)
   "Set SYMBOL to VALUE and apply it to all graphic frames."
@@ -142,6 +200,9 @@ can otherwise re-stamp the affected faces."
 (add-hook 'enable-theme-functions #'neo/fonts--apply-all)
 (add-hook 'after-make-frame-functions #'neo/fonts-apply)
 (add-hook 'move-frame-functions #'neo/fonts-apply)
+(global-set-key (kbd "s--") #'neo/fonts-decrease-size)
+(global-set-key (kbd "s-=") #'neo/fonts-increase-size)
+(global-set-key (kbd "s-+") #'neo/fonts-increase-size)
 (neo/fonts--apply-all)
 
 (provide 'neo-ui-fonts)

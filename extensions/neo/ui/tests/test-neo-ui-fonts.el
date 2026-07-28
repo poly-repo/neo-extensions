@@ -43,6 +43,7 @@
     (let (face-call)
       (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
                 ((symbol-function 'display-graphic-p) (lambda (&optional _frame) t))
+                ((symbol-function 'frame-parameter) (lambda (&rest _) 0))
                 ((symbol-function 'neo--fonts-height-for-frame)
                  (lambda (_frame _value) 160))
                 ((symbol-function 'set-face-attribute)
@@ -50,6 +51,98 @@
         (expect (neo--fonts-apply-frame-size 'laptop-frame) :to-equal 160)
         (expect face-call
                 :to-equal '(default laptop-frame :height 160)))))
+
+  (it "retains a frame-local adjustment when monitor sizing is reapplied"
+    (let (face-call)
+      (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
+                ((symbol-function 'display-graphic-p) (lambda (&optional _frame) t))
+                ((symbol-function 'frame-parameter)
+                 (lambda (_frame parameter)
+                   (when (eq parameter 'neo--fonts-height-adjustment) 10)))
+                ((symbol-function 'neo--fonts-height-for-frame)
+                 (lambda (_frame _value) 130))
+                ((symbol-function 'set-face-attribute)
+                 (lambda (&rest args) (setq face-call args))))
+        (expect (neo--fonts-apply-frame-size 'external-frame) :to-equal 140)
+        (expect face-call
+                :to-equal '(default external-frame :height 140)))))
+
+  (it "increases the selected frame's monitor-aware font size"
+    (let ((adjustment 0)
+          frame-parameter-call
+          face-call)
+      (cl-letf (((symbol-function 'selected-frame) (lambda () 'laptop-frame))
+                ((symbol-function 'frame-live-p) (lambda (_frame) t))
+                ((symbol-function 'display-graphic-p) (lambda (&optional _frame) t))
+                ((symbol-function 'frame-parameter)
+                 (lambda (_frame parameter)
+                   (when (eq parameter 'neo--fonts-height-adjustment)
+                     adjustment)))
+                ((symbol-function 'set-frame-parameter)
+                 (lambda (frame parameter value)
+                   (setq frame-parameter-call (list frame parameter value)
+                         adjustment value)))
+                ((symbol-function 'neo--fonts-height-for-frame)
+                 (lambda (_frame _value) 160))
+                ((symbol-function 'set-face-attribute)
+                 (lambda (&rest args) (setq face-call args))))
+        (expect (neo/fonts-increase-size) :to-equal 170)
+        (expect frame-parameter-call
+                :to-equal
+                '(laptop-frame neo--fonts-height-adjustment 10))
+        (expect face-call
+                :to-equal '(default laptop-frame :height 170)))))
+
+  (it "decreases only the requested frame's monitor-aware font size"
+    (let ((adjustment 20)
+          frame-parameter-call
+          face-call)
+      (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
+                ((symbol-function 'display-graphic-p) (lambda (&optional _frame) t))
+                ((symbol-function 'frame-parameter)
+                 (lambda (_frame parameter)
+                   (when (eq parameter 'neo--fonts-height-adjustment)
+                     adjustment)))
+                ((symbol-function 'set-frame-parameter)
+                 (lambda (frame parameter value)
+                   (setq frame-parameter-call (list frame parameter value)
+                         adjustment value)))
+                ((symbol-function 'neo--fonts-height-for-frame)
+                 (lambda (_frame _value) 160))
+                ((symbol-function 'set-face-attribute)
+                 (lambda (&rest args) (setq face-call args))))
+        (expect (neo/fonts-decrease-size 'external-frame) :to-equal 170)
+        (expect frame-parameter-call
+                :to-equal
+                '(external-frame neo--fonts-height-adjustment 10))
+        (expect face-call
+                :to-equal '(default external-frame :height 170)))))
+
+  (it "persists an absolute frame-local override for the default preference"
+    (let ((neo/config/preferred-font-size 'default)
+          override
+          frame-parameter-call
+          face-call)
+      (cl-letf (((symbol-function 'frame-live-p) (lambda (_frame) t))
+                ((symbol-function 'display-graphic-p) (lambda (&optional _frame) t))
+                ((symbol-function 'frame-parameter)
+                 (lambda (_frame parameter)
+                   (when (eq parameter 'neo--fonts-height-override)
+                     override)))
+                ((symbol-function 'set-frame-parameter)
+                 (lambda (frame parameter value)
+                   (setq frame-parameter-call (list frame parameter value)
+                         override value)))
+                ((symbol-function 'face-attribute)
+                 (lambda (&rest _) 120))
+                ((symbol-function 'set-face-attribute)
+                 (lambda (&rest args) (setq face-call args))))
+        (expect (neo/fonts-increase-size 'laptop-frame) :to-equal 130)
+        (expect frame-parameter-call
+                :to-equal
+                '(laptop-frame neo--fonts-height-override 130))
+        (expect face-call
+                :to-equal '(default laptop-frame :height 130)))))
 
   (it "applies size and families interactively to the selected frame"
     (let (calls)
@@ -72,7 +165,17 @@
     (expect (memq #'neo/fonts-apply after-make-frame-functions)
             :to-be-truthy)
     (expect (memq #'neo/fonts-apply move-frame-functions)
-            :to-be-truthy)))
+            :to-be-truthy))
+
+  (it "binds Super-minus to decrease the selected frame's font size"
+    (expect (lookup-key global-map (kbd "s--"))
+            :to-be #'neo/fonts-decrease-size))
+
+  (it "binds Super-equals and Super-plus to increase the selected frame's font size"
+    (expect (lookup-key global-map (kbd "s-="))
+            :to-be #'neo/fonts-increase-size)
+    (expect (lookup-key global-map (kbd "s-+"))
+            :to-be #'neo/fonts-increase-size)))
 
 (provide 'test-neo-ui-fonts)
 ;;; test-neo-ui-fonts.el ends here
