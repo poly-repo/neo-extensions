@@ -253,6 +253,8 @@ Example: (neo/set-y-or-n-ret-default-for-command 'magit-commit 'no)"
 
 (neo/use-package vundo
   :commands vundo
+  :custom
+  (vundo-glyph-alist vundo-unicode-symbols)
   :bind
   ("C-x u" . vundo))
 
