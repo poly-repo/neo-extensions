@@ -45,6 +45,27 @@
         (let ((eglot--managed-mode nil))
           (neo--eglot-configure-eldoc))
         (expect show-help-function :to-be #'tooltip-show-help)
-        (expect (local-variable-p 'show-help-function) :to-be t)))))
+        (expect (local-variable-p 'show-help-function) :to-be t)))
+
+    (it "pads popup text using the tooltip background"
+      (with-temp-buffer
+        (let ((target (list :buffer (current-buffer)
+                            :window (selected-window)
+                            :point (point)))
+              captured-arguments)
+          (cl-letf (((symbol-function 'neo--eglot-hover-popup-available-p)
+                     (lambda () t))
+                    ((symbol-function 'posframe-show)
+                     (lambda (_buffer &rest arguments)
+                       (setq captured-arguments arguments)
+                       nil)))
+            (neo--eglot-show-hover-popup
+             target
+             '(("function documentation" :thing "function"))))
+          (expect (plist-get captured-arguments :internal-border-width)
+                  :to-equal neo/eglot-hover-popup-padding)
+          (expect (plist-get captured-arguments :internal-border-color)
+                  :to-equal
+                  (plist-get captured-arguments :background-color)))))))
 
 ;;; test-neo-programming-foundation.el ends here

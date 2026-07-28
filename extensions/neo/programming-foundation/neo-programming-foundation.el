@@ -35,6 +35,11 @@ display."
   :type 'string
   :group 'neo)
 
+(defcustom neo/eglot-hover-popup-padding 12
+  "Leave this many pixels between Eglot hover text and the popup edge."
+  :type '(integer 0)
+  :group 'neo)
+
 (defcustom neo/eglot-hover-popup-delay 0.35
   "Wait this many seconds before showing an Eglot hover popup."
   :type 'number
@@ -203,7 +208,8 @@ readable at a glance."
     (let ((text (neo--eglot-format-docs-for-popup docs))
           (buffer (plist-get target :buffer))
           (window (plist-get target :window))
-          (point (plist-get target :point)))
+          (point (plist-get target :point))
+          (background (face-background 'tooltip nil t)))
       (unless (string-empty-p text)
         (save-selected-window
           (with-selected-window window
@@ -213,12 +219,10 @@ readable at a glance."
                      neo/eglot-hover-popup-buffer
                      :string text
                      :position point
-                     :background-color (face-background 'tooltip nil t)
+                     :background-color background
                      :foreground-color (face-foreground 'tooltip nil t)
-                     :internal-border-width 1
-                     :internal-border-color
-                     (or (face-foreground 'shadow nil t)
-                         (face-foreground 'tooltip nil t)))))))))))
+                     :internal-border-width neo/eglot-hover-popup-padding
+                     :internal-border-color background)))))))))
 
 (defun neo--eglot-hover-callback (target docstring &rest plist)
   "Display DOCSTRING for TARGET if the mouse is still hovering it."
